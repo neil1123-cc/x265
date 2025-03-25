@@ -18,16 +18,15 @@ jobs:
       matrix:
         target_cpu:
         - x86-64
-        - ivybridge
         - haswell
         - skylake
         - alderlake
         - raptorlake
-        - bdver4
-        - znver1
+        - arrowlake
         - znver2
         - znver3
         - znver4
+        - znver5
         toolchain:
         - clang
         #- ucrt
