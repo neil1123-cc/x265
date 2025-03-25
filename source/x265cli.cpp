@@ -551,7 +551,7 @@ namespace X265_NS {
 
         if (param->pgfn && frameNum && !(prevUpdateTimeFile && time - prevUpdateTimeFile < UPDATE_INTERVAL_FILE)) {
             // Update progress file
-            sprintf(buf,
+            snprintf(buf, sizeof(buf),
                 "{\n \"current_frame\": %u,\n \"total_frames\": %u,\n \"current_size\": %" PRIu64 ",\n \"elapsed\": %" PRIu64 "\n}",
                 frameNum, framesToBeEncoded, totalbytes, elapsed
             );
@@ -588,14 +588,14 @@ namespace X265_NS {
             estsz_prec = estsz < 1024000 ? 2 : estsz < 10240000 ? 1 : 0;
             estsz_num  = estsz < 1024 ? estsz : estsz / 1024;
             estsz_unit = estsz < 1024 ? "K" : "M";
-            sprintf(buf, "x265 [%.1f%%] %d/%d frames, %.*f fps, %.*f kb/s, %.*f %sB, eta %d:%02d:%02d, est.size %.*f %sB",
+            snprintf(buf, sizeof(buf), "x265 [%.1f%%] %d/%d frames, %.*f fps, %.*f kb/s, %.*f %sB, eta %d:%02d:%02d, est.size %.*f %sB",
                     percentage, frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
                     file_prec, file_num, file_unit,
                     eta_hh, eta_mm, eta_ss,
                     estsz_prec, estsz_num, estsz_unit);
         }
         else
-            sprintf(buf, "x265 %d frames: %.*f fps, %.*f kb/s, %.*f %sB",
+            snprintf(buf, sizeof(buf), "x265 %d frames: %.*f fps, %.*f kb/s, %.*f %sB",
                     frameNum, fps_prec, fps, bitrate_prec, bitrate,
                     file_prec, file_num, file_unit);
 
@@ -605,7 +605,7 @@ namespace X265_NS {
             int secs = elapsed / 1000000;
             if (framesToBeEncoded)
             {
-                sprintf(buf_stylish, "x265 [%5.1f%%]  %6d/%-6d  %5.*f  %6.*f  %3d:%02d:%02d  %3d:%02d:%02d  %6.*f %1sB  %6.*f %1sB",
+                snprintf(buf_stylish, sizeof(buf_stylish), "x265 [%5.1f%%]  %6d/%-6d  %5.*f  %6.*f  %3d:%02d:%02d  %3d:%02d:%02d  %6.*f %1sB  %6.*f %1sB",
                         percentage, frameNum, framesToBeEncoded, fps_prec, fps, bitrate_prec, bitrate,
                         secs/3600, (secs/60)%60, secs%60, eta_hh, eta_mm, eta_ss,
                         file_prec, file_num, file_unit,
@@ -613,7 +613,7 @@ namespace X265_NS {
             }
             else
             {
-                sprintf(buf_stylish, "x265 %6d  %5.*f  %6.*f  %3d:%02d:%02d  %6.*f %1sB",
+                snprintf(buf_stylish, sizeof(buf_stylish), "x265 %6d  %5.*f  %6.*f  %3d:%02d:%02d  %6.*f %1sB",
                         frameNum, fps_prec, fps, bitrate_prec, bitrate,
                         secs/3600, (secs/60)%60, secs%60,
                         file_prec, file_num, file_unit);
