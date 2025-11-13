@@ -68,7 +68,7 @@ jobs:
       with:
         path: mimalloc
         repository: AmusementClub/mimalloc2
-        ref: v2.0.2-AC
+        ref: v2.2.4-AC
       if: steps.cache-mi.outputs.cache-hit != 'true'
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
