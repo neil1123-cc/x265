@@ -80,7 +80,7 @@ jobs:
           base-devel
           mingw-w64-${{matrix.toolchain}}-x86_64-nasm
           mingw-w64-${{matrix.toolchain}}-x86_64-toolchain
-          mingw-w64-${{matrix.toolchain}}-x86_64-cmake
+          mingw-w64-${{matrix.toolchain}}-x86_64-cmake=3.31.6-1
           mingw-w64-${{matrix.toolchain}}-x86_64-ninja
     - name: Compile FFmpeg
       run: |
