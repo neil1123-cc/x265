@@ -62,7 +62,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc
-        key: ${{matrix.target_cpu}}-${{matrix.toolchain}}-mi-v2
+        key: ${{matrix.target_cpu}}-${{matrix.toolchain}}-mi-v3
     - name: Checkout mimalloc
       uses: actions/checkout@v4
       with:
