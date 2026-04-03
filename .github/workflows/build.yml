@@ -57,19 +57,12 @@ jobs:
         repository: FFmpeg/FFmpeg
         ref: n4.4
       if: steps.cache-ff.outputs.cache-hit != 'true'
-    - name: Cache mimalloc
-      id: cache-mi
-      uses: actions/cache@v4
-      with:
-        path: mimalloc
-        key: ${{matrix.target_cpu}}-${{matrix.toolchain}}-mi-v3
     - name: Checkout mimalloc
       uses: actions/checkout@v4
       with:
         path: mimalloc
         repository: AmusementClub/mimalloc2
         ref: v2.2.4-AC
-      if: steps.cache-mi.outputs.cache-hit != 'true'
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -105,7 +98,6 @@ jobs:
         cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POLICY_DEFAULT_CMP0069=NEW -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON -DMI_BUILD_SHARED=OFF -DMI_BUILD_STATIC=ON -DMI_BUILD_OBJECT=OFF -DMI_BUILD_TESTS=OFF
         ninja
       working-directory: mimalloc
-      if: steps.cache-mi.outputs.cache-hit != 'true'
     - name: Install mimalloc
       run: ninja install
       working-directory: mimalloc/build
