@@ -707,7 +707,7 @@ endif(DETAILED_CU_STATS)
 if(USE_MIMALLOC)
     find_package(mimalloc REQUIRED)
     add_definitions(-DUSE_MIMALLOC)
-    list(APPEND PLATFORM_LIBS "-L${MIMALLOC_LIBRARY_DIR}" -lmimalloc-static)
+    list(APPEND PLATFORM_LIBS "-L${MIMALLOC_LIBRARY_DIR}" -lmimalloc)
     include_directories(${MIMALLOC_INCLUDE_DIR})
 endif()
 

@@ -101,14 +101,6 @@ jobs:
     - name: Install mimalloc
       run: ninja install
       working-directory: mimalloc/build
-    - name: Debug mimalloc installation
-      run: |
-        echo "=== /usr/local/lib contents ==="
-        ls -la /usr/local/lib/
-        echo "=== /usr/local/lib/cmake contents ==="
-        ls -la /usr/local/lib/cmake/ 2>/dev/null || echo "No cmake dir"
-        echo "=== Find mimalloc files ==="
-        find /usr/local -name "*mimalloc*" 2>/dev/null
     - name: Setup build dir
       run: mkdir -p build/8b build/10b build/12b
     - name: Download profdata
