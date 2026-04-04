@@ -2,7 +2,7 @@
 
 find_package(Git)
 
-set(MOD_BUILD Kyouko)
+set(MOD_BUILD "@ADE")
 set(X265_BASE_BRANCH "Yuuki")
 
 execute_process(COMMAND
