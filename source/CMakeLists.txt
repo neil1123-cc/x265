@@ -727,6 +727,10 @@ x265_add_include_dir("${CMAKE_CURRENT_SOURCE_DIR}/common")
 x265_add_include_dir("${CMAKE_CURRENT_SOURCE_DIR}/encoder")
 x265_add_include_dir("${PROJECT_BINARY_DIR}")
 
+# Apply include directories at directory scope for OBJECT libraries (encoder, common)
+# This is needed because target_include_directories on final target doesn't affect OBJECT libraries
+include_directories(${X265_INCLUDE_DIRS})
+
 option(ENABLE_PPA "Enable PPA profiling instrumentation" OFF)
 if(ENABLE_PPA)
     x265_add_definitions(-DENABLE_PPA)
