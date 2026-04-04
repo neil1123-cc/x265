@@ -173,7 +173,7 @@ Encoder::Encoder()
     m_zoneIndex = 0;
 }
 
-inline char *strcatFilename(const char *input, const char *suffix)
+static inline char *strcatFilename(const char *input, const char *suffix)
 {
     char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
     if (!output)
