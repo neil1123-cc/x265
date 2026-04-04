@@ -288,7 +288,7 @@ struct SPS
 
     SPS()
     {
-        memset(this, 0, sizeof(*this));
+        memset((void*)this, 0, sizeof(*this));
     }
 
     ~SPS()

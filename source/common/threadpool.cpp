@@ -468,7 +468,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
 
 ThreadPool::ThreadPool()
 {
-    memset(this, 0, sizeof(*this));
+    memset((void*)this, 0, sizeof(*this));
 }
 
 bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
