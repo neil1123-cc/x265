@@ -95,18 +95,7 @@ inline int calcLength(uint32_t x)
     return z + lut[x];
 }
 
-static inline char *strcatFilename(const char *input, const char *suffix)
-{
-    char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
-    if (!output)
-    {
-        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory for filename\n");
-        return NULL;
-    }
-    strcpy(output, input);
-    strcat(output, suffix);
-    return output;
-}
+extern inline char *strcatFilename(const char *input, const char *suffix);
 
 typedef struct CUTreeSharedDataItem
 {
