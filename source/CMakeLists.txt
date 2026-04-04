@@ -819,6 +819,19 @@ if(ENABLE_SCC_EXT)
     x265_add_definitions(-DENABLE_SCC_EXT)
 endif()
 
+# ============================================================================
+# Apply directory-level settings for OBJECT libraries
+# These settings will be inherited by encoder and common subdirectories.
+# Note: dynamicHDR10 is loaded earlier (line 631) and has its own settings.
+# ============================================================================
+add_compile_definitions(${X265_COMPILE_DEFINITIONS})
+if(X265_COMPILE_OPTIONS)
+    add_compile_options(${X265_COMPILE_OPTIONS})
+endif()
+if(X265_INCLUDE_DIRS)
+    include_directories(${X265_INCLUDE_DIRS})
+endif()
+
 add_subdirectory(encoder)
 add_subdirectory(common)
 
@@ -916,6 +929,7 @@ else()
 endif()
 
 # Apply collected compile definitions and options to x265-static (Modern CMake)
+# Note: OBJECT libraries (encoder, common) inherit directory-level settings from above
 target_compile_definitions(x265-static PRIVATE ${X265_COMPILE_DEFINITIONS})
 if(X265_COMPILE_OPTIONS)
     target_compile_options(x265-static PRIVATE ${X265_COMPILE_OPTIONS})
@@ -1027,6 +1041,7 @@ if(ENABLE_SHARED)
     endif()
 
     # Apply collected compile definitions and options to x265-shared (Modern CMake)
+    # Note: OBJECT libraries (encoder, common) inherit directory-level settings from above
     target_compile_definitions(x265-shared PRIVATE ${X265_COMPILE_DEFINITIONS})
     if(X265_COMPILE_OPTIONS)
         target_compile_options(x265-shared PRIVATE ${X265_COMPILE_OPTIONS})
@@ -1229,6 +1244,7 @@ endif()
     endif()
 
     # Apply collected compile definitions and options to cli (Modern CMake)
+    # Note: cli has its own source files (x265.cpp, etc.) that need these definitions
     target_compile_definitions(cli PRIVATE ${X265_COMPILE_DEFINITIONS})
     if(X265_COMPILE_OPTIONS)
         target_compile_options(cli PRIVATE ${X265_COMPILE_OPTIONS})
