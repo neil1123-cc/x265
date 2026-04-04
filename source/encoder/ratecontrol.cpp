@@ -501,7 +501,7 @@ bool RateControl::init(const SPS& sps)
                     return false;
                 if (m_param->rc.cuTree)
                 {
-                    char *tmpFile = strcatFilename(fileName, ".cutree");
+                    char *tmpFile = x265_strcatFilename(fileName, ".cutree");
                     if (!tmpFile)
                         return false;
                     m_cutreeStatFileIn = x265_fopen(tmpFile, "rb");
@@ -754,7 +754,7 @@ bool RateControl::init(const SPS& sps)
         if (m_param->rc.bStatWrite)
         {
             char *p, *statFileTmpname;
-            statFileTmpname = strcatFilename(fileName, ".temp");
+            statFileTmpname = x265_strcatFilename(fileName, ".temp");
             if (!statFileTmpname)
                 return false;
             m_statFileOut = x265_fopen(statFileTmpname, "wb");
@@ -772,7 +772,7 @@ bool RateControl::init(const SPS& sps)
             {
                 if (X265_SHARE_MODE_FILE == m_param->rc.dataShareMode)
                 {
-                    statFileTmpname = strcatFilename(fileName, ".cutree.temp");
+                    statFileTmpname = x265_strcatFilename(fileName, ".cutree.temp");
                     if (!statFileTmpname)
                         return false;
                     m_cutreeStatFileOut = x265_fopen(statFileTmpname, "wb");
@@ -3422,7 +3422,7 @@ void RateControl::destroy()
     if (m_statFileOut)
     {
         fclose(m_statFileOut);
-        char *tmpFileName = strcatFilename(fileName, ".temp");
+        char *tmpFileName = x265_strcatFilename(fileName, ".temp");
         int bError = 1;
         if (tmpFileName)
         {
@@ -3439,8 +3439,8 @@ void RateControl::destroy()
     if (m_cutreeStatFileOut)
     {
         fclose(m_cutreeStatFileOut);
-        char *tmpFileName = strcatFilename(fileName, ".cutree.temp");
-        char *newFileName = strcatFilename(fileName, ".cutree");
+        char *tmpFileName = x265_strcatFilename(fileName, ".cutree.temp");
+        char *newFileName = x265_strcatFilename(fileName, ".cutree");
         int bError = 1;
         if (tmpFileName && newFileName)
         {

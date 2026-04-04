@@ -173,19 +173,6 @@ Encoder::Encoder()
     m_zoneIndex = 0;
 }
 
-static inline char *strcatFilename(const char *input, const char *suffix)
-{
-    char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
-    if (!output)
-    {
-        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory for filename\n");
-        return NULL;
-    }
-    strcpy(output, input);
-    strcat(output, suffix);
-    return output;
-}
-
 void Encoder::create()
 {
     if (!primitives.pu[0].sad)
@@ -476,7 +463,7 @@ void Encoder::create()
     initRefIdx();
     if (strlen(m_param->analysisSave) && m_param->bUseAnalysisFile)
     {
-        char* temp = strcatFilename(m_param->analysisSave, ".temp");
+        char* temp = x265_strcatFilename(m_param->analysisSave, ".temp");
         if (!temp)
             m_aborted = true;
         else
@@ -498,7 +485,7 @@ void Encoder::create()
             name = defaultAnalysisFileName;
         if (m_param->rc.bStatWrite)
         {
-            char* temp = strcatFilename(name, ".temp");
+            char* temp = x265_strcatFilename(name, ".temp");
             if (!temp)
                 m_aborted = true;
             else
@@ -952,7 +939,7 @@ void Encoder::destroy()
         const char* name = strlen(m_param->analysisSave) ? m_param->analysisSave : m_param->analysisReuseFileName;
         if (!strlen(name))
             name = defaultAnalysisFileName;
-        char* temp = strcatFilename(name, ".temp");
+        char* temp = x265_strcatFilename(name, ".temp");
         if (temp)
         {
             x265_unlink(name);
