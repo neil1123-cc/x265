@@ -95,8 +95,6 @@ inline int calcLength(uint32_t x)
     return z + lut[x];
 }
 
-extern inline char *strcatFilename(const char *input, const char *suffix);
-
 typedef struct CUTreeSharedDataItem
 {
     uint8_t  *type;
