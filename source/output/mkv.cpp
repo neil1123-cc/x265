@@ -23,6 +23,7 @@
  *****************************************************************************/
 
 #include "mkv.h"
+#include <vector>
 
 using namespace X265_NS;
 using namespace std;
@@ -120,9 +121,9 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
         return -1;
 
     hevcC_len = 23 + 5 + vps_size + 5 + sps_size + 5 + pps_size + (nalcount >= 4 ? 5 + sei_size : 0);
-    uint8_t hevcC[hevcC_len];
+    std::vector<uint8_t> hevcC(hevcC_len);
     uint8_t *phc;
-    phc = hevcC;
+    phc = hevcC.data();
 
     // Value                               Bits  Description
     // -----                               ----  -----------
@@ -246,7 +247,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     }
 
     ret = mk_write_header(p_mkv->w, "x265", "V_MPEGH/ISO/HEVC",
-                          hevcC, hevcC_len, p_mkv->frame_duration, 50000,
+                          hevcC.data(), hevcC_len, p_mkv->frame_duration, 50000,
                           p_mkv->width, p_mkv->height,
                           p_mkv->d_width, p_mkv->d_height, p_mkv->display_size_units, p_mkv->stereo_mode);
     if (ret < 0)
