@@ -79,6 +79,7 @@ jobs:
           mingw-w64-${{matrix.toolchain}}-x86_64-toolchain
           mingw-w64-${{matrix.toolchain}}-x86_64-ninja
           mingw-w64-${{matrix.toolchain}}-x86_64-cmake
+          mingw-w64-${{matrix.toolchain}}-x86_64-lsmash
     - name: Compile FFmpeg
       run: |
         ./configure --enable-gpl --enable-version3 --disable-runtime-cpudetect --disable-all --disable-autodetect --enable-avformat --enable-avcodec --enable-avformat --disable-everything --disable-network --enable-demuxer=mpegts,mov,matroska,h264,hevc --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv --enable-protocol=file,pipe --cc=cc --cxx=c++ --cpu=${{matrix.target_cpu}}
@@ -122,7 +123,7 @@ jobs:
       run: |
         cp -a 10b 10bprof
         export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-        cmake_flags="-GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local -DEXTRA_LIB=x265_8b.a;x265_12b.a -DEXTRA_LINK_FLAGS=-L. -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy"
+        cmake_flags="-GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local -DEXTRA_LIB=x265_8b.a;x265_12b.a -DEXTRA_LINK_FLAGS=-L. -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy"
         pushd 10b
         cmake $cmake_flags "-DCMAKE_CXX_FLAGS=-I../../FFmpeg -fprofile-instr-use=${{github.workspace}}/x265.profdata"
         ninja
