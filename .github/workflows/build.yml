@@ -107,7 +107,7 @@ jobs:
       working-directory: mimalloc/build
     - name: Compile L-SMASH
       run: |
-        ./configure --prefix=/usr/local
+        ./configure --prefix=/usr/local --cc=cc
         make -j`nproc`
       working-directory: lsmash
     - name: Install L-SMASH
