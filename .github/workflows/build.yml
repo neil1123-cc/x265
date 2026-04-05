@@ -67,6 +67,11 @@ jobs:
         path: mimalloc
         repository: microsoft/mimalloc
         ref: v3.2.8
+    - name: Checkout L-SMASH
+      uses: actions/checkout@v4
+      with:
+        path: lsmash
+        repository: l-smash/l-smash
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -79,7 +84,6 @@ jobs:
           mingw-w64-${{matrix.toolchain}}-x86_64-toolchain
           mingw-w64-${{matrix.toolchain}}-x86_64-ninja
           mingw-w64-${{matrix.toolchain}}-x86_64-cmake
-          mingw-w64-${{matrix.toolchain}}-x86_64-lsmash
     - name: Compile FFmpeg
       run: |
         ./configure --enable-gpl --enable-version3 --disable-runtime-cpudetect --disable-all --disable-autodetect --enable-avformat --enable-avcodec --enable-avformat --disable-everything --disable-network --enable-demuxer=mpegts,mov,matroska,h264,hevc --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv --enable-protocol=file,pipe --cc=cc --cxx=c++ --cpu=${{matrix.target_cpu}}
@@ -101,6 +105,14 @@ jobs:
     - name: Install mimalloc
       run: ninja install
       working-directory: mimalloc/build
+    - name: Compile L-SMASH
+      run: |
+        ./configure --prefix=/usr/local --enable-shared=no
+        make -j`nproc`
+      working-directory: lsmash
+    - name: Install L-SMASH
+      run: make install
+      working-directory: lsmash
     - name: Setup build dir
       run: mkdir -p build/8b build/10b build/12b
     - name: Download profdata
