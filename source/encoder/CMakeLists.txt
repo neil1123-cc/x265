@@ -22,7 +22,7 @@ if(EXTRA_LIB)
         list(APPEND APIFLAGS "-DLINKED_12BIT=1")
     endif(LINKED_12BIT)
     string(REPLACE ";" " " APIFLAGSTR "${APIFLAGS}")
-    set_source_files_properties(api.cpp PROPERTIES COMPILE_FLAGS ${APIFLAGSTR})
+    set_source_files_properties(api.cpp PROPERTIES COMPILE_FLAGS "${APIFLAGSTR}")
 endif(EXTRA_LIB)
 
 add_library(encoder OBJECT ../x265.h
