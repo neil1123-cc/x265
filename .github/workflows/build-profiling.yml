@@ -5,6 +5,7 @@ on:
     inputs:
       target_cpu:
         description: 'Target CPU architecture'
+        required: true
         default: 'x86-64'
         type: choice
         options:
@@ -19,7 +20,8 @@ on:
           - znver4
           - znver5
       upload_profdata:
-        description: 'Upload profdata to branch (requires profiling run)'
+        description: 'Upload profdata to Git branch'
+        required: false
         default: false
         type: boolean
 
@@ -32,29 +34,160 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    container:
-      image: ghcr.io/neil1123-cc/video-build:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
-        shell: bash -lc "{0}"
+        shell: msys2 {0}
     steps:
     - name: Checkout x265
       uses: actions/checkout@v4
       with:
         path: x265
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Cache FFmpeg
+      id: cache-ff
+      uses: actions/cache@v4
+      with:
+        path: ffmpeg
+        key: ffmpeg-n8.1-full-v1-clang
+
+    - name: Checkout FFmpeg
+      uses: actions/checkout@v4
+      with:
+        path: ffmpeg
+        repository: FFmpeg/FFmpeg
+        ref: n8.1
+      if: steps.cache-ff.outputs.cache-hit != 'true'
+
+    - name: Checkout mimalloc
+      uses: actions/checkout@v4
+      with:
+        path: mimalloc
+        repository: microsoft/mimalloc
+        ref: v3.2.8
+
+    - name: Checkout obuparse
+      uses: actions/checkout@v4
+      with:
+        path: obuparse
+        repository: dwbuiten/obuparse
+
+    - name: Checkout L-SMASH
+      uses: actions/checkout@v4
+      with:
+        path: lsmash
+        repository: vimeo/l-smash
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: CLANG64
+        update: true
+        install: >-
+          p7zip
+          base-devel
+          git
+          autoconf
+          automake
+          libtool
+          mingw-w64-clang-x86_64-nasm
+          mingw-w64-clang-x86_64-toolchain
+          mingw-w64-clang-x86_64-cmake
+          mingw-w64-clang-x86_64-ninja
+
+    - name: Compile FFmpeg (full with avfilter)
+      run: |
+        PGO_OPT="--enable-avdevice --enable-avfilter --enable-ffmpeg --enable-indev=lavfi"
+        for f in testsrc testsrc2 smptebars nullsrc geq gradients format scale; do
+          PGO_OPT="$PGO_OPT --enable-filter=$f"
+        done
+        ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
+          --disable-runtime-cpudetect --disable-all --disable-autodetect \
+          --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
+          --disable-everything --disable-network $PGO_OPT \
+          --enable-demuxer=mpegts,mov,matroska,h264,hevc,rawvideo,yuv4mpegpipe \
+          --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
+          --enable-encoder=rawvideo,aac,ac3,mp2,pcm_s16le,pcm_s24le,pcm_s32le \
+          --enable-muxer=yuv4mpegpipe \
+          --enable-protocol=file,pipe \
+          --cc=cc --cxx=c++ --cpu=x86-64
+        make -j$(nproc)
+      working-directory: ffmpeg
+      if: steps.cache-ff.outputs.cache-hit != 'true'
+
+    - name: Get rid of .dll.a
+      run: find /*64/ /usr/ -type f -name "*.dll.a" -print -delete
+
+    - name: Install FFmpeg
+      run: make install
+      working-directory: ffmpeg
+
+    - name: Checkout ffms2
+      uses: actions/checkout@v4
+      with:
+        path: ffms2
+        repository: FFMS/ffms2
+
+    - name: Compile ffms2 (static)
+      run: |
+        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+        ./autogen.sh
+        ./configure --prefix=/usr/local --enable-static --disable-shared
+        make -j$(nproc)
+      working-directory: ffms2
+
+    - name: Install ffms2
+      run: make install
+      working-directory: ffms2
+
+    - name: Compile mimalloc
+      run: |
+        mkdir build
+        cd build
+        cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+          -DMI_BUILD_SHARED=OFF -DMI_BUILD_STATIC=ON -DMI_BUILD_OBJECT=OFF -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
+        ninja
+      working-directory: mimalloc
+
+    - name: Install mimalloc
+      run: ninja install
+      working-directory: mimalloc/build
+
+    - name: Compile obuparse
+      run: make CC=cc libobuparse.a
+      working-directory: obuparse
+
+    - name: Install obuparse
+      run: |
+        install -d /usr/local/include
+        install -d /usr/local/lib
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+      working-directory: obuparse
+
+    - name: Compile L-SMASH
+      run: |
+        ./configure --prefix=/usr/local --cc=cc --extra-cflags="-I/usr/local/include" \
+          --extra-ldflags="-L/usr/local/lib" --extra-libs="-lobuparse"
+        make -j$(nproc)
+      working-directory: lsmash
+
+    - name: Install L-SMASH
+      run: |
+        make install
+        cp importer/importer.h /usr/local/include/lsmash_importer.h
+      working-directory: lsmash
 
     - name: Setup build dir
       run: mkdir -p build/8b build/10b build/12b
 
     - name: Compile x265 8bit
       working-directory: build/8b
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        cmake -GNinja ../../x265/source -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+          -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
         ninja
@@ -62,8 +195,11 @@ jobs:
 
     - name: Compile x265 12bit
       working-directory: build/12b
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        cmake -GNinja ../../x265/source -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
         ninja
@@ -82,9 +218,8 @@ jobs:
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{inputs.target_cpu}} \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="-I/usr/local/include -fprofile-instr-generate -fprofile-update=atomic"
+          -DCMAKE_CXX_FLAGS="-O2 -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include"
         ninja
-        strip -s x265.exe
         mv x265.exe x265-profiling.exe
 
     - name: Package
@@ -95,22 +230,27 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: x265-profiling-${{inputs.target_cpu}}
+        name: x265-profiling-${{ inputs.target_cpu }}
         path: dist/*
 
     - name: Push profdata to branch
       if: inputs.upload_profdata
       run: |
-        if [ -f build/10b/default.profdata ]; then
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout --orphan profdata-${{ inputs.target_cpu }}
-          git rm -rf . 2>/dev/null || true
-          cp build/10b/default.profdata ./x265.profdata
-          git add x265.profdata
-          git commit -m "Update profdata for ${{ inputs.target_cpu }} - $(date +%Y%m%d)" || echo "No changes"
-          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git profdata-${{ inputs.target_cpu }}
-        else
-          echo "No profdata found. Run the profiling executable locally first."
-          exit 1
-        fi
+        # Generate test video and run minimal workload
+        mkdir -p test-videos
+        ffmpeg -f lavfi -i "testsrc=duration=2:size=640x480:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/test.y4m
+        ./build/10b/x265-profiling.exe --crf 28 --preset medium test-videos/test.y4m -o /dev/null 2>/dev/null || true
+
+        # Merge profdata
+        llvm-profdata merge -output=default.profdata *.profraw
+
+        # Push to branch
+        cd x265
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git checkout --orphan profdata-${{ inputs.target_cpu }}
+        git rm -rf . 2>/dev/null || true
+        cp ../default.profdata ./x265.profdata
+        git add x265.profdata
+        git commit -m "Update profdata for ${{ inputs.target_cpu }} - $(date +%Y%m%d)" || echo "No changes"
+        git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git profdata-${{ inputs.target_cpu }}
