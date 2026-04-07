@@ -51,7 +51,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ffmpeg
-        key: ffmpeg-n8.1-minimal-v1-clang
+        key: ffmpeg-n8.1-lavf-v1-clang
 
     - name: Checkout FFmpeg
       uses: actions/checkout@v4
@@ -97,13 +97,13 @@ jobs:
           mingw-w64-clang-x86_64-cmake
           mingw-w64-clang-x86_64-ninja
 
-    - name: Compile FFmpeg (minimal)
+    - name: Compile FFmpeg (lavf input only)
       run: |
-        ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
+        ./configure --prefix=/usr/local --enable-gpl \
           --disable-runtime-cpudetect --disable-all --disable-autodetect \
-          --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
+          --enable-avformat --enable-avcodec \
           --disable-everything --disable-network \
-          --enable-demuxer=mpegts,mov,matroska,h264,hevc,rawvideo,yuv4mpegpipe \
+          --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf \
           --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
           --enable-protocol=file \
           --cc=cc --cxx=c++ --cpu=x86-64
@@ -117,24 +117,6 @@ jobs:
     - name: Install FFmpeg
       run: make install
       working-directory: ffmpeg
-
-    - name: Checkout ffms2
-      uses: actions/checkout@v4
-      with:
-        path: ffms2
-        repository: FFMS/ffms2
-
-    - name: Compile ffms2 (static)
-      run: |
-        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
-        ./autogen.sh
-        ./configure --prefix=/usr/local --enable-static --disable-shared
-        make -j$(nproc)
-      working-directory: ffms2
-
-    - name: Install ffms2
-      run: make install
-      working-directory: ffms2
 
     - name: Compile mimalloc
       run: |
@@ -181,12 +163,11 @@ jobs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        # 8bit
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
-        # 12bit
+
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \

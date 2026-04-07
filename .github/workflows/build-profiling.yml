@@ -126,24 +126,6 @@ jobs:
       run: make install
       working-directory: ffmpeg
 
-    - name: Checkout ffms2
-      uses: actions/checkout@v4
-      with:
-        path: ffms2
-        repository: FFMS/ffms2
-
-    - name: Compile ffms2 (static)
-      run: |
-        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
-        ./autogen.sh
-        ./configure --prefix=/usr/local --enable-static --disable-shared
-        make -j$(nproc)
-      working-directory: ffms2
-
-    - name: Install ffms2
-      run: make install
-      working-directory: ffms2
-
     - name: Compile mimalloc
       run: |
         mkdir build
