@@ -1,0 +1,116 @@
+name: Build Profiling
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_cpu:
+        description: 'Target CPU architecture'
+        default: 'x86-64'
+        type: choice
+        options:
+          - x86-64
+          - haswell
+          - skylake
+          - alderlake
+          - raptorlake
+          - arrowlake
+          - znver2
+          - znver3
+          - znver4
+          - znver5
+      upload_profdata:
+        description: 'Upload profdata to branch (requires profiling run)'
+        default: false
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    container:
+      image: ghcr.io/neil1123-cc/video-build:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash -lc "{0}"
+    steps:
+    - name: Checkout x265
+      uses: actions/checkout@v4
+      with:
+        path: x265
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup build dir
+      run: mkdir -p build/8b build/10b build/12b
+
+    - name: Compile x265 8bit
+      working-directory: build/8b
+      run: |
+        cmake -GNinja ../../x265/source -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+          -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+        ninja
+        cp libx265.a ../10b/libx265_8b.a
+
+    - name: Compile x265 12bit
+      working-directory: build/12b
+      run: |
+        cmake -GNinja ../../x265/source -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+          -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+        ninja
+        cp libx265.a ../10b/libx265_12b.a
+
+    - name: Compile x265 10bit (profiling)
+      working-directory: build/10b
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+      run: |
+        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+          -DEXTRA_LIB=x265_8b.a;x265_12b.a -DEXTRA_LINK_FLAGS=-L. \
+          -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
+          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{inputs.target_cpu}} \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="-I/usr/local/include -fprofile-instr-generate -fprofile-update=atomic"
+        ninja
+        strip -s x265.exe
+        mv x265.exe x265-profiling.exe
+
+    - name: Package
+      run: |
+        mkdir dist
+        cp build/10b/x265-profiling.exe dist/
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x265-profiling-${{inputs.target_cpu}}
+        path: dist/*
+
+    - name: Push profdata to branch
+      if: inputs.upload_profdata
+      run: |
+        if [ -f build/10b/default.profdata ]; then
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan profdata-${{ inputs.target_cpu }}
+          git rm -rf . 2>/dev/null || true
+          cp build/10b/default.profdata ./x265.profdata
+          git add x265.profdata
+          git commit -m "Update profdata for ${{ inputs.target_cpu }} - $(date +%Y%m%d)" || echo "No changes"
+          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git profdata-${{ inputs.target_cpu }}
+        else
+          echo "No profdata found. Run the profiling executable locally first."
+          exit 1
+        fi
