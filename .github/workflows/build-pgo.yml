@@ -22,6 +22,10 @@ env:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
@@ -56,7 +60,7 @@ jobs:
         git fetch origin profdata-${{ matrix.target_cpu }} --depth=1 || echo "Branch not found"
         git checkout profdata-${{ matrix.target_cpu }} -- x265.profdata 2>/dev/null || echo "profdata not found in branch"
         mkdir -p ../build
-        mv x265.profdata ../build/default.profdata 2>/dev/null || echo "No profdata to move"
+        mv x265.profdata ../build/x265.profdata 2>/dev/null || echo "No profdata to move"
 
     - name: Cache FFmpeg
       id: cache-ff
@@ -193,7 +197,7 @@ jobs:
       working-directory: lsmash
 
     - name: Setup build dir
-      run: mkdir -p build/8b build/10b build/12b build/prof
+      run: mkdir -p build/8b build/10b build/12b
 
     - name: Compile x265 8bit
       working-directory: build/8b
@@ -221,12 +225,12 @@ jobs:
 
     - name: Compile x265 10bit (profiling)
       if: inputs.profdata_source == 'generate'
-      working-directory: build/prof
+      working-directory: build/10b
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
         cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
-          -DEXTRA_LIB=../10b/libx265_8b.a;../10b/libx265_12b.a -DEXTRA_LINK_FLAGS=-L../10b \
+          -DEXTRA_LIB=x265_8b.a;x265_12b.a -DEXTRA_LINK_FLAGS=-L. \
           -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
@@ -257,7 +261,7 @@ jobs:
 
     - name: Run PGO profiling workload
       if: inputs.profdata_source == 'generate'
-      working-directory: build/prof
+      working-directory: build/10b
       run: |
         OPT10_FAST="--output-depth 10 --crf 28 --preset ultrafast --threads 4"
         OPT10_FASTER="--output-depth 10 --crf 28 --preset faster --threads 4"
@@ -284,9 +288,9 @@ jobs:
           ./x265-profiling.exe $opt ../test-videos/noise_480p.y4m -o /dev/null 2>/dev/null || true
         done
 
-        llvm-profdata merge -output=../default.profdata *.profraw
+        llvm-profdata merge -output=../x265.profdata *.profraw
         echo "=== Profile data generated ==="
-        ls -la ../default.profdata
+        ls -la ../x265.profdata
 
     - name: Compile x265 10bit (PGO)
       working-directory: build/10b
@@ -294,8 +298,8 @@ jobs:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
         CXX_FLAGS="-O3 -I/usr/local/include"
-        if [ -f ../default.profdata ]; then
-          CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../default.profdata"
+        if [ -f ../x265.profdata ]; then
+          CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../x265.profdata"
           echo "Using PGO profdata"
         else
           echo "Building without PGO (no profdata)"
@@ -317,7 +321,7 @@ jobs:
       run: |
         mkdir dist
         cp build/10b/x265.exe dist/
-        cp build/default.profdata dist/x265.profdata 2>/dev/null || true
+        cp build/x265.profdata dist/ 2>/dev/null || true
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
