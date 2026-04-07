@@ -185,29 +185,27 @@ jobs:
     - name: Setup build dir
       run: mkdir -p build/8b build/10b build/12b
 
-    - name: Compile x265 8bit
-      working-directory: build/8b
+    - name: Compile x265 8bit and 12bit (parallel)
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+        cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
-        ninja
-        cp libx265.a ../10b/libx265_8b.a
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
 
-    - name: Compile x265 12bit
-      working-directory: build/12b
-      env:
-        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
-      run: |
-        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+        cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
-        ninja
-        cp libx265.a ../10b/libx265_12b.a
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
+        wait
+
+        ninja -C build/8b &
+        ninja -C build/12b &
+        wait
+
+        cp build/8b/libx265.a build/10b/libx265_8b.a
+        cp build/12b/libx265.a build/10b/libx265_12b.a
 
     - name: Compile x265 10bit (profiling)
       working-directory: build/10b
