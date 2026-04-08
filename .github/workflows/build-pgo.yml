@@ -61,8 +61,14 @@ jobs:
       if: inputs.profdata_source == 'branch'
       run: |
         cd x265
-        git fetch origin profdata-${{ matrix.target_cpu }} --depth=1 || echo "Branch not found"
-        git checkout profdata-${{ matrix.target_cpu }} -- x265.profdata 2>/dev/null || echo "profdata not found in branch"
+        # Try architecture-specific profdata first, fallback to x86-64
+        git fetch origin profdata-${{ matrix.target_cpu }} --depth=1 2>/dev/null || echo "No arch-specific branch"
+        git checkout profdata-${{ matrix.target_cpu }} -- x265.profdata 2>/dev/null || true
+        if [ ! -f x265.profdata ]; then
+          echo "Using x86-64 profdata for ${{ matrix.target_cpu }}"
+          git fetch origin profdata-x86-64 --depth=1 2>/dev/null || echo "No x86-64 branch"
+          git checkout profdata-x86-64 -- x265.profdata 2>/dev/null || echo "No profdata available"
+        fi
         mkdir -p ../build
         mv x265.profdata ../build/x265.profdata 2>/dev/null || echo "No profdata to move"
 
