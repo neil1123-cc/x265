@@ -224,16 +224,6 @@ jobs:
         # HD color bars
         ffmpeg -f lavfi -i "smptehdbars=duration=2:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/smptehd_1080p.y4m
 
-        # === Pixel Format Coverage (for 10-bit path) ===
-        # 10-bit content
-        ffmpeg -f lavfi -i "testsrc=duration=3:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p10le test-videos/1080p_10bit.y4m
-        # 10-bit gradient (tests banding handling)
-        ffmpeg -f lavfi -i "gradients=s=1280x720:c0=000000:c1=ffffff" -t 2 -c:v rawvideo -pix_fmt yuv420p10le test-videos/gradient_10bit.y4m
-        # 4:2:2 content
-        ffmpeg -f lavfi -i "testsrc=duration=2:size=1280x720:rate=30" -c:v rawvideo -pix_fmt yuv422p test-videos/720p_422.y4m
-        # 4:4:4 content
-        ffmpeg -f lavfi -i "testsrc=duration=2:size=1280x720:rate=30" -c:v rawvideo -pix_fmt yuv444p test-videos/720p_444.y4m
-
         echo "=== Test videos generated ==="
         ls -la test-videos/
 
@@ -288,21 +278,6 @@ jobs:
         # Color bars
         for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
           ./x265-profiling.exe $opt ../test-videos/smpte_1080p.y4m -o /dev/null 2>/dev/null || true
-        done
-
-        echo "=== Pixel Format Tests ==="
-        # 10-bit input
-        for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
-          ./x265-profiling.exe $opt ../test-videos/1080p_10bit.y4m -o /dev/null 2>/dev/null || true
-          ./x265-profiling.exe $opt ../test-videos/gradient_10bit.y4m -o /dev/null 2>/dev/null || true
-        done
-        # 4:2:2
-        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
-          ./x265-profiling.exe $opt ../test-videos/720p_422.y4m -o /dev/null 2>/dev/null || true
-        done
-        # 4:4:4
-        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
-          ./x265-profiling.exe $opt ../test-videos/720p_444.y4m -o /dev/null 2>/dev/null || true
         done
 
         echo "=== Preset Coverage Tests ==="
