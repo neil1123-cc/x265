@@ -47,6 +47,7 @@ jobs:
         fetch-depth: 0
 
     - name: Fetch PGO profdata
+      shell: bash
       run: |
         cd x265
         git fetch origin profdata-x86-64 --depth=1 || echo "Branch not found"

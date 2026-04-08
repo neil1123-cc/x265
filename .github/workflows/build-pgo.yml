@@ -59,6 +59,7 @@ jobs:
 
     - name: Fetch profdata from branch
       if: inputs.profdata_source == 'branch'
+      shell: bash
       run: |
         cd x265
         # All architectures use x86-64 profdata for PGO baseline
