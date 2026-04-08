@@ -193,45 +193,135 @@ jobs:
       working-directory: build
       run: |
         mkdir -p test-videos
-        # 1080p 30fps
-        ffmpeg -f lavfi -i "testsrc=duration=8:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_30fps.y4m
-        # 720p 24fps
-        ffmpeg -f lavfi -i "testsrc2=duration=6:size=1280x720:rate=24" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_24fps.y4m
-        # 480p
-        ffmpeg -f lavfi -i "smptebars=duration=4:size=854x480:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/480p_smpte.y4m
-        # 4K
-        ffmpeg -f lavfi -i "testsrc=duration=3:size=3840x2160:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/4k_30fps.y4m
-        # Noise
-        ffmpeg -f lavfi -i "nullsrc=s=640x480:r=30,geq=random(1)*255:128:128" -t 3 -c:v rawvideo -pix_fmt yuv420p test-videos/noise_480p.y4m
-        # Gradient
-        ffmpeg -f lavfi -i "gradients=s=1280x720:c0=000000:c1=ffffff" -t 3 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_720p.y4m
+
+        # === Resolution & Frame Rate Coverage ===
+        # 4K high motion
+        ffmpeg -f lavfi -i "testsrc=duration=2:size=3840x2160:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/4k_30fps.y4m
+        # 1080p standard
+        ffmpeg -f lavfi -i "testsrc=duration=4:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_30fps.y4m
+        # 1080p high framerate
+        ffmpeg -f lavfi -i "testsrc2=duration=3:size=1920x1080:rate=60" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_60fps.y4m
+        # 720p film
+        ffmpeg -f lavfi -i "testsrc=duration=4:size=1280x720:rate=24" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_24fps.y4m
+        # 720p PAL
+        ffmpeg -f lavfi -i "testsrc2=duration=3:size=1280x720:rate=25" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_25fps.y4m
+        # 480p SD
+        ffmpeg -f lavfi -i "smptebars=duration=3:size=854x480:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/480p_smpte.y4m
+        # Low res
+        ffmpeg -f lavfi -i "testsrc=duration=3:size=640x360:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/360p_30fps.y4m
+
+        # === Motion & Content Types ===
+        # Fast motion (pan/zoom simulation)
+        ffmpeg -f lavfi -i "testsrc=duration=3:size=1280x720:rate=30" -vf "zoompan=z='min(zoom+0.0015,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=90" -c:v rawvideo -pix_fmt yuv420p test-videos/motion_zoom.y4m
+        # High detail noise
+        ffmpeg -f lavfi -i "nullsrc=s=1280x720:r=30,geq=random(1)*255:random(1)*255:random(1)*255" -t 2 -c:v rawvideo -pix_fmt yuv420p test-videos/noise_color.y4m
+        # Film grain simulation
+        ffmpeg -f lavfi -i "testsrc=duration=3:size=1280x720:rate=30,noise=alls=20:allf=t" -c:v rawvideo -pix_fmt yuv420p test-videos/film_grain.y4m
+        # Smooth gradient
+        ffmpeg -f lavfi -i "gradients=s=1280x720:c0=000000:c1=ffffff" -t 2 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_gray.y4m
+        # Color gradient
+        ffmpeg -f lavfi -i "gradients=s=1280x720:c0=ff0000:c1=00ff00:c2=0000ff" -t 2 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_rgb.y4m
+        # Edge/text-like pattern
+        ffmpeg -f lavfi -i "testsrc=duration=2:size=1280x720:rate=30" -vf "edgedetect=low=0.1:high=0.4" -c:v rawvideo -pix_fmt yuv420p test-videos/edges.y4m
+        # SMPTE color bars
+        ffmpeg -f lavfi -i "smptebars=duration=2:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/smpte_1080p.y4m
+        # HD color bars
+        ffmpeg -f lavfi -i "smptehdbars=duration=2:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/smptehd_1080p.y4m
+
+        # === Pixel Format Coverage (for 10-bit path) ===
+        # 10-bit content
+        ffmpeg -f lavfi -i "testsrc=duration=3:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p10le test-videos/1080p_10bit.y4m
+        # 10-bit gradient (tests banding handling)
+        ffmpeg -f lavfi -i "gradients=s=1280x720:c0=000000:c1=ffffff" -t 2 -c:v rawvideo -pix_fmt yuv420p10le test-videos/gradient_10bit.y4m
+        # 4:2:2 content
+        ffmpeg -f lavfi -i "testsrc=duration=2:size=1280x720:rate=30" -c:v rawvideo -pix_fmt yuv422p test-videos/720p_422.y4m
+        # 4:4:4 content
+        ffmpeg -f lavfi -i "testsrc=duration=2:size=1280x720:rate=30" -c:v rawvideo -pix_fmt yuv444p test-videos/720p_444.y4m
+
+        echo "=== Test videos generated ==="
+        ls -la test-videos/
 
     - name: Run PGO profiling workload
       working-directory: build/10b
       run: |
-        OPT10_FAST="--output-depth 10 --crf 28 --preset ultrafast --threads 4"
-        OPT10_FASTER="--output-depth 10 --crf 28 --preset faster --threads 4"
-        OPT10_MEDIUM="--output-depth 10 --crf 24 --preset medium --threads 4"
-        OPT10_MEDIUM2="--output-depth 10 --crf 28 --preset medium --aq-mode 2 --threads 4"
-        OPT10_SLOW="--output-depth 10 --crf 22 --preset slow --threads 4"
-        OPT10_SLOWER="--output-depth 10 --crf 24 --preset slower --threads 2"
-        OPT10_VERYSLOW="--output-depth 10 --crf 22 --preset veryslow --threads 2"
-        OPT10_PSY="--output-depth 10 --crf 24 --preset medium --psy-rd 1.0:0.15 --aq-mode 3 --threads 4"
+        # === Preset definitions ===
+        OPT_ULTRAFAST="--output-depth 10 --crf 28 --preset ultrafast --threads 4"
+        OPT_FASTER="--output-depth 10 --crf 26 --preset faster --threads 4"
+        OPT_FAST="--output-depth 10 --crf 24 --preset fast --threads 4"
+        OPT_MEDIUM="--output-depth 10 --crf 22 --preset medium --threads 4"
+        OPT_MEDIUM_AQ="--output-depth 10 --crf 24 --preset medium --aq-mode 2 --threads 4"
+        OPT_SLOW="--output-depth 10 --crf 20 --preset slow --threads 4"
+        OPT_SLOWER="--output-depth 10 --crf 22 --preset slower --threads 2"
+        OPT_VERYSLOW="--output-depth 10 --crf 20 --preset veryslow --threads 2"
+        OPT_PSY="--output-depth 10 --crf 22 --preset medium --psy-rd 1.0:0.15 --aq-mode 3 --threads 4"
+        OPT_BFRAME="--output-depth 10 --crf 22 --preset medium --bframes 8 --b-adapt 2 --threads 4"
 
-        echo "=== 10-bit Primary Tests ==="
-        for opt in "$OPT10_MEDIUM" "$OPT10_MEDIUM2" "$OPT10_SLOW" "$OPT10_PSY"; do
+        echo "=== Primary Resolution Tests ==="
+        # 1080p - most common use case
+        for opt in "$OPT_MEDIUM" "$OPT_MEDIUM_AQ" "$OPT_SLOW" "$OPT_PSY" "$OPT_BFRAME"; do
           ./x265-profiling.exe $opt ../test-videos/1080p_30fps.y4m -o /dev/null 2>/dev/null || true
+        done
+        # 1080p 60fps
+        for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
+          ./x265-profiling.exe $opt ../test-videos/1080p_60fps.y4m -o /dev/null 2>/dev/null || true
+        done
+
+        # 720p - various frame rates
+        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
           ./x265-profiling.exe $opt ../test-videos/720p_24fps.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/720p_25fps.y4m -o /dev/null 2>/dev/null || true
         done
 
-        for opt in "$OPT10_MEDIUM" "$OPT10_SLOW"; do
-          ./x265-profiling.exe $opt ../test-videos/4k_30fps.y4m -o /dev/null 2>/dev/null || true
+        # 4K - limited tests (slow)
+        ./x265-profiling.exe $OPT_MEDIUM ../test-videos/4k_30fps.y4m -o /dev/null 2>/dev/null || true
+
+        echo "=== Motion & Content Type Tests ==="
+        # Fast motion / zoom
+        for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
+          ./x265-profiling.exe $opt ../test-videos/motion_zoom.y4m -o /dev/null 2>/dev/null || true
+        done
+        # Film grain
+        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
+          ./x265-profiling.exe $opt ../test-videos/film_grain.y4m -o /dev/null 2>/dev/null || true
+        done
+        # Noise
+        for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
+          ./x265-profiling.exe $opt ../test-videos/noise_color.y4m -o /dev/null 2>/dev/null || true
+        done
+        # Gradients
+        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
+          ./x265-profiling.exe $opt ../test-videos/gradient_gray.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/gradient_rgb.y4m -o /dev/null 2>/dev/null || true
+        done
+        # Color bars
+        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
+          ./x265-profiling.exe $opt ../test-videos/smpte_1080p.y4m -o /dev/null 2>/dev/null || true
         done
 
-        echo "=== 10-bit Preset Coverage ==="
-        for opt in "$OPT10_FAST" "$OPT10_FASTER" "$OPT10_SLOWER" "$OPT10_VERYSLOW"; do
+        echo "=== Pixel Format Tests ==="
+        # 10-bit input
+        for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
+          ./x265-profiling.exe $opt ../test-videos/1080p_10bit.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/gradient_10bit.y4m -o /dev/null 2>/dev/null || true
+        done
+        # 4:2:2
+        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
+          ./x265-profiling.exe $opt ../test-videos/720p_422.y4m -o /dev/null 2>/dev/null || true
+        done
+        # 4:4:4
+        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
+          ./x265-profiling.exe $opt ../test-videos/720p_444.y4m -o /dev/null 2>/dev/null || true
+        done
+
+        echo "=== Preset Coverage Tests ==="
+        # Test all presets on smaller videos
+        for opt in "$OPT_ULTRAFAST" "$OPT_FASTER" "$OPT_FAST"; do
           ./x265-profiling.exe $opt ../test-videos/480p_smpte.y4m -o /dev/null 2>/dev/null || true
-          ./x265-profiling.exe $opt ../test-videos/noise_480p.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/360p_30fps.y4m -o /dev/null 2>/dev/null || true
+        done
+        for opt in "$OPT_SLOWER" "$OPT_VERYSLOW"; do
+          ./x265-profiling.exe $opt ../test-videos/480p_smpte.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/noise_color.y4m -o /dev/null 2>/dev/null || true
         done
 
         llvm-profdata merge -output=../x265.profdata *.profraw
