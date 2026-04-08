@@ -44,6 +44,7 @@ jobs:
           - znver5
     steps:
     - name: Validate profdata_source for target
+      shell: bash
       run: |
         if [ "${{ inputs.profdata_source }}" = "generate" ] && [ "${{ matrix.target_cpu }}" != "x86-64" ]; then
           echo "::error::profdata_source=generate only works for x86-64. For ${{ matrix.target_cpu }}, use profdata_source=branch with pre-uploaded profdata."
