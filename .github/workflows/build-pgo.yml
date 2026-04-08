@@ -59,6 +59,7 @@ jobs:
 
     - name: Fetch profdata from branch
       if: inputs.profdata_source == 'branch'
+      shell: bash
       run: |
         cd x265
         # Try architecture-specific profdata first, fallback to x86-64
