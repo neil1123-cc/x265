@@ -1,20 +1,7 @@
-name: Build PGO
+name: Generate PGO Profdata
 
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (empty for artifact only)'
-        required: false
-        default: ''
-      profdata_source:
-        description: 'Source of profdata (generate only works for x86-64)'
-        required: true
-        default: 'branch'
-        type: choice
-        options:
-          - branch
-          - generate
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -23,50 +10,17 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  generate:
     runs-on: windows-latest
     defaults:
       run:
         shell: msys2 {0}
-    strategy:
-      fail-fast: false
-      matrix:
-        target_cpu:
-          - x86-64
-          - haswell
-          - skylake
-          - alderlake
-          - raptorlake
-          - arrowlake
-          - znver2
-          - znver3
-          - znver4
-          - znver5
     steps:
-    - name: Validate profdata_source for target
-      shell: bash
-      run: |
-        if [ "${{ inputs.profdata_source }}" = "generate" ] && [ "${{ matrix.target_cpu }}" != "x86-64" ]; then
-          echo "::error::profdata_source=generate only works for x86-64. For ${{ matrix.target_cpu }}, use profdata_source=branch (uses x86-64 profdata)."
-          exit 1
-        fi
-
     - name: Checkout x265
       uses: actions/checkout@v4
       with:
         path: x265
         fetch-depth: 0
-
-    - name: Fetch profdata from branch
-      if: inputs.profdata_source == 'branch'
-      shell: bash
-      run: |
-        cd x265
-        # All architectures use x86-64 profdata for PGO baseline
-        git fetch origin profdata-x86-64 --depth=1 || echo "Branch not found"
-        git checkout profdata-x86-64 -- x265.profdata 2>/dev/null || echo "profdata not found in branch"
-        mkdir -p ../build
-        mv x265.profdata ../build/x265.profdata 2>/dev/null || echo "No profdata to move"
 
     - name: Cache FFmpeg
       id: cache-ff
@@ -202,12 +156,12 @@ jobs:
       run: |
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \
+          -DTARGET_CPU=x86-64 -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
 
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \
+          -DTARGET_CPU=x86-64 -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
         wait
 
@@ -219,7 +173,6 @@ jobs:
         cp build/12b/libx265.a build/10b/libx265_12b.a
 
     - name: Compile x265 10bit (profiling)
-      if: inputs.profdata_source == 'generate' && matrix.target_cpu == 'x86-64'
       working-directory: build/10b
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
@@ -229,7 +182,7 @@ jobs:
           -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=x86-64 \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="-O2 -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include"
@@ -237,7 +190,6 @@ jobs:
         mv x265.exe x265-profiling.exe
 
     - name: Generate test videos for PGO
-      if: inputs.profdata_source == 'generate' && matrix.target_cpu == 'x86-64'
       working-directory: build
       run: |
         mkdir -p test-videos
@@ -255,7 +207,6 @@ jobs:
         ffmpeg -f lavfi -i "gradients=s=1280x720:c0=000000:c1=ffffff" -t 3 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_720p.y4m
 
     - name: Run PGO profiling workload
-      if: inputs.profdata_source == 'generate' && matrix.target_cpu == 'x86-64'
       working-directory: build/10b
       run: |
         OPT10_FAST="--output-depth 10 --crf 28 --preset ultrafast --threads 4"
@@ -287,55 +238,15 @@ jobs:
         echo "=== Profile data generated ==="
         ls -la ../x265.profdata
 
-    - name: Compile x265 10bit (PGO)
-      working-directory: build/10b
-      env:
-        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+    - name: Push profdata to branch
+      shell: bash
       run: |
-        CXX_FLAGS="-O3 -I/usr/local/include"
-        if [ -f ../x265.profdata ]; then
-          CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../x265.profdata"
-          echo "Using PGO profdata"
-        else
-          echo "Building without PGO (no profdata)"
-        fi
-
-        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
-          -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
-          -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
-          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
-          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
-          -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="$CXX_FLAGS"
-        ninja
-        strip -s x265.exe
-
-    - name: Package
-      run: |
-        mkdir dist
-        cp build/10b/x265.exe dist/
-        cp build/x265.profdata dist/ 2>/dev/null || true
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: x265-pgo-${{ matrix.target_cpu }}
-        path: dist/*
-
-    - name: Compress for release
-      if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
-      run: |
-        cd dist
-        7za a -t7z -mx=7 ../x265-win64-${{ matrix.target_cpu }}-clang-pgo.${{ inputs.tag }}.7z x265.exe
-
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
-      with:
-        tag_name: ${{ inputs.tag }}
-        files: x265-win64-${{ matrix.target_cpu }}-clang-pgo.${{ inputs.tag }}.7z
-        fail_on_unmatched_files: true
-        generate_release_notes: false
-        prerelease: true
+        cd x265
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git checkout --orphan profdata-x86-64
+        git rm -rf . 2>/dev/null || true
+        cp ../build/x265.profdata ./x265.profdata
+        git add x265.profdata
+        git commit -m "Update PGO profdata - $(date +%Y%m%d-%H%M)"
+        git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git profdata-x86-64
