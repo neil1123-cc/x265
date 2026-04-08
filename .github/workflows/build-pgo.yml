@@ -29,7 +29,7 @@ jobs:
       run:
         shell: msys2 {0}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         target_cpu:
           - x86-64
