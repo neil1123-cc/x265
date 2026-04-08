@@ -47,7 +47,7 @@ jobs:
       shell: bash
       run: |
         if [ "${{ inputs.profdata_source }}" = "generate" ] && [ "${{ matrix.target_cpu }}" != "x86-64" ]; then
-          echo "::error::profdata_source=generate only works for x86-64. For ${{ matrix.target_cpu }}, use profdata_source=branch with pre-uploaded profdata."
+          echo "::error::profdata_source=generate only works for x86-64. For ${{ matrix.target_cpu }}, use profdata_source=branch (uses x86-64 profdata)."
           exit 1
         fi
 
@@ -59,17 +59,11 @@ jobs:
 
     - name: Fetch profdata from branch
       if: inputs.profdata_source == 'branch'
-      shell: bash
       run: |
         cd x265
-        # Try architecture-specific profdata first, fallback to x86-64
-        git fetch origin profdata-${{ matrix.target_cpu }} --depth=1 2>/dev/null || echo "No arch-specific branch"
-        git checkout profdata-${{ matrix.target_cpu }} -- x265.profdata 2>/dev/null || true
-        if [ ! -f x265.profdata ]; then
-          echo "Using x86-64 profdata for ${{ matrix.target_cpu }}"
-          git fetch origin profdata-x86-64 --depth=1 2>/dev/null || echo "No x86-64 branch"
-          git checkout profdata-x86-64 -- x265.profdata 2>/dev/null || echo "No profdata available"
-        fi
+        # All architectures use x86-64 profdata for PGO baseline
+        git fetch origin profdata-x86-64 --depth=1 || echo "Branch not found"
+        git checkout profdata-x86-64 -- x265.profdata 2>/dev/null || echo "profdata not found in branch"
         mkdir -p ../build
         mv x265.profdata ../build/x265.profdata 2>/dev/null || echo "No profdata to move"
 
