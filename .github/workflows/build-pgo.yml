@@ -85,7 +85,7 @@ jobs:
     - name: Compile FFmpeg (full with avfilter)
       run: |
         PGO_OPT="--enable-avdevice --enable-avfilter --enable-ffmpeg --enable-indev=lavfi"
-        for f in testsrc testsrc2 smptebars smptehdbars nullsrc geq gradients format scale zoompan noise edgedetect; do
+        for f in testsrc testsrc2 smptebars smptehdbars nullsrc geq gradients format scale noise; do
           PGO_OPT="$PGO_OPT --enable-filter=$f"
         done
         ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
@@ -211,8 +211,6 @@ jobs:
         ffmpeg -f lavfi -i "testsrc=duration=3:size=640x360:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/360p_30fps.y4m
 
         # === Motion & Content Types ===
-        # Fast motion (pan/zoom simulation)
-        ffmpeg -f lavfi -i "testsrc=duration=3:size=1280x720:rate=30" -vf "zoompan=z='min(zoom+0.0015,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=90" -c:v rawvideo -pix_fmt yuv420p test-videos/motion_zoom.y4m
         # High detail noise
         ffmpeg -f lavfi -i "nullsrc=s=1280x720:r=30,geq=random(1)*255:random(1)*255:random(1)*255" -t 2 -c:v rawvideo -pix_fmt yuv420p test-videos/noise_color.y4m
         # Film grain simulation
@@ -221,8 +219,6 @@ jobs:
         ffmpeg -f lavfi -i "gradients=s=1280x720:c0=000000:c1=ffffff" -t 2 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_gray.y4m
         # Color gradient
         ffmpeg -f lavfi -i "gradients=s=1280x720:c0=ff0000:c1=00ff00:c2=0000ff" -t 2 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_rgb.y4m
-        # Edge/text-like pattern
-        ffmpeg -f lavfi -i "testsrc=duration=2:size=1280x720:rate=30" -vf "edgedetect=low=0.1:high=0.4" -c:v rawvideo -pix_fmt yuv420p test-videos/edges.y4m
         # SMPTE color bars
         ffmpeg -f lavfi -i "smptebars=duration=2:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/smpte_1080p.y4m
         # HD color bars
@@ -276,10 +272,6 @@ jobs:
         ./x265-profiling.exe $OPT_MEDIUM ../test-videos/4k_30fps.y4m -o /dev/null 2>/dev/null || true
 
         echo "=== Motion & Content Type Tests ==="
-        # Fast motion / zoom
-        for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
-          ./x265-profiling.exe $opt ../test-videos/motion_zoom.y4m -o /dev/null 2>/dev/null || true
-        done
         # Film grain
         for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
           ./x265-profiling.exe $opt ../test-videos/film_grain.y4m -o /dev/null 2>/dev/null || true
