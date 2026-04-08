@@ -27,7 +27,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ffmpeg
-        key: ffmpeg-n8.1-full-v1-clang
+        key: ffmpeg-n8.1-full-v2-clang
 
     - name: Checkout FFmpeg
       uses: actions/checkout@v4
@@ -85,7 +85,7 @@ jobs:
     - name: Compile FFmpeg (full with avfilter)
       run: |
         PGO_OPT="--enable-avdevice --enable-avfilter --enable-ffmpeg --enable-indev=lavfi"
-        for f in testsrc testsrc2 smptebars nullsrc geq gradients format scale; do
+        for f in testsrc testsrc2 smptebars smptehdbars nullsrc geq gradients format scale zoompan noise edgedetect; do
           PGO_OPT="$PGO_OPT --enable-filter=$f"
         done
         ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
