@@ -181,12 +181,19 @@ jobs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
+        if [ -f ../x265.profdata ]; then
+          CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../x265.profdata"
+          echo "Using PGO profdata"
+        else
+          echo "Building without PGO"
+        fi
         cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja
         strip -s x265.exe
@@ -196,12 +203,19 @@ jobs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
+        if [ -f ../x265.profdata ]; then
+          CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../x265.profdata"
+          echo "Using PGO profdata"
+        else
+          echo "Building without PGO"
+        fi
         cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja
         strip -s x265.exe
@@ -211,12 +225,19 @@ jobs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
+        if [ -f ../x265.profdata ]; then
+          CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../x265.profdata"
+          echo "Using PGO profdata"
+        else
+          echo "Building without PGO"
+        fi
         cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja
         strip -s x265.exe
