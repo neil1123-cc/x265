@@ -1750,12 +1750,14 @@ typedef struct x265_param
         double    rfConstant;
 
         /* qScale Mode: overrides how rate control will estimate quant/qScale
-         * Acceptable values are 0,1,2
-         * Mode 0 (default): not overriding the original logic in rate control
-         * Mode 1: Uses frame duration as basis of estimation (default for --cutree)
-         * Mode 2: Uses frame complexity as basis of (default for --no-cutree and --hevc-aq)
-         * Mode 3: Minimum(Mode1, Mode2)
-         * Mode 4: Maximum(Mode1, Mode2) */
+         * Acceptable values are 0, 1, 2, 3, 4
+         * Mode 0 (default): respects cuTree/hevcAq interaction
+         *   - cuTree=1 && hevcAq=0: frame duration (official cuTree default)
+         *   - Otherwise: frame complexity
+         * Mode 1: Force frame duration estimation
+         * Mode 2: Force frame complexity estimation (WARNING: overrides cuTree!)
+         * Mode 3: Minimum(duration, complexity) - more conservative
+         * Mode 4: Maximum(duration, complexity) - more aggressive */
         int       qScaleMode;
 
         /* Max QP difference between frames. Default: 4 */

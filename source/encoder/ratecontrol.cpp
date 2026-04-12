@@ -176,6 +176,22 @@ RateControl::RateControl(x265_param& p, Encoder *top)
     int lowresCuHeight = ((m_param->sourceHeight / 2) + X265_LOWRES_CU_SIZE - 1) >> X265_LOWRES_CU_BITS;
     m_ncu = lowresCuWidth * lowresCuHeight;
 
+    /* Kyouko mod note: m_qCompress vs m_param->rc.qCompress
+     *
+     * m_qCompress (member variable):
+     *   - Used for rateFactorConstant, cplxrSum, lastQScaleFor initialization
+     *   - When cuTree is enabled without hevcAq, forced to 1 (effectively disabling
+     *     qCompress effect in these calculations, letting cuTree handle complexity)
+     *
+     * m_param->rc.qCompress (original parameter):
+     *   - Used in getQScale() for qScale calculation
+     *   - Used for mbtree_offset calculation
+     *   - Always preserves user's qcomp value (default 0.6)
+     *
+     * Rationale: cuTree uses frame duration for qScale estimation, so m_qCompress=1
+     * disables the complexity-based curve compression that would otherwise interfere.
+     * However, qCompress still affects the mbtree_offset and other calculations.
+     */
     m_qCompress = (m_param->rc.cuTree && !m_param->rc.hevcAq) ? 1 : m_param->rc.qCompress;
 
     // validate for param->rc, maybe it is need to add a function like x265_parameters_valiate()
@@ -3014,6 +3030,38 @@ int RateControl::rowVbvRateControl(Frame* curFrame, uint32_t row, RateControlEnt
 /* modify the bitrate curve from pass1 for one frame */
 double RateControl::getQScale(RateControlEntry *rce, double rateFactor)
 {
+    /* Kyouko mod: qScaleMode explanation
+     *
+     * qScaleMode controls how rate control estimates the quantizer scale (qScale):
+     *
+     * Mode 0 (default): Respects cuTree and hevcAq interaction
+     *   - cuTree=1 && hevcAq=0: Use frame duration (official cuTree behavior)
+     *   - Otherwise: Use frame complexity
+     *
+     * Mode 1: Force frame duration estimation
+     *   - Always uses frame duration regardless of cuTree/hevcAq
+     *   - Same as official cuTree behavior but explicit
+     *
+     * Mode 2: Force complexity estimation
+     *   - Always uses frame complexity regardless of cuTree/hevcAq
+     *   - WARNING: Overrides cuTree's default behavior!
+     *
+     * Mode 3: min(duration, complexity)
+     *   - Takes the more conservative (lower qScale = higher quality) approach
+     *
+     * Mode 4: max(duration, complexity)
+     *   - Takes the more aggressive (higher qScale = lower quality) approach
+     *
+     * Frame duration estimation:
+     *   q = (base_duration / frame_duration) ^ (1 - qCompress)
+     *   - Better for VBR with variable frame rates
+     *   - Default for cuTree
+     *
+     * Frame complexity estimation:
+     *   q = blurredComplexity ^ (1 - qCompress)
+     *   - Better for consistent quality across content complexity
+     *   - Default for hevcAq and non-cuTree modes
+     */
     double q;
     if (m_param->rc.qScaleMode == 3 || m_param->rc.qScaleMode == 4)
     {

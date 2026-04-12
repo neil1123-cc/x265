@@ -2143,6 +2143,52 @@ int x265_check_params(x265_param* param)
     CHECK(!!param->bEnableSCC&& param->rdLevel != 6, "Enabling scc extension in x265 requires rdlevel of 6 ");
 #endif
 
+    /* === Kyouko mod: Parameter conflict warnings === */
+
+    /* Warning: hevcAq overrides traditional aqMode */
+    if (param->rc.hevcAq && param->rc.aqMode != X265_AQ_NONE)
+    {
+        x265_log(param, X265_LOG_WARNING,
+            "--hevc-aq is enabled, --aq-mode %d will be ignored. hevcAq uses its own AQ method.\n",
+            param->rc.aqMode);
+    }
+
+    /* Warning: qScaleMode=2 overrides cuTree behavior */
+    if (param->rc.cuTree && param->rc.qScaleMode == 2)
+    {
+        x265_log(param, X265_LOG_WARNING,
+            "--qscale-mode 2 (complexity-based) overrides --cuTree frame duration estimation.\n"
+            "cuTree QP offsets will still apply, but rate control qScale calculation changes.\n");
+    }
+
+    /* Warning: limit-aq1 only works with AQ modes 2-5 */
+    if (param->rc.limitAq1 && param->rc.aqMode < X265_AQ_AUTO_VARIANCE)
+    {
+        x265_log(param, X265_LOG_WARNING,
+            "--limit-aq1 has no effect with --aq-mode %d. "
+            "It only applies to AQ modes 2, 3, 4, and 5.\n",
+            param->rc.aqMode);
+        param->rc.limitAq1 = 0;  /* Auto-disable to avoid confusion */
+    }
+
+    /* Warning: limit-aq1 is incompatible with hevcAq */
+    if (param->rc.limitAq1 && param->rc.hevcAq)
+    {
+        x265_log(param, X265_LOG_WARNING,
+            "--limit-aq1 is incompatible with --hevc-aq. Disabling limit-aq1.\n");
+        param->rc.limitAq1 = 0;
+    }
+
+    /* Info: cuTreeStrength relationship with qCompress */
+    double expectedCuTreeStrength = (param->rc.hevcAq ? 6.0 : 5.0) * (1.0 - param->rc.qCompress);
+    if (fabs(param->rc.cuTreeStrength - expectedCuTreeStrength) > 0.01 && param->rc.cuTree)
+    {
+        x265_log(param, X265_LOG_INFO,
+            "cuTreeStrength=%.2f (qcomp=%.2f suggests %.2f). "
+            "This is normal if you set --cutree-strength explicitly.\n",
+            param->rc.cuTreeStrength, param->rc.qCompress, expectedCuTreeStrength);
+    }
+
     return check_failed;
 }
 

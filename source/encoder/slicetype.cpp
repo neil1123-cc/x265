@@ -512,6 +512,23 @@ void LookaheadTLD::calcAdaptiveQuantFrame(Frame *curFrame, x265_param* param)
         }
         else
         {
+            /* Kyouko mod: hevcAq vs traditional AQ modes
+             *
+             * hevcAq (HEVC Adaptive Quantization):
+             *   - Uses xPreanalyze() for a different AQ method
+             *   - Completely independent from traditional aqMode (1-5)
+             *   - When enabled, aqMode parameter is effectively ignored
+             *
+             * Traditional AQ modes (when hevcAq is disabled):
+             *   - Mode 1: Uniform AQ (energy-based)
+             *   - Mode 2: Auto-variance
+             *   - Mode 3: Auto-variance with dark bias
+             *   - Mode 4: Edge detection
+             *   - Mode 5: Edge detection with dark bias (Kyouko addition)
+             *
+             * WARNING: Setting both --hevc-aq and --aq-mode is a parameter conflict.
+             * The warning is issued in x265_check_params().
+             */
             if (param->rc.hevcAq)
             {
                 // New method for calculating variance and qp offset
@@ -1030,8 +1047,18 @@ Lookahead::Lookahead(x265_param *param, ThreadPool* pool)
     m_fadeStart = -1;
     m_origPicBuf = 0;
 
-    /* Allow the strength to be adjusted via qcompress, since the two concepts
-     * are very similar. */
+    /* Kyouko mod: cuTree parameters
+     *
+     * cuTreeStrength: Controls the strength of cuTree adaptive quantization.
+     *   - Default: calculated from qCompress: (hevcAq ? 6.0 : 5.0) * (1 - qcomp)
+     *   - Can be overridden via --cutree-strength (range 0.0 - 3.0)
+     *   - Higher values = stronger QP adjustment based on propagation cost
+     *
+     * cuTreeMinQpOffset/cuTreeMaxQpOffset: Limits on cuTree QP adjustment.
+     *   - Default: -69 to +69 (effectively no limit)
+     *   - Can be used to constrain how much cuTree can adjust QPs
+     *   - Useful for preventing extreme quality variations
+     */
     m_cuTreeStrength = m_param->rc.cuTreeStrength;
     m_cuTreeMinQpOffset = m_param->rc.cuTreeMinQpOffset;
     m_cuTreeMaxQpOffset = m_param->rc.cuTreeMaxQpOffset;
