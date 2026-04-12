@@ -182,12 +182,14 @@ jobs:
       run: |
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \
+          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O3 -flto=thin" \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
 
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \
+          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O3 -flto=thin" \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
         wait
 
@@ -203,7 +205,7 @@ jobs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        CXX_FLAGS="-O3 -I/usr/local/include"
+        CXX_FLAGS="-O3 -flto=thin -I/usr/local/include"
         if [ -f ../x265.profdata ]; then
           CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../x265.profdata"
           echo "Using PGO profdata"
@@ -217,7 +219,7 @@ jobs:
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
-          -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DENABLE_UNITY_BUILD=ON \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS"
         ninja
