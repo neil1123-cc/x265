@@ -226,11 +226,11 @@ jobs:
         cp -r "$GITHUB_WORKSPACE/lsmash-install/include/"* /usr/local/include/
         cp -r "$GITHUB_WORKSPACE/lsmash-install/lib/"* /usr/local/lib/
 
-    # === Build x265 (Parallel) ===
+    # === Build x265 (All variants in parallel) ===
     - name: Setup build dirs
       run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all
 
-    - name: Compile x265 CLI executables (8bit, 10bit, 12bit)
+    - name: Compile x265 (all variants parallel)
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
@@ -245,8 +245,8 @@ jobs:
 
         CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
 
-        # === Build 8bit, 10bit, 12bit CLI executables in parallel ===
-        echo "=== Building CLI executables ==="
+        # === Configure all builds in parallel ===
+        echo "=== Configuring all builds ==="
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
@@ -274,27 +274,7 @@ jobs:
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" &
 
-        wait
-        ninja -C build/8b &
-        ninja -C build/10b &
-        ninja -C build/12b &
-        wait
-        echo "=== CLI executables build complete ==="
-
-    - name: Build multilib libraries for all-bit-depth
-      env:
-        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
-      run: |
-        CPU=${{matrix.target_cpu}}
-        PGO_FLAG=""
-        if [ -f build/x265.profdata ]; then
-          PGO_FLAG="-fprofile-instr-use=build/x265.profdata"
-        fi
-
-        CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
-
-        # === Build 8bit and 12bit libraries with EXPORT_C_API=OFF for multilib linking ===
-        echo "=== Building multilib libraries ==="
+        # Multilib libraries (no CLI, EXPORT_C_API=OFF)
         cmake -GNinja x265/source -B build/8b-lib -DCMAKE_PREFIX_PATH=/usr/local \
           -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
           -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
@@ -316,10 +296,17 @@ jobs:
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" &
 
         wait
+        echo "=== CMake configure complete ==="
+
+        # === Build all in parallel ===
+        echo "=== Building all variants ==="
+        ninja -C build/8b &
+        ninja -C build/10b &
+        ninja -C build/12b &
         ninja -C build/8b-lib &
         ninja -C build/12b-lib &
         wait
-        echo "=== Multilib libraries build complete ==="
+        echo "=== All builds complete ==="
 
         # === Build all-bit-depth version ===
         echo "=== Building all-bit-depth version ==="
