@@ -219,12 +219,14 @@ jobs:
       run: |
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
 
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{inputs.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
         wait
 
