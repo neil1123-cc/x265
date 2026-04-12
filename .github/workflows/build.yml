@@ -166,49 +166,65 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake -GNinja .. -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/mimalloc-install" \
+        cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local \
           -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
           -DMI_BUILD_SHARED=OFF -DMI_BUILD_STATIC=ON -DMI_BUILD_OBJECT=OFF \
           -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
         ninja install
-        cp -r "$GITHUB_WORKSPACE/mimalloc-install/"* /usr/local/
+        # Create cache copy
+        mkdir -p "$GITHUB_WORKSPACE/mimalloc-install"
+        cp -r /usr/local/lib/cmake/mimalloc "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
+        cp -r /usr/local/lib/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
+        cp -r /usr/local/include/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
 
     - name: Compile obuparse
       if: steps.cache-obuparse.outputs.cache-hit != 'true'
       working-directory: obuparse
       run: |
         make CC=cc libobuparse.a
-        install -d "$GITHUB_WORKSPACE/obuparse-install/include"
-        install -d "$GITHUB_WORKSPACE/obuparse-install/lib"
-        install -v obuparse.h "$GITHUB_WORKSPACE/obuparse-install/include"
-        install -v libobuparse.a "$GITHUB_WORKSPACE/obuparse-install/lib"
-        cp -r "$GITHUB_WORKSPACE/obuparse-install/"* /usr/local/
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+        # Create cache copy
+        mkdir -p "$GITHUB_WORKSPACE/obuparse-install/include"
+        mkdir -p "$GITHUB_WORKSPACE/obuparse-install/lib"
+        cp /usr/local/include/obuparse.h "$GITHUB_WORKSPACE/obuparse-install/include/"
+        cp /usr/local/lib/libobuparse.a "$GITHUB_WORKSPACE/obuparse-install/lib/"
 
     - name: Compile L-SMASH
       if: steps.cache-lsmash.outputs.cache-hit != 'true'
       working-directory: lsmash
       run: |
-        ./configure --prefix="$GITHUB_WORKSPACE/lsmash-install" --cc=cc \
-          --extra-cflags="-I$GITHUB_WORKSPACE/obuparse-install/include" \
-          --extra-ldflags="-L$GITHUB_WORKSPACE/obuparse-install/lib" \
+        ./configure --prefix=/usr/local --cc=cc \
+          --extra-cflags="-I/usr/local/include" \
+          --extra-ldflags="-L/usr/local/lib" \
           --extra-libs="-lobuparse"
         make -j$(nproc)
         make install
-        cp importer/importer.h "$GITHUB_WORKSPACE/lsmash-install/include/lsmash_importer.h"
-        cp -r "$GITHUB_WORKSPACE/lsmash-install/"* /usr/local/
+        cp importer/importer.h /usr/local/include/lsmash_importer.h
+        # Create cache copy
+        mkdir -p "$GITHUB_WORKSPACE/lsmash-install/include"
+        mkdir -p "$GITHUB_WORKSPACE/lsmash-install/lib"
+        cp -r /usr/local/include/lsmash* "$GITHUB_WORKSPACE/lsmash-install/include/"
+        cp -r /usr/local/lib/liblsmash* "$GITHUB_WORKSPACE/lsmash-install/lib/"
+        cp -r /usr/local/lib/pkgconfig "$GITHUB_WORKSPACE/lsmash-install/lib/" 2>/dev/null || true
 
     - name: Install cached mimalloc
       if: steps.cache-mimalloc.outputs.cache-hit == 'true'
-      run: cp -r "$GITHUB_WORKSPACE/mimalloc-install/"* /usr/local/
+      run: |
+        cp -r "$GITHUB_WORKSPACE/mimalloc-install/"* /usr/local/ 2>/dev/null || true
 
     - name: Install cached obuparse
       if: steps.cache-obuparse.outputs.cache-hit == 'true'
-      run: cp -r "$GITHUB_WORKSPACE/obuparse-install/"* /usr/local/
+      run: |
+        cp "$GITHUB_WORKSPACE/obuparse-install/include/"* /usr/local/include/
+        cp "$GITHUB_WORKSPACE/obuparse-install/lib/"* /usr/local/lib/
 
     - name: Install cached L-SMASH
       if: steps.cache-lsmash.outputs.cache-hit == 'true'
-      run: cp -r "$GITHUB_WORKSPACE/lsmash-install/"* /usr/local/
+      run: |
+        cp -r "$GITHUB_WORKSPACE/lsmash-install/include/"* /usr/local/include/
+        cp -r "$GITHUB_WORKSPACE/lsmash-install/lib/"* /usr/local/lib/
 
     # === Build x265 (Parallel) ===
     - name: Setup build dirs
