@@ -174,37 +174,80 @@ jobs:
       working-directory: lsmash
 
     - name: Setup build dir
-      run: mkdir -p build/8b build/10b build/12b
+      run: mkdir -p build/8b build/10b build/12b build/all
 
-    - name: Compile x265 8bit and 12bit (parallel)
+    - name: Compile x265 8bit
+      working-directory: build/8b
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
-          -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants" \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
-
-        cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
-          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
-          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants" \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
-        wait
-
-        ninja -C build/8b &
-        ninja -C build/12b &
-        wait
-
-        cp build/8b/libx265.a build/10b/libx265_8b.a
-        cp build/12b/libx265.a build/10b/libx265_12b.a
+        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja
+        strip -s x265.exe
 
     - name: Compile x265 10bit
       working-directory: build/10b
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja
+        strip -s x265.exe
+
+    - name: Compile x265 12bit
+      working-directory: build/12b
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+      run: |
+        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{matrix.target_cpu}} \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja
+        strip -s x265.exe
+
+    - name: Compile x265 all (8bit+10bit+12bit)
+      working-directory: build/all
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+      run: |
+        # Build 8bit and 12bit libraries first (parallel)
+        cmake -GNinja ../../x265/source -B ../8b_lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants" \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
+
+        cmake -GNinja ../../x265/source -B ../12b_lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+          -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants" \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
+        wait
+
+        ninja -C ../8b_lib &
+        ninja -C ../12b_lib &
+        wait
+
+        cp ../8b_lib/libx265.a libx265_8b.a
+        cp ../12b_lib/libx265.a libx265_12b.a
+
+        # Build all-bit-depth CLI with PGO
         CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
         if [ -f ../x265.profdata ]; then
           CXX_FLAGS="$CXX_FLAGS -fprofile-instr-use=../x265.profdata"
@@ -229,7 +272,10 @@ jobs:
     - name: Package
       run: |
         mkdir dist
-        cp build/10b/x265.exe dist/
+        cp build/8b/x265.exe dist/x265-8bit.exe
+        cp build/10b/x265.exe dist/x265-10bit.exe
+        cp build/12b/x265.exe dist/x265-12bit.exe
+        cp build/all/x265.exe dist/x265.exe
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -241,7 +287,8 @@ jobs:
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
       run: |
         cd dist
-        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang.${{ github.event.inputs.tag }}.7z x265.exe
+        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang.${{ github.event.inputs.tag }}.7z \
+          x265-8bit.exe x265-10bit.exe x265-12bit.exe x265.exe
 
     - name: Release
       uses: softprops/action-gh-release@v2
