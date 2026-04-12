@@ -61,7 +61,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v1
+        key: mimalloc-v3.2.8-clang-v2
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -119,6 +119,7 @@ jobs:
           autoconf
           automake
           libtool
+          ccache
           mingw-w64-clang-x86_64-nasm
           mingw-w64-clang-x86_64-clang
           mingw-w64-clang-x86_64-compiler-rt
@@ -132,6 +133,13 @@ jobs:
           mingw-w64-clang-x86_64-cmake
           mingw-w64-clang-x86_64-ninja
           mingw-w64-clang-x86_64-llvm
+
+    - name: Cache ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ccache-x265-profiling-${{ runner.os }}-${{ github.sha }}
+        restore-keys: ccache-x265-profiling-${{ runner.os }}-
 
     - name: Compile FFmpeg (full with avfilter)
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -172,10 +180,11 @@ jobs:
           -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
         ninja install
-        mkdir -p "$GITHUB_WORKSPACE/mimalloc-install"
-        cp -r /usr/local/lib/cmake/mimalloc "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
-        cp -r /usr/local/lib/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
-        cp -r /usr/local/include/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
+        mkdir -p "$GITHUB_WORKSPACE/mimalloc-install/lib/cmake"
+        mkdir -p "$GITHUB_WORKSPACE/mimalloc-install/include"
+        cp -r /usr/local/lib/cmake/mimalloc "$GITHUB_WORKSPACE/mimalloc-install/lib/cmake/" 2>/dev/null || true
+        cp -r /usr/local/lib/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/lib/" 2>/dev/null || true
+        cp -r /usr/local/include/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/include/" 2>/dev/null || true
 
     - name: Compile obuparse
       if: steps.cache-obuparse.outputs.cache-hit != 'true'
@@ -229,25 +238,31 @@ jobs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        export CCACHE_DIR=~/.ccache
+        ccache -z
+
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        ninja -C build/8b &
 
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy &
-        wait
-
-        ninja -C build/8b &
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         ninja -C build/12b &
+
         wait
 
         cp build/8b/libx265.a build/10b/libx265_8b.a
         cp build/12b/libx265.a build/10b/libx265_12b.a
+
+        ccache -s
 
     - name: Compile x265 10bit (profiling)
       working-directory: build/10b
@@ -262,7 +277,8 @@ jobs:
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{inputs.target_cpu}} \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="-O2 -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include"
+          -DCMAKE_CXX_FLAGS="-O2 -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include" \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         ninja
         mv x265.exe x265-profiling.exe
 

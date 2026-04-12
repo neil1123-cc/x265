@@ -68,7 +68,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v1
+        key: mimalloc-v3.2.8-clang-v2
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -180,11 +180,12 @@ jobs:
           -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
         ninja install
-        # Create cache copy
-        mkdir -p "$GITHUB_WORKSPACE/mimalloc-install"
-        cp -r /usr/local/lib/cmake/mimalloc "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
-        cp -r /usr/local/lib/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
-        cp -r /usr/local/include/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/" 2>/dev/null || true
+        # Create cache copy with correct structure
+        mkdir -p "$GITHUB_WORKSPACE/mimalloc-install/lib/cmake"
+        mkdir -p "$GITHUB_WORKSPACE/mimalloc-install/include"
+        cp -r /usr/local/lib/cmake/mimalloc "$GITHUB_WORKSPACE/mimalloc-install/lib/cmake/" 2>/dev/null || true
+        cp -r /usr/local/lib/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/lib/" 2>/dev/null || true
+        cp -r /usr/local/include/mimalloc* "$GITHUB_WORKSPACE/mimalloc-install/include/" 2>/dev/null || true
 
     - name: Compile obuparse
       if: steps.cache-obuparse.outputs.cache-hit != 'true'
