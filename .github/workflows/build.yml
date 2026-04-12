@@ -256,10 +256,9 @@ jobs:
         # Setup ccache
         export CCACHE_DIR=~/.ccache
         ccache -z  # Zero statistics
-        CCACHE_LAUNCHER="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
 
-        # === Configure all builds in parallel ===
-        echo "=== Configuring all builds ==="
+        # === Configure and build 8bit CLI ===
+        echo "=== Building 8bit CLI ==="
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
@@ -267,8 +266,12 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" $CCACHE_LAUNCHER &
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        ninja -C build/8b &
 
+        # === Configure and build 10bit CLI ===
+        echo "=== Building 10bit CLI ==="
         cmake -GNinja x265/source -B build/10b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
@@ -276,8 +279,12 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" $CCACHE_LAUNCHER &
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        ninja -C build/10b &
 
+        # === Configure and build 12bit CLI ===
+        echo "=== Building 12bit CLI ==="
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
@@ -285,9 +292,12 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" $CCACHE_LAUNCHER &
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        ninja -C build/12b &
 
-        # Multilib libraries (no CLI, EXPORT_C_API=OFF)
+        # === Configure and build 8bit multilib ===
+        echo "=== Building 8bit multilib ==="
         cmake -GNinja x265/source -B build/8b-lib -DCMAKE_PREFIX_PATH=/usr/local \
           -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
           -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
@@ -296,8 +306,12 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" $CCACHE_LAUNCHER &
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        ninja -C build/8b-lib &
 
+        # === Configure and build 12bit multilib ===
+        echo "=== Building 12bit multilib ==="
         cmake -GNinja x265/source -B build/12b-lib -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
           -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
@@ -306,20 +320,12 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" $CCACHE_LAUNCHER &
-
-        wait
-        echo "=== CMake configure complete ==="
-
-        # === Build all in parallel ===
-        echo "=== Building all variants ==="
-        ninja -C build/8b &
-        ninja -C build/10b &
-        ninja -C build/12b &
-        ninja -C build/8b-lib &
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         ninja -C build/12b-lib &
+
         wait
-        echo "=== All builds complete ==="
+        echo "=== All CLI and multilib builds complete ==="
 
         # === Build all-bit-depth version ===
         echo "=== Building all-bit-depth version ==="
@@ -335,7 +341,8 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" $CCACHE_LAUNCHER
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         ninja -C build/all
         echo "=== All builds complete ==="
 
