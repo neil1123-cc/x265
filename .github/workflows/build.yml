@@ -228,9 +228,9 @@ jobs:
 
     # === Build x265 (Parallel) ===
     - name: Setup build dirs
-      run: mkdir -p build/8b build/10b build/12b build/all
+      run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all
 
-    - name: Compile x265 (all versions parallel)
+    - name: Compile x265 CLI executables (8bit, 10bit, 12bit)
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
@@ -245,10 +245,10 @@ jobs:
 
         CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
 
-        # === Parallel CMake Configure ===
-        echo "=== Configuring all x265 versions in parallel ==="
+        # === Build 8bit, 10bit, 12bit CLI executables in parallel ===
+        echo "=== Building CLI executables ==="
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
-          -DENABLE_SHARED=OFF -DEXPORT_C_API=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
@@ -266,7 +266,7 @@ jobs:
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" &
 
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
-          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DEXPORT_C_API=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
@@ -275,20 +275,56 @@ jobs:
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" &
 
         wait
-        echo "=== CMake configure complete ==="
-
-        # === Parallel Ninja Build ===
-        echo "=== Building all x265 versions in parallel ==="
         ninja -C build/8b &
         ninja -C build/10b &
         ninja -C build/12b &
         wait
-        echo "=== 8bit, 10bit, 12bit build complete ==="
+        echo "=== CLI executables build complete ==="
 
-        # === Build all-bit-depth version (reuse 8b and 12b libs) ===
+    - name: Build multilib libraries for all-bit-depth
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+      run: |
+        CPU=${{matrix.target_cpu}}
+        PGO_FLAG=""
+        if [ -f build/x265.profdata ]; then
+          PGO_FLAG="-fprofile-instr-use=build/x265.profdata"
+        fi
+
+        CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
+
+        # === Build 8bit and 12bit libraries with EXPORT_C_API=OFF for multilib linking ===
+        echo "=== Building multilib libraries ==="
+        cmake -GNinja x265/source -B build/8b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" &
+
+        cmake -GNinja x265/source -B build/12b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" &
+
+        wait
+        ninja -C build/8b-lib &
+        ninja -C build/12b-lib &
+        wait
+        echo "=== Multilib libraries build complete ==="
+
+        # === Build all-bit-depth version ===
         echo "=== Building all-bit-depth version ==="
-        cp build/8b/libx265.a build/all/libx265_8b.a
-        cp build/12b/libx265.a build/all/libx265_12b.a
+        cp build/8b-lib/libx265.a build/all/libx265_8b.a
+        cp build/12b-lib/libx265.a build/all/libx265_12b.a
 
         cmake -GNinja x265/source -B build/all -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
