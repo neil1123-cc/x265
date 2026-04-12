@@ -119,7 +119,6 @@ jobs:
           autoconf
           automake
           libtool
-          ccache
           mingw-w64-clang-x86_64-nasm
           mingw-w64-clang-x86_64-clang
           mingw-w64-clang-x86_64-compiler-rt
@@ -133,13 +132,6 @@ jobs:
           mingw-w64-clang-x86_64-cmake
           mingw-w64-clang-x86_64-ninja
           mingw-w64-clang-x86_64-llvm
-
-    - name: Cache ccache
-      uses: actions/cache@v4
-      with:
-        path: ~/.ccache
-        key: ccache-x265-profiling-${{ runner.os }}-${{ github.sha }}
-        restore-keys: ccache-x265-profiling-${{ runner.os }}-
 
     - name: Compile FFmpeg (full with avfilter)
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -238,31 +230,24 @@ jobs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        export CCACHE_DIR=~/.ccache
-        ccache -z
-
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
         ninja -C build/8b &
 
         cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
         ninja -C build/12b &
 
         wait
 
         cp build/8b/libx265.a build/10b/libx265_8b.a
         cp build/12b/libx265.a build/10b/libx265_12b.a
-
-        ccache -s
 
     - name: Compile x265 10bit (profiling)
       working-directory: build/10b
@@ -277,8 +262,7 @@ jobs:
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{inputs.target_cpu}} \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="-O2 -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include" \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_FLAGS="-O2 -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include"
         ninja
         mv x265.exe x265-profiling.exe
 

@@ -126,7 +126,6 @@ jobs:
           autoconf
           automake
           libtool
-          ccache
           mingw-w64-clang-x86_64-nasm
           mingw-w64-clang-x86_64-clang
           mingw-w64-clang-x86_64-compiler-rt
@@ -139,13 +138,6 @@ jobs:
           mingw-w64-clang-x86_64-pkgconf
           mingw-w64-clang-x86_64-cmake
           mingw-w64-clang-x86_64-ninja
-
-    - name: Cache ccache
-      uses: actions/cache@v4
-      with:
-        path: ~/.ccache
-        key: ccache-x265-${{ runner.os }}-${{ github.sha }}
-        restore-keys: ccache-x265-${{ runner.os }}-
 
     - name: Compile FFmpeg (lavf input only)
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -254,10 +246,6 @@ jobs:
 
         CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
 
-        # Setup ccache
-        export CCACHE_DIR=~/.ccache
-        ccache -z  # Zero statistics
-
         # === Configure and build 8bit CLI ===
         echo "=== Building 8bit CLI ==="
         cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
@@ -267,8 +255,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/8b &
 
         # === Configure and build 10bit CLI ===
@@ -280,8 +267,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/10b &
 
         # === Configure and build 12bit CLI ===
@@ -293,8 +279,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/12b &
 
         # === Configure and build 8bit multilib ===
@@ -307,8 +292,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/8b-lib &
 
         # === Configure and build 12bit multilib ===
@@ -321,8 +305,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/12b-lib &
 
         wait
@@ -342,14 +325,9 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin" \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/all
         echo "=== All builds complete ==="
-
-        # Show ccache statistics
-        echo "=== ccache statistics ==="
-        ccache -s
 
         # Strip all executables
         strip -s build/8b/x265.exe
