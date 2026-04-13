@@ -35,7 +35,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v9
+        key: mimalloc-v3.2.8-clang-v10
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -154,22 +154,18 @@ jobs:
         echo "=== Installed to /usr/local ==="
         ls -la /usr/local/lib/cmake/
         ls -la /usr/local/lib/
-        # Create cache directory with proper structure (mimalloc v3.x uses versioned paths)
+        # Create cache with unversioned paths (copy from versioned install)
+        # mimalloc v3.x installs to mimalloc-3.2/, but CMake looks for mimalloc/
         mkdir -p mimalloc-install/lib/cmake/mimalloc
-        mkdir -p mimalloc-install/lib/cmake/mimalloc-3.2
-        mkdir -p mimalloc-install/lib/mimalloc-3.2
-        mkdir -p mimalloc-install/include/mimalloc-3.2
+        mkdir -p mimalloc-install/lib/mimalloc
+        mkdir -p mimalloc-install/include/mimalloc
         mkdir -p mimalloc-install/lib/pkgconfig
-        # Copy versioned files
-        cp -rv /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc-3.2/
-        cp -rv /usr/local/lib/mimalloc-3.2/* mimalloc-install/lib/mimalloc-3.2/
-        cp -rv /usr/local/include/mimalloc-3.2/* mimalloc-install/include/mimalloc-3.2/
-        cp -rv /usr/local/lib/pkgconfig/mimalloc* mimalloc-install/lib/pkgconfig/ 2>/dev/null || true
-        # Create unversioned copy for CMake compatibility (dereferenced, not symlink)
         cp -rv /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc/
+        cp -rv /usr/local/lib/mimalloc-3.2/* mimalloc-install/lib/mimalloc/
+        cp -rv /usr/local/include/mimalloc-3.2/* mimalloc-install/include/mimalloc/
+        cp -rv /usr/local/lib/pkgconfig/mimalloc.pc mimalloc-install/lib/pkgconfig/ 2>/dev/null || true
         echo "=== Cache directory contents ==="
-        ls -la mimalloc-install/lib/cmake/
-        ls -la mimalloc-install/lib/
+        ls -la mimalloc-install/lib/cmake/mimalloc/
         mv mimalloc-install "$GITHUB_WORKSPACE/"
 
     - name: Compile obuparse

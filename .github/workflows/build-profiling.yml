@@ -61,7 +61,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v9
+        key: mimalloc-v3.2.8-clang-v10
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -172,11 +172,15 @@ jobs:
           -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
         ninja install
-        mkdir -p mimalloc-install/lib/cmake
-        mkdir -p mimalloc-install/include
-        cp -r /usr/local/lib/cmake/mimalloc mimalloc-install/lib/cmake/ 2>/dev/null || true
-        cp -r /usr/local/lib/mimalloc* mimalloc-install/lib/ 2>/dev/null || true
-        cp -r /usr/local/include/mimalloc* mimalloc-install/include/ 2>/dev/null || true
+        # Create cache with unversioned paths (mimalloc v3.x installs to mimalloc-3.2/)
+        mkdir -p mimalloc-install/lib/cmake/mimalloc
+        mkdir -p mimalloc-install/lib/mimalloc
+        mkdir -p mimalloc-install/include/mimalloc
+        mkdir -p mimalloc-install/lib/pkgconfig
+        cp -r /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc/
+        cp -r /usr/local/lib/mimalloc-3.2/* mimalloc-install/lib/mimalloc/
+        cp -r /usr/local/include/mimalloc-3.2/* mimalloc-install/include/mimalloc/
+        cp -r /usr/local/lib/pkgconfig/mimalloc.pc mimalloc-install/lib/pkgconfig/ 2>/dev/null || true
         mv mimalloc-install "$GITHUB_WORKSPACE/"
 
     - name: Compile obuparse
