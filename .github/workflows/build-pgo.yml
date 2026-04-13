@@ -35,7 +35,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v8
+        key: mimalloc-v3.2.8-clang-v9
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -154,19 +154,19 @@ jobs:
         echo "=== Installed to /usr/local ==="
         ls -la /usr/local/lib/cmake/
         ls -la /usr/local/lib/
-        # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
-        if [ -d /usr/local/lib/cmake/mimalloc-3.2 ] && [ ! -d /usr/local/lib/cmake/mimalloc ]; then
-          ln -s /usr/local/lib/cmake/mimalloc-3.2 /usr/local/lib/cmake/mimalloc
-          echo "Created symlink: mimalloc -> mimalloc-3.2"
-        fi
         # Create cache directory with proper structure (mimalloc v3.x uses versioned paths)
-        mkdir -p mimalloc-install/lib/cmake
-        mkdir -p mimalloc-install/include
+        mkdir -p mimalloc-install/lib/cmake/mimalloc
+        mkdir -p mimalloc-install/lib/cmake/mimalloc-3.2
+        mkdir -p mimalloc-install/lib/mimalloc-3.2
+        mkdir -p mimalloc-install/include/mimalloc-3.2
         mkdir -p mimalloc-install/lib/pkgconfig
-        cp -rv /usr/local/lib/cmake/mimalloc* mimalloc-install/lib/cmake/
-        cp -rv /usr/local/lib/mimalloc* mimalloc-install/lib/
-        cp -rv /usr/local/include/mimalloc* mimalloc-install/include/
+        # Copy versioned files
+        cp -rv /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc-3.2/
+        cp -rv /usr/local/lib/mimalloc-3.2/* mimalloc-install/lib/mimalloc-3.2/
+        cp -rv /usr/local/include/mimalloc-3.2/* mimalloc-install/include/mimalloc-3.2/
         cp -rv /usr/local/lib/pkgconfig/mimalloc* mimalloc-install/lib/pkgconfig/ 2>/dev/null || true
+        # Create unversioned copy for CMake compatibility (dereferenced, not symlink)
+        cp -rv /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc/
         echo "=== Cache directory contents ==="
         ls -la mimalloc-install/lib/cmake/
         ls -la mimalloc-install/lib/
@@ -213,12 +213,6 @@ jobs:
         echo "=== Verifying installation ==="
         ls -la /usr/local/lib/cmake/
         ls -la /usr/local/lib/
-        # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
-        if [ -d /usr/local/lib/cmake/mimalloc-3.2 ] && [ ! -d /usr/local/lib/cmake/mimalloc ]; then
-          ln -s /usr/local/lib/cmake/mimalloc-3.2 /usr/local/lib/cmake/mimalloc
-          echo "Created symlink: mimalloc -> mimalloc-3.2"
-        fi
-        ls -la /usr/local/lib/cmake/
 
     - name: Install cached obuparse
       if: steps.cache-obuparse.outputs.cache-hit == 'true'
