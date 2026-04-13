@@ -39,7 +39,6 @@
 #include <stdint.h>
 #include <memory.h>
 #include <assert.h>
-#include <stdlib.h>
 
 #include "x265.h"
 
@@ -151,7 +150,6 @@ typedef uint64_t sse_t;
 #endif
 
 #define MAX_UINT        0xFFFFFFFFU // max. value of unsigned 32-bit integer
-#define MAX_UINT64      0xFFFFFFFFFFFFFFFFULL // max. value of unsigned 64-bit integer
 #define MAX_INT         2147483647  // max. value of signed 32-bit integer
 #define MAX_INT64       0x7FFFFFFFFFFFFFFFLL  // max. value of signed 64-bit integer
 #define MAX_DOUBLE      1.7e+308    // max. value of double-type value
@@ -352,10 +350,6 @@ typedef int16_t  coeff_t;      // transform coefficient
 
 #define MAX_MCSTF_TEMPORAL_WINDOW_LENGTH 8
 
-#define MAX_NUM_PUS_PER_CTU      593   // Maximum number of PUs in a 64x64 CTU
-#define MAX_NUM_PU_SIZES         24    // Number of distinct PU sizes in a 64x64 CTU
-#define MIN_TME_THREADS          32    // Recommended number of threads for ThreadedME
-
 namespace X265_NS {
 
 enum { SAO_NUM_OFFSET = 4 };
@@ -467,6 +461,20 @@ uint32_t x265_picturePlaneSize(int csp, int width, int height, int plane);
 void*    x265_malloc(size_t size);
 void     x265_free(void *ptr);
 char*    x265_slurp_file(const char *filename);
+
+/* Helper function to concatenate filename with suffix */
+static inline char* x265_strcatFilename(const char* input, const char* suffix)
+{
+    char* output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
+    if (!output)
+    {
+        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory for filename\n");
+        return NULL;
+    }
+    strcpy(output, input);
+    strcat(output, suffix);
+    return output;
+}
 
 /* located in primitives.cpp */
 void     x265_setup_primitives(x265_param* param);

@@ -207,20 +207,20 @@ public:
     explicit JsonString(string &&value)      : Value(move(value)) {}
 };
 
-class JsonArray final : public Value<Json::ARRAY, Json::array> {
+class JsonArrayValue final : public Value<Json::ARRAY, Json::array> {
     const Json::array &array_items() const override { return m_value; }
     const Json & operator[](size_t i) const override;
 public:
-    explicit JsonArray(const Json::array &value) : Value(value) {}
-    explicit JsonArray(Json::array &&value)      : Value(move(value)) {}
+    explicit JsonArrayValue(const Json::array &value) : Value(value) {}
+    explicit JsonArrayValue(Json::array &&value)      : Value(move(value)) {}
 };
 
-class JsonObject final : public Value<Json::OBJECT, Json::object> {
+class JsonObjectValue final : public Value<Json::OBJECT, Json::object> {
     const Json::object &object_items() const override { return m_value; }
     const Json & operator[](const string &key) const override;
 public:
-    explicit JsonObject(const Json::object &value) : Value(value) {}
-    explicit JsonObject(Json::object &&value)      : Value(move(value)) {}
+    explicit JsonObjectValue(const Json::object &value) : Value(value) {}
+    explicit JsonObjectValue(Json::object &&value)      : Value(move(value)) {}
 };
 
 class JsonNull final : public Value<Json::NUL, NullStruct> {
@@ -264,10 +264,10 @@ Json::Json(bool value)                 : m_ptr(value ? statics().t : statics().f
 Json::Json(const string &value)        : m_ptr(make_shared<JsonString>(value)) {}
 Json::Json(string &&value)             : m_ptr(make_shared<JsonString>(move(value))) {}
 Json::Json(const char * value)         : m_ptr(make_shared<JsonString>(value)) {}
-Json::Json(const Json::array &values)  : m_ptr(make_shared<JsonArray>(values)) {}
-Json::Json(Json::array &&values)       : m_ptr(make_shared<JsonArray>(move(values))) {}
-Json::Json(const Json::object &values) : m_ptr(make_shared<JsonObject>(values)) {}
-Json::Json(Json::object &&values)      : m_ptr(make_shared<JsonObject>(move(values))) {}
+Json::Json(const Json::array &values)  : m_ptr(make_shared<JsonArrayValue>(values)) {}
+Json::Json(Json::array &&values)       : m_ptr(make_shared<JsonArrayValue>(move(values))) {}
+Json::Json(const Json::object &values) : m_ptr(make_shared<JsonObjectValue>(values)) {}
+Json::Json(Json::object &&values)      : m_ptr(make_shared<JsonObjectValue>(move(values))) {}
 
 /* * * * * * * * * * * * * * * * * * * *
  * Accessors
@@ -292,11 +292,11 @@ const map<string, Json> & JsonValue::object_items()              const { return 
 const Json &              JsonValue::operator[] (size_t)         const { return static_null(); }
 const Json &              JsonValue::operator[] (const string &) const { return static_null(); }
 
-const Json & JsonObject::operator[] (const string &key) const {
+const Json & JsonObjectValue::operator[] (const string &key) const {
     auto iter = m_value.find(key);
     return (iter == m_value.end()) ? static_null() : iter->second;
 }
-const Json & JsonArray::operator[] (size_t i) const {
+const Json & JsonArrayValue::operator[] (size_t i) const {
     if (i >= m_value.size()) return static_null();
     else return m_value[i];
 }

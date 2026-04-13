@@ -105,25 +105,23 @@ if(ENABLE_ASSEMBLY AND (ARM64 OR CROSS_COMPILE_ARM64))
 
     # Add Arm intrinsics files here.
     set(C_SRCS_NEON asm-primitives.cpp pixel-prim.h pixel-prim.cpp filter-prim.h filter-prim.cpp dct-prim.h dct-prim.cpp loopfilter-prim.cpp loopfilter-prim.h intrapred-prim.cpp arm64-utils.cpp arm64-utils.h fun-decls.h sao-prim.cpp  mem-neon.h)
-    set(C_SRCS_NEON_DOTPROD filter-neon-dotprod.cpp pixel-prim-neon-dotprod.cpp)
+    set(C_SRCS_NEON_DOTPROD filter-neon-dotprod.cpp)
     set(C_SRCS_NEON_I8MM filter-neon-i8mm.cpp)
-    set(C_SRCS_SVE sao-prim-sve.cpp dct-prim-sve.cpp filter-prim-sve.h filter-prim-sve.cpp pixel-prim-sve.cpp)
+    set(C_SRCS_SVE sao-prim-sve.cpp dct-prim-sve.cpp)
     set(C_SRCS_SVE2 sao-prim-sve2.cpp)
     enable_language(ASM)
 
     # Add Arm assembly files here.
-    set(A_SRCS asm.S mc-a.S mc-a-common.S sad-a.S pixel-util.S pixel-util-common.S p2s.S p2s-common.S blockcopy8.S ssd-a.S ssd-a-common.S intrapred.S dct.S)
+    set(A_SRCS asm.S mc-a.S mc-a-common.S sad-a.S pixel-util.S pixel-util-common.S p2s.S p2s-common.S blockcopy8.S blockcopy8-common.S ssd-a.S ssd-a-common.S intrapred.S dct.S)
     set(A_SRCS_NEON_DOTPROD sad-neon-dotprod.S ssd-neon-dotprod.S)
-    set(A_SRCS_SVE asm-sve.S p2s-sve.S pixel-util-sve.S ssd-a-sve.S)
-    set(A_SRCS_SVE2 mc-a-sve2.S pixel-util-sve2.S)
-    set(A_SRCS_SVE2_BITPERM pixel-util-sve2-bitperm.S)
+    set(A_SRCS_SVE asm-sve.S blockcopy8-sve.S p2s-sve.S pixel-util-sve.S)
+    set(A_SRCS_SVE2 mc-a-sve2.S pixel-util-sve2.S ssd-a-sve2.S)
     set(VEC_PRIMITIVES)
 
-    set(ARM_ASMS "${A_SRCS}" CACHE INTERNAL "Arm Assembly Sources")
+    set(ARM_ASMS "${A_SRCS}" CACHE INTERNAL "ARM Assembly Sources")
+    set(ARM_ASMS_SVE "${A_SRCS_SVE}" CACHE INTERNAL "ARM Assembly Sources that use SVE instruction set")
+    set(ARM_ASMS_SVE2 "${A_SRCS_SVE2}" CACHE INTERNAL "ARM Assembly Sources that use SVE2 instruction set")
     set(ARM_ASMS_NEON_DOTPROD "${A_SRCS_NEON_DOTPROD}" CACHE INTERNAL "Arm Assembly Sources that use the Neon DotProd extension")
-    set(ARM_ASMS_SVE "${A_SRCS_SVE}" CACHE INTERNAL "Arm Assembly Sources that use the SVE extension")
-    set(ARM_ASMS_SVE2 "${A_SRCS_SVE2}" CACHE INTERNAL "Arm Assembly Sources that use the SVE2 extension")
-    set(ARM_ASMS_SVE2_BITPERM "${A_SRCS_SVE2_BITPERM}" CACHE INTERNAL "Arm Assembly Sources that use the SVE2 BitPerm extension")
     foreach(SRC ${C_SRCS_NEON})
         set(ASM_PRIMITIVES ${ASM_PRIMITIVES} aarch64/${SRC})
         set_source_files_properties(aarch64/${SRC} PROPERTIES COMPILE_FLAGS ${AARCH64_NEON_FLAG})
@@ -163,39 +161,6 @@ if(ENABLE_ASSEMBLY AND (ARM64 OR CROSS_COMPILE_ARM64))
         set_source_files_properties(${ASM_PRIMITIVES} PROPERTIES COMPILE_FLAGS -Werror)
     endif()
 endif(ENABLE_ASSEMBLY AND (ARM64 OR CROSS_COMPILE_ARM64))
-
-if(ENABLE_ASSEMBLY AND (RISCV64 OR CROSS_COMPILE_RISCV64))
-    if(GCC AND (CMAKE_CXX_FLAGS_RELEASE MATCHES "-O3"))
-        message(STATUS "Detected CXX compiler using -O3 optimization level")
-        add_definitions(-DAUTO_VECTORIZE=1)
-    endif()
-
-    set(ASM_PRIMITIVES ${ASM_PRIMITIVES} riscv64/asm-primitives.cpp)
-
-    # Add riscv64 intrinsics files here.
-    set(INTRINSIC_SRCS_RVV pixel-prim.cpp sao-prim.cpp filter-prim.cpp intrapred-prim.cpp riscv64_utils.cpp)
-    if(CPU_HAS_RVV_INTRINSIC)
-        foreach(SRC ${INTRINSIC_SRCS_RVV})
-            set(ASM_PRIMITIVES ${ASM_PRIMITIVES} riscv64/${SRC})
-            set_source_files_properties(riscv64/${SRC} PROPERTIES COMPILE_FLAGS ${RISCV64_INTRINSIC_FLAG})
-        endforeach()
-    endif()
-
-    enable_language(ASM)
-    source_group(Assembly FILES ${ASM_PRIMITIVES})
-
-    # Add riscv64 assembly files here.
-    set(A_SRCS asm.S blockcopy8.S dct.S sad-a.S ssd-a.S pixel-util.S mc-a.S p2s.S sao.S loopfilter.S intrapred.S riscv64_utils.S)
-    set(VEC_PRIMITIVES)
-
-    if(CPU_HAS_RVV)
-        set(RISCV64_ASMS "${A_SRCS}" CACHE INTERNAL "RISCV64 Assembly Sources")
-    endif()
-
-    if(RISCV64_WARNINGS_AS_ERRORS)
-        set_source_files_properties(${ASM_PRIMITIVES} PROPERTIES COMPILE_FLAGS -Werror)
-    endif()
-endif(ENABLE_ASSEMBLY AND (RISCV64 OR CROSS_COMPILE_RISCV64))
 
 if(POWER)
     set_source_files_properties(version.cpp PROPERTIES COMPILE_FLAGS -DX265_VERSION=${X265_VERSION})
