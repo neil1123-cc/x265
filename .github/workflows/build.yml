@@ -3,10 +3,6 @@ name: Build
 on:
   push:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (empty = artifact only)'
-        default: ''
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -45,6 +41,11 @@ jobs:
       with:
         path: x265
         fetch-depth: 0
+
+    - name: Get latest tag
+      id: tag
+      working-directory: x265
+      run: echo "version=$(git describe --tags --match=[0-9].[0-9]* --abbrev=0)" >> $GITHUB_OUTPUT
 
     - name: Fetch PGO profdata
       shell: bash
@@ -338,18 +339,18 @@ jobs:
         path: dist/*
 
     - name: Compress for release
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
+      if: github.event_name == 'workflow_dispatch'
       run: |
         cd dist
-        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang.${{ github.event.inputs.tag }}.7z \
+        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z \
           x265-8bit.exe x265-10bit.exe x265-12bit.exe x265.exe
 
     - name: Release
       uses: softprops/action-gh-release@v2
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
+      if: github.event_name == 'workflow_dispatch'
       with:
-        tag_name: ${{ github.event.inputs.tag }}
-        files: x265-win64-${{matrix.target_cpu}}-clang.${{ github.event.inputs.tag }}.7z
+        tag_name: ${{ steps.tag.outputs.version }}
+        files: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true
