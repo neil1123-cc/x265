@@ -3,10 +3,16 @@ name: Build
 on:
   push:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'which tag to upload to'
-        default: ''
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -15,153 +21,335 @@ jobs:
       run:
         shell: msys2 {0}
     strategy:
+      fail-fast: false
       matrix:
         target_cpu:
-        - x86-64
-        - haswell
-        - skylake
-        - alderlake
-        - raptorlake
-        - arrowlake
-        - znver2
-        - znver3
-        - znver4
-        - znver5
-        toolchain:
-        - clang
-        #- ucrt
+          - x86-64
+          - haswell
+          - skylake
+          - alderlake
+          - raptorlake
+          - arrowlake
+          - znver2
+          - znver3
+          - znver4
+          - znver5
+
     steps:
-    - name: Parse matrix
-      run: |
-        if ("${{matrix.toolchain}}" -eq "clang") {
-          echo "MSYSTEM=CLANG64" >> $env:GITHUB_ENV
-        } else {
-          echo "MSYSTEM=UCRT64" >> $env:GITHUB_ENV
-        }
-      shell: pwsh
     - name: Checkout x265
       uses: actions/checkout@v4
       with:
         path: x265
         fetch-depth: 0
+
+    - name: Get latest tag
+      id: tag
+      shell: bash
+      working-directory: x265
+      run: echo "version=$(git describe --tags --match=[0-9].[0-9]* --abbrev=0)" >> $GITHUB_OUTPUT
+
+    - name: Fetch PGO profdata
+      shell: bash
+      run: |
+        cd x265
+        git fetch origin profdata-x86-64 --depth=1 || echo "Branch not found"
+        git checkout profdata-x86-64 -- x265.profdata 2>/dev/null || echo "profdata not found"
+        mkdir -p ../build
+        mv x265.profdata ../build/x265.profdata 2>/dev/null || echo "No profdata"
+
+    # === Dependency Caching ===
     - name: Cache FFmpeg
-      id: cache-ff
+      id: cache-ffmpeg
       uses: actions/cache@v4
       with:
         path: ffmpeg
-        key: ${{matrix.target_cpu}}-${{matrix.toolchain}}-ff
+        key: ffmpeg-n8.1-lavf-v1-clang
+
+    - name: Cache obuparse
+      id: cache-obuparse
+      uses: actions/cache@v4
+      with:
+        path: obuparse-install
+        key: obuparse-latest-clang-v1
+
+    - name: Cache L-SMASH
+      id: cache-lsmash
+      uses: actions/cache@v4
+      with:
+        path: lsmash-install
+        key: lsmash-latest-clang-v1
+
     - name: Checkout FFmpeg
       uses: actions/checkout@v4
       with:
         path: ffmpeg
         repository: FFmpeg/FFmpeg
-        ref: n4.4
-      if: steps.cache-ff.outputs.cache-hit != 'true'
-    - name: Cache mimalloc
-      id: cache-mi
-      uses: actions/cache@v4
-      with:
-        path: mimalloc
-        key: ${{matrix.target_cpu}}-${{matrix.toolchain}}-mi-v2
+        ref: n8.1
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+
     - name: Checkout mimalloc
       uses: actions/checkout@v4
       with:
         path: mimalloc
-        repository: AmusementClub/mimalloc2
-        ref: v2.0.2-AC
-      if: steps.cache-mi.outputs.cache-hit != 'true'
+        repository: microsoft/mimalloc
+        ref: v3.2.8
+
+    - name: Checkout obuparse
+      uses: actions/checkout@v4
+      with:
+        path: obuparse
+        repository: dwbuiten/obuparse
+      if: steps.cache-obuparse.outputs.cache-hit != 'true'
+
+    - name: Checkout L-SMASH
+      uses: actions/checkout@v4
+      with:
+        path: lsmash
+        repository: vimeo/l-smash
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
-        msystem: ${{env.MSYSTEM}}
+        msystem: CLANG64
         update: true
         install: >-
           p7zip
           base-devel
-          mingw-w64-${{matrix.toolchain}}-x86_64-nasm
-          mingw-w64-${{matrix.toolchain}}-x86_64-toolchain
-          mingw-w64-${{matrix.toolchain}}-x86_64-cmake
-          mingw-w64-${{matrix.toolchain}}-x86_64-ninja
-    - name: Compile FFmpeg
-      run: |
-        ./configure --enable-gpl --enable-version3 --disable-runtime-cpudetect --disable-all --disable-autodetect --enable-avformat --enable-avcodec --enable-avformat --disable-everything --disable-network --enable-demuxer=mpegts,mov,matroska,h264,hevc --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv --enable-protocol=file,pipe --cc=cc --cxx=c++ --cpu=${{matrix.target_cpu}}
-        make -j`nproc`
+          git
+          libtool
+          mingw-w64-clang-x86_64-nasm
+          mingw-w64-clang-x86_64-clang
+          mingw-w64-clang-x86_64-compiler-rt
+          mingw-w64-clang-x86_64-lld
+          mingw-w64-clang-x86_64-crt
+          mingw-w64-clang-x86_64-headers
+          mingw-w64-clang-x86_64-libc++
+          mingw-w64-clang-x86_64-libwinpthread
+          mingw-w64-clang-x86_64-make
+          mingw-w64-clang-x86_64-pkgconf
+          mingw-w64-clang-x86_64-cmake
+          mingw-w64-clang-x86_64-ninja
+
+    - name: Compile FFmpeg (lavf input only)
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
       working-directory: ffmpeg
-      if: steps.cache-ff.outputs.cache-hit != 'true'
+      run: |
+        ./configure --prefix=/usr/local --enable-gpl \
+          --disable-runtime-cpudetect --disable-all --disable-autodetect \
+          --enable-avformat --enable-avcodec \
+          --disable-everything --disable-network \
+          --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf \
+          --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
+          --enable-protocol=file \
+          --cc=cc --cxx=c++ --cpu=x86-64
+        make -j$(nproc)
+
     - name: Get rid of .dll.a
       run: find /*64/ /usr/ -type f -name "*.dll.a" -print -delete
+
     - name: Install FFmpeg
-      run: make install
       working-directory: ffmpeg
+      run: make install
+
     - name: Compile mimalloc
+      working-directory: mimalloc
       run: |
         mkdir build
         cd build
-        # our fork only supports static linking.
-        cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POLICY_DEFAULT_CMP0069=NEW -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON -DMI_BUILD_SHARED=OFF -DMI_BUILD_STATIC=ON -DMI_BUILD_OBJECT=OFF -DMI_BUILD_TESTS=OFF
+        cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+          -DMI_BUILD_SHARED=OFF -DMI_BUILD_STATIC=ON -DMI_BUILD_OBJECT=OFF \
+          -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
-      working-directory: mimalloc
-      if: steps.cache-mi.outputs.cache-hit != 'true'
-    - name: Install mimalloc
-      run: ninja install
-      working-directory: mimalloc/build
-    - name: Setup build dir
-      run: mkdir -p build/8b build/10b build/12b
-    - name: Download profdata
-      run: iwr https://github.com/${{github.repository}}/raw/profdata/x265.profdata -OutFile x265.profdata
-      shell: pwsh
-    - name: Compile x265 8bit
+        ninja install
+        # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
+        shopt -s nullglob
+        for dir in /usr/local/lib/cmake/mimalloc-*; do
+          ln -s "$dir" /usr/local/lib/cmake/mimalloc
+          break
+        done
+
+    - name: Compile obuparse
+      if: steps.cache-obuparse.outputs.cache-hit != 'true'
+      working-directory: obuparse
       run: |
-        cmake -GNinja ../../x265/source -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
-        ninja
-        cp libx265.a ../10b/libx265_8b.a
-      working-directory: build/8b
-    - name: Compile x265 12bit
+        make CC=cc libobuparse.a
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+        # Create cache copy (use relative path for actions/cache)
+        mkdir -p obuparse-install/include
+        mkdir -p obuparse-install/lib
+        cp /usr/local/include/obuparse.h obuparse-install/include/
+        cp /usr/local/lib/libobuparse.a obuparse-install/lib/
+        mv obuparse-install "$GITHUB_WORKSPACE/"
+
+    - name: Compile L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+      working-directory: lsmash
       run: |
-        cmake -GNinja ../../x265/source -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
-        ninja
-        cp libx265.a ../10b/libx265_12b.a
-      working-directory: build/12b
-    - name: Compile x265 10bit (with PGO)
-      working-directory: build
+        ./configure --prefix=/usr/local --cc=cc \
+          --extra-cflags="-I/usr/local/include" \
+          --extra-ldflags="-L/usr/local/lib" \
+          --extra-libs="-lobuparse"
+        make -j$(nproc)
+        make install
+        cp importer/importer.h /usr/local/include/lsmash_importer.h
+        # Create cache copy (use relative path for actions/cache)
+        mkdir -p lsmash-install/include
+        mkdir -p lsmash-install/lib
+        cp -r /usr/local/include/lsmash* lsmash-install/include/
+        cp -r /usr/local/lib/liblsmash* lsmash-install/lib/
+        cp -r /usr/local/lib/pkgconfig lsmash-install/lib/ 2>/dev/null || true
+        mv lsmash-install "$GITHUB_WORKSPACE/"
+
+    - name: Install cached obuparse
+      if: steps.cache-obuparse.outputs.cache-hit == 'true'
       run: |
-        cp -a 10b 10bprof
-        export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-        cmake_flags="-GNinja ../../x265/source -DEXTRA_LIB=x265_8b.a;x265_12b.a -DEXTRA_LINK_FLAGS=-L. -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON -DTARGET_CPU=${{matrix.target_cpu}} -DUSE_MIMALLOC=ON -DUSE_LTO=ON -DCMAKE_EXE_LINKER_FLAGS=-LD:/a/_temp/msys/msys64/usr/local/lib -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy"
-        pushd 10b
-        cmake $cmake_flags "-DCMAKE_CXX_FLAGS=-I../../FFmpeg -fprofile-instr-use=${{github.workspace}}/x265.profdata"
-        ninja
-        strip -s x265.exe
-        popd
-        pushd 10bprof
-        cmake $cmake_flags "-DCMAKE_CXX_FLAGS=-I../../FFmpeg -fprofile-instr-generate -fprofile-update=atomic"
-        ninja
-        strip -s x265.exe
-        mv x265.exe x265-profiling.exe
-        popd
+        cp obuparse-install/include/* /usr/local/include/
+        cp obuparse-install/lib/* /usr/local/lib/
+
+    - name: Install cached L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit == 'true'
+      run: |
+        cp -r lsmash-install/include/* /usr/local/include/
+        cp -r lsmash-install/lib/* /usr/local/lib/
+
+    # === Build x265 (All variants in parallel) ===
+    - name: Setup build dirs
+      run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all
+
+    - name: Compile x265 (all variants parallel)
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+      run: |
+        CPU=${{matrix.target_cpu}}
+        PGO_FLAG=""
+        if [ -f build/x265.profdata ]; then
+          PGO_FLAG="-fprofile-instr-use=build/x265.profdata"
+          echo "Using PGO profdata"
+        else
+          echo "Building without PGO"
+        fi
+
+        CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
+
+        # === Configure and build 8bit CLI ===
+        echo "=== Building 8bit CLI ==="
+        cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
+          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja -C build/8b &
+
+        # === Configure and build 10bit CLI ===
+        echo "=== Building 10bit CLI ==="
+        cmake -GNinja x265/source -B build/10b -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja -C build/10b &
+
+        # === Configure and build 12bit CLI ===
+        echo "=== Building 12bit CLI ==="
+        cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja -C build/12b &
+
+        # === Configure and build 8bit multilib ===
+        echo "=== Building 8bit multilib ==="
+        cmake -GNinja x265/source -B build/8b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja -C build/8b-lib &
+
+        # === Configure and build 12bit multilib ===
+        echo "=== Building 12bit multilib ==="
+        cmake -GNinja x265/source -B build/12b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja -C build/12b-lib &
+
+        wait
+        echo "=== All CLI and multilib builds complete ==="
+
+        # === Build all-bit-depth version ===
+        echo "=== Building all-bit-depth version ==="
+        cp build/8b-lib/libx265.a build/all/libx265_8b.a
+        cp build/12b-lib/libx265.a build/all/libx265_12b.a
+
+        cmake -GNinja x265/source -B build/all -DCMAKE_PREFIX_PATH=/usr/local \
+          -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
+          -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
+          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja -C build/all
+        echo "=== All builds complete ==="
+
+        # Strip all executables
+        strip -s build/8b/x265.exe
+        strip -s build/10b/x265.exe
+        strip -s build/12b/x265.exe
+        strip -s build/all/x265.exe
+
     - name: Package
       run: |
         mkdir dist
-        cp ${{env.DLL_DEPS}} build/10b*/x265*.exe dist
-    - name: Upload
+        cp build/8b/x265.exe dist/x265-8bit.exe
+        cp build/10b/x265.exe dist/x265-10bit.exe
+        cp build/12b/x265.exe dist/x265-12bit.exe
+        cp build/all/x265.exe dist/x265.exe
+
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: x265-win64-${{matrix.target_cpu}}-${{matrix.toolchain}}-full
+        name: x265-win64-${{matrix.target_cpu}}-clang
         path: dist/*
 
-    - name: Compress artifact for release
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
+    - name: Compress for release
+      if: github.event_name == 'workflow_dispatch'
       run: |
         cd dist
-        # do not release profiling binary
-        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-${{matrix.toolchain}}.${{ github.event.inputs.tag }}.7z x265.exe
+        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z \
+          x265-8bit.exe x265-10bit.exe x265-12bit.exe x265.exe
 
     - name: Release
       uses: softprops/action-gh-release@v2
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
+      if: github.event_name == 'workflow_dispatch'
       with:
-        tag_name: ${{ github.event.inputs.tag }}
-        files: x265-win64-${{matrix.target_cpu}}-${{matrix.toolchain}}.${{ github.event.inputs.tag }}.7z
+        tag_name: ${{ steps.tag.outputs.version }}
+        files: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true

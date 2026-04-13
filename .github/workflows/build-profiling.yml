@@ -1,0 +1,291 @@
+name: Build Profiling
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_cpu:
+        description: 'Target CPU architecture'
+        required: true
+        default: 'x86-64'
+        type: choice
+        options:
+          - x86-64
+          - haswell
+          - skylake
+          - alderlake
+          - raptorlake
+          - arrowlake
+          - znver2
+          - znver3
+          - znver4
+          - znver5
+      upload_profdata:
+        description: 'Upload profdata to Git branch'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.target_cpu }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: Checkout x265
+      uses: actions/checkout@v4
+      with:
+        path: x265
+        fetch-depth: 0
+
+    # === Dependency Caching ===
+    - name: Cache FFmpeg
+      id: cache-ffmpeg
+      uses: actions/cache@v4
+      with:
+        path: ffmpeg
+        key: ffmpeg-n8.1-full-v3-clang
+
+    - name: Cache obuparse
+      id: cache-obuparse
+      uses: actions/cache@v4
+      with:
+        path: obuparse-install
+        key: obuparse-latest-clang-v1
+
+    - name: Cache L-SMASH
+      id: cache-lsmash
+      uses: actions/cache@v4
+      with:
+        path: lsmash-install
+        key: lsmash-latest-clang-v1
+
+    - name: Checkout FFmpeg
+      uses: actions/checkout@v4
+      with:
+        path: ffmpeg
+        repository: FFmpeg/FFmpeg
+        ref: n8.1
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+
+    - name: Checkout mimalloc
+      uses: actions/checkout@v4
+      with:
+        path: mimalloc
+        repository: microsoft/mimalloc
+        ref: v3.2.8
+
+    - name: Checkout obuparse
+      uses: actions/checkout@v4
+      with:
+        path: obuparse
+        repository: dwbuiten/obuparse
+      if: steps.cache-obuparse.outputs.cache-hit != 'true'
+
+    - name: Checkout L-SMASH
+      uses: actions/checkout@v4
+      with:
+        path: lsmash
+        repository: vimeo/l-smash
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: CLANG64
+        update: true
+        install: >-
+          p7zip
+          base-devel
+          git
+          libtool
+          mingw-w64-clang-x86_64-nasm
+          mingw-w64-clang-x86_64-clang
+          mingw-w64-clang-x86_64-compiler-rt
+          mingw-w64-clang-x86_64-lld
+          mingw-w64-clang-x86_64-crt
+          mingw-w64-clang-x86_64-headers
+          mingw-w64-clang-x86_64-libc++
+          mingw-w64-clang-x86_64-libwinpthread
+          mingw-w64-clang-x86_64-make
+          mingw-w64-clang-x86_64-pkgconf
+          mingw-w64-clang-x86_64-cmake
+          mingw-w64-clang-x86_64-ninja
+          mingw-w64-clang-x86_64-llvm
+
+    - name: Compile FFmpeg (full with avfilter)
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+      working-directory: ffmpeg
+      run: |
+        PGO_OPT="--enable-avdevice --enable-avfilter --enable-ffmpeg --enable-indev=lavfi"
+        for f in testsrc testsrc2 smptebars smptehdbars nullsrc geq gradients format scale noise; do
+          PGO_OPT="$PGO_OPT --enable-filter=$f"
+        done
+        ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
+          --disable-runtime-cpudetect --disable-all --disable-autodetect \
+          --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
+          --disable-everything --disable-network $PGO_OPT \
+          --enable-demuxer=mpegts,mov,matroska,h264,hevc,rawvideo,yuv4mpegpipe \
+          --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
+          --enable-encoder=rawvideo,aac,ac3,mp2,pcm_s16le,pcm_s24le,pcm_s32le \
+          --enable-muxer=yuv4mpegpipe \
+          --enable-protocol=file,pipe \
+          --cc=cc --cxx=c++ --cpu=x86-64
+        make -j$(nproc)
+
+    - name: Get rid of .dll.a
+      run: find /*64/ /usr/ -type f -name "*.dll.a" -print -delete
+
+    - name: Install FFmpeg
+      run: make install
+      working-directory: ffmpeg
+
+    - name: Compile mimalloc
+      working-directory: mimalloc
+      run: |
+        mkdir build
+        cd build
+        cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+          -DMI_BUILD_SHARED=OFF -DMI_BUILD_STATIC=ON -DMI_BUILD_OBJECT=OFF \
+          -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
+        ninja
+        ninja install
+        # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
+        shopt -s nullglob
+        for dir in /usr/local/lib/cmake/mimalloc-*; do
+          ln -s "$dir" /usr/local/lib/cmake/mimalloc
+          break
+        done
+
+    - name: Compile obuparse
+      if: steps.cache-obuparse.outputs.cache-hit != 'true'
+      working-directory: obuparse
+      run: |
+        make CC=cc libobuparse.a
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+        mkdir -p obuparse-install/include
+        mkdir -p obuparse-install/lib
+        cp /usr/local/include/obuparse.h obuparse-install/include/
+        cp /usr/local/lib/libobuparse.a obuparse-install/lib/
+        mv obuparse-install "$GITHUB_WORKSPACE/"
+
+    - name: Compile L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+      working-directory: lsmash
+      run: |
+        ./configure --prefix=/usr/local --cc=cc \
+          --extra-cflags="-I/usr/local/include" \
+          --extra-ldflags="-L/usr/local/lib" \
+          --extra-libs="-lobuparse"
+        make -j$(nproc)
+        make install
+        cp importer/importer.h /usr/local/include/lsmash_importer.h
+        mkdir -p lsmash-install/include
+        mkdir -p lsmash-install/lib
+        cp -r /usr/local/include/lsmash* lsmash-install/include/
+        cp -r /usr/local/lib/liblsmash* lsmash-install/lib/
+        cp -r /usr/local/lib/pkgconfig lsmash-install/lib/ 2>/dev/null || true
+        mv lsmash-install "$GITHUB_WORKSPACE/"
+
+    - name: Install cached obuparse
+      if: steps.cache-obuparse.outputs.cache-hit == 'true'
+      run: |
+        cp obuparse-install/include/* /usr/local/include/
+        cp obuparse-install/lib/* /usr/local/lib/
+
+    - name: Install cached L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit == 'true'
+      run: |
+        cp -r lsmash-install/include/* /usr/local/include/
+        cp -r lsmash-install/lib/* /usr/local/lib/
+
+    - name: Setup build dir
+      run: mkdir -p build/8b build/10b build/12b
+
+    - name: Compile x265 8bit and 12bit (parallel)
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+      run: |
+        cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
+          -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+          -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O2 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+        ninja -C build/8b &
+
+        cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
+          -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O2 -flto=thin -fmerge-all-constants -I/usr/local/include" \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+        ninja -C build/12b &
+
+        wait
+
+        cp build/8b/libx265.a build/10b/libx265_8b.a
+        cp build/12b/libx265.a build/10b/libx265_12b.a
+
+    - name: Compile x265 10bit (profiling)
+      working-directory: build/10b
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+      run: |
+        cmake -GNinja ../../x265/source -DCMAKE_PREFIX_PATH=/usr/local \
+          -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
+          -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
+          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{inputs.target_cpu}} \
+          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="-O2 -flto=thin -fmerge-all-constants -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        ninja
+        mv x265.exe x265-profiling.exe
+
+    - name: Package
+      run: |
+        mkdir dist
+        cp build/10b/x265-profiling.exe dist/
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x265-profiling-${{ inputs.target_cpu }}
+        path: dist/*
+
+    - name: Push profdata to branch
+      if: inputs.upload_profdata
+      run: |
+        # Generate test video and run minimal workload
+        mkdir -p test-videos
+        ffmpeg -f lavfi -i "testsrc=duration=2:size=640x480:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/test.y4m
+        ./build/10b/x265-profiling.exe --crf 28 --preset medium test-videos/test.y4m -o /dev/null 2>/dev/null || true
+
+        # Merge profdata
+        llvm-profdata merge -output=default.profdata *.profraw
+
+        # Push to branch
+        cd x265
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git checkout --orphan profdata-${{ inputs.target_cpu }}
+        git rm -rf . 2>/dev/null || true
+        cp ../default.profdata ./x265.profdata
+        git add x265.profdata
+        git commit -m "Update profdata for ${{ inputs.target_cpu }} - $(date +%Y%m%d)" || echo "No changes"
+        git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git profdata-${{ inputs.target_cpu }}
