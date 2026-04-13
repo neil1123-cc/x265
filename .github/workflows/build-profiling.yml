@@ -54,14 +54,14 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ffmpeg
-        key: ffmpeg-n8.1-full-v2-clang
+        key: ffmpeg-n8.1-full-v3-clang
 
     - name: Cache mimalloc
       id: cache-mimalloc
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v4
+        key: mimalloc-v3.2.8-clang-v5
 
     - name: Cache obuparse
       id: cache-obuparse

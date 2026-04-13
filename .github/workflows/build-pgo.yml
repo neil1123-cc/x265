@@ -28,14 +28,14 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ffmpeg
-        key: ffmpeg-n8.1-full-v2-clang
+        key: ffmpeg-n8.1-full-v3-clang
 
     - name: Cache mimalloc
       id: cache-mimalloc
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v4
+        key: mimalloc-v3.2.8-clang-v5
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -112,7 +112,12 @@ jobs:
       working-directory: ffmpeg
       run: |
         PGO_OPT="--enable-avdevice --enable-avfilter --enable-ffmpeg --enable-indev=lavfi"
-        for f in testsrc testsrc2 smptebars smptehdbars nullsrc geq gradients format scale noise; do
+        # Video sources
+        for f in testsrc testsrc2 smptebars smptehdbars nullsrc mandelbrot life cellauto haldclutsrc; do
+          PGO_OPT="$PGO_OPT --enable-filter=$f"
+        done
+        # Video filters for complex content
+        for f in geq gradients format scale noise zoompan hue fps setpts drawbox overlay crop rotate transpose hflip vflip concat select; do
           PGO_OPT="$PGO_OPT --enable-filter=$f"
         done
         ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
@@ -251,35 +256,37 @@ jobs:
       run: |
         mkdir -p test-videos
 
-        # === Resolution & Frame Rate Coverage ===
-        # 4K high motion
+        echo "=== Generating high-quality test videos ==="
+
+        # === 4K Content (Primary target for x265) ===
+        # 4K with complex patterns (mandelbrot has natural motion/detail)
+        ffmpeg -f lavfi -i "mandelbrot=size=3840x2160:rate=30:end_xy=0.4:0.4" -t 15 -c:v rawvideo -pix_fmt yuv420p test-videos/4k_mandelbrot.y4m
+        # 4K standard test
         ffmpeg -f lavfi -i "testsrc=duration=10:size=3840x2160:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/4k_30fps.y4m
+
+        # === 1080p Content (Most common) ===
+        # 1080p with motion simulation (zoompan creates natural movement)
+        ffmpeg -f lavfi -i "testsrc=duration=15:size=1920x1080:rate=30,zoompan=z='min(zoom+0.0015,1.5)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_motion.y4m
         # 1080p standard
         ffmpeg -f lavfi -i "testsrc=duration=20:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_30fps.y4m
         # 1080p high framerate
         ffmpeg -f lavfi -i "testsrc2=duration=15:size=1920x1080:rate=60" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_60fps.y4m
-        # 720p film
-        ffmpeg -f lavfi -i "testsrc=duration=20:size=1280x720:rate=24" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_24fps.y4m
-        # 720p PAL
-        ffmpeg -f lavfi -i "testsrc2=duration=15:size=1280x720:rate=25" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_25fps.y4m
-        # 480p SD
-        ffmpeg -f lavfi -i "smptebars=duration=15:size=854x480:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/480p_smpte.y4m
-        # Low res
-        ffmpeg -f lavfi -i "testsrc=duration=15:size=640x360:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/360p_30fps.y4m
+        # 1080p mandelbrot (complex detail)
+        ffmpeg -f lavfi -i "mandelbrot=size=1920x1080:rate=30:end_xy=0.3:0.3" -t 15 -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_mandelbrot.y4m
+
+        # === 720p Content ===
+        # 720p with film grain (common encoding scenario)
+        ffmpeg -f lavfi -i "testsrc=duration=15:size=1280x720:rate=24,noise=alls=15:allf=t" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_film.y4m
+        # 720p standard
+        ffmpeg -f lavfi -i "testsrc=duration=15:size=1280x720:rate=24" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_24fps.y4m
+        # 720p with color animation (hue rotation simulates color changes)
+        ffmpeg -f lavfi -i "testsrc=duration=10:size=1280x720:rate=30,hue=s=1:h='t*20'" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_color.y4m
 
         # === Motion & Content Types ===
-        # High detail noise
-        ffmpeg -f lavfi -i "nullsrc=s=1280x720:r=30,geq=random(1)*255:random(1)*255:random(1)*255" -t 10 -c:v rawvideo -pix_fmt yuv420p test-videos/noise_color.y4m
-        # Film grain simulation
-        ffmpeg -f lavfi -i "testsrc=duration=15:size=1280x720:rate=30,noise=alls=20:allf=t" -c:v rawvideo -pix_fmt yuv420p test-videos/film_grain.y4m
-        # Smooth gradient
-        ffmpeg -f lavfi -i "gradients=s=1280x720:c0=000000:c1=ffffff" -t 10 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_gray.y4m
-        # Color gradient
-        ffmpeg -f lavfi -i "gradients=s=1280x720:c0=ff0000:c1=00ff00:c2=0000ff" -t 10 -c:v rawvideo -pix_fmt yuv420p test-videos/gradient_rgb.y4m
-        # SMPTE color bars
-        ffmpeg -f lavfi -i "smptebars=duration=10:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/smpte_1080p.y4m
-        # HD color bars
-        ffmpeg -f lavfi -i "smptehdbars=duration=10:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/smptehd_1080p.y4m
+        # High detail noise (stress test for motion estimation)
+        ffmpeg -f lavfi -i "nullsrc=s=1280x720:r=30,geq=random(1)*255:random(1)*255:random(1)*255" -t 8 -c:v rawvideo -pix_fmt yuv420p test-videos/noise_color.y4m
+        # Life pattern (cellular automata - creates complex motion)
+        ffmpeg -f lavfi -i "life=s=1280x720:r=30:mold=10:ratio=0.4" -t 10 -c:v rawvideo -pix_fmt yuv420p test-videos/life_pattern.y4m
 
         echo "=== Test videos generated ==="
         ls -la test-videos/
@@ -287,66 +294,95 @@ jobs:
     - name: Run PGO profiling workload
       working-directory: build/10b
       run: |
-        # === Preset definitions ===
+        # === Preset definitions with varying complexity ===
+        # Fast presets
         OPT_ULTRAFAST="--output-depth 10 --crf 28 --preset ultrafast --threads 4"
         OPT_FASTER="--output-depth 10 --crf 26 --preset faster --threads 4"
         OPT_FAST="--output-depth 10 --crf 24 --preset fast --threads 4"
+
+        # Medium presets (most common)
         OPT_MEDIUM="--output-depth 10 --crf 22 --preset medium --threads 4"
+        OPT_MEDIUM_MT="--output-depth 10 --crf 22 --preset medium --threads 8 --pmode"
         OPT_MEDIUM_AQ="--output-depth 10 --crf 24 --preset medium --aq-mode 2 --threads 4"
+        OPT_MEDIUM_AQ3="--output-depth 10 --crf 22 --preset medium --aq-mode 3 --threads 4"
+
+        # Slow presets
         OPT_SLOW="--output-depth 10 --crf 20 --preset slow --threads 4"
+        OPT_SLOW_MT="--output-depth 10 --crf 20 --preset slow --threads 8"
         OPT_SLOWER="--output-depth 10 --crf 22 --preset slower --threads 2"
         OPT_VERYSLOW="--output-depth 10 --crf 20 --preset veryslow --threads 2"
+
+        # Psy-rd presets (common for quality encoding)
         OPT_PSY="--output-depth 10 --crf 22 --preset medium --psy-rd 1.0:0.15 --aq-mode 3 --threads 4"
+        OPT_PSY_STRONG="--output-depth 10 --crf 20 --preset slow --psy-rd 1.5:0.2 --aq-mode 3 --threads 4"
+
+        # B-frame optimization
         OPT_BFRAME="--output-depth 10 --crf 22 --preset medium --bframes 8 --b-adapt 2 --threads 4"
 
-        echo "=== Primary Resolution Tests ==="
-        # 1080p - most common use case
+        echo "=== 4K Tests (Primary x265 use case) ==="
+        # 4K mandelbrot - complex patterns
+        for opt in "$OPT_MEDIUM" "$OPT_SLOW" "$OPT_MEDIUM_MT"; do
+          ./x265-profiling.exe $opt ../test-videos/4k_mandelbrot.y4m -o /dev/null 2>/dev/null || true
+        done
+        # 4K standard
+        for opt in "$OPT_MEDIUM" "$OPT_FAST"; do
+          ./x265-profiling.exe $opt ../test-videos/4k_30fps.y4m -o /dev/null 2>/dev/null || true
+        done
+
+        echo "=== 1080p Tests (Most common resolution) ==="
+        # 1080p motion - most realistic content
         for opt in "$OPT_MEDIUM" "$OPT_MEDIUM_AQ" "$OPT_SLOW" "$OPT_PSY" "$OPT_BFRAME"; do
+          ./x265-profiling.exe $opt ../test-videos/1080p_motion.y4m -o /dev/null 2>/dev/null || true
+        done
+        # 1080p standard
+        for opt in "$OPT_MEDIUM" "$OPT_MEDIUM_AQ3" "$OPT_SLOW"; do
           ./x265-profiling.exe $opt ../test-videos/1080p_30fps.y4m -o /dev/null 2>/dev/null || true
         done
-        # 1080p 60fps
-        for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
+        # 1080p mandelbrot - complex detail
+        for opt in "$OPT_MEDIUM" "$OPT_PSY_STRONG"; do
+          ./x265-profiling.exe $opt ../test-videos/1080p_mandelbrot.y4m -o /dev/null 2>/dev/null || true
+        done
+        # 1080p 60fps - high framerate
+        for opt in "$OPT_MEDIUM" "$OPT_MEDIUM_MT"; do
           ./x265-profiling.exe $opt ../test-videos/1080p_60fps.y4m -o /dev/null 2>/dev/null || true
         done
 
-        # 720p - various frame rates
+        echo "=== 720p Tests ==="
+        # Film content with grain
+        for opt in "$OPT_MEDIUM" "$OPT_PSY" "$OPT_SLOW"; do
+          ./x265-profiling.exe $opt ../test-videos/720p_film.y4m -o /dev/null 2>/dev/null || true
+        done
+        # Standard 720p
         for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
           ./x265-profiling.exe $opt ../test-videos/720p_24fps.y4m -o /dev/null 2>/dev/null || true
-          ./x265-profiling.exe $opt ../test-videos/720p_25fps.y4m -o /dev/null 2>/dev/null || true
         done
+        # Color animation
+        ./x265-profiling.exe $OPT_MEDIUM ../test-videos/720p_color.y4m -o /dev/null 2>/dev/null || true
 
-        # 4K - limited tests (slow)
-        ./x265-profiling.exe $OPT_MEDIUM ../test-videos/4k_30fps.y4m -o /dev/null 2>/dev/null || true
-
-        echo "=== Motion & Content Type Tests ==="
-        # Film grain
-        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
-          ./x265-profiling.exe $opt ../test-videos/film_grain.y4m -o /dev/null 2>/dev/null || true
-        done
-        # Noise
+        echo "=== Stress Tests ==="
+        # Random noise (worst case for motion estimation)
         for opt in "$OPT_MEDIUM" "$OPT_SLOW"; do
           ./x265-profiling.exe $opt ../test-videos/noise_color.y4m -o /dev/null 2>/dev/null || true
         done
-        # Gradients
+        # Life pattern (complex motion)
         for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
-          ./x265-profiling.exe $opt ../test-videos/gradient_gray.y4m -o /dev/null 2>/dev/null || true
-          ./x265-profiling.exe $opt ../test-videos/gradient_rgb.y4m -o /dev/null 2>/dev/null || true
-        done
-        # Color bars
-        for opt in "$OPT_MEDIUM" "$OPT_PSY"; do
-          ./x265-profiling.exe $opt ../test-videos/smpte_1080p.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/life_pattern.y4m -o /dev/null 2>/dev/null || true
         done
 
         echo "=== Preset Coverage Tests ==="
-        # Test all presets on smaller videos
+        # Fast presets
         for opt in "$OPT_ULTRAFAST" "$OPT_FASTER" "$OPT_FAST"; do
-          ./x265-profiling.exe $opt ../test-videos/480p_smpte.y4m -o /dev/null 2>/dev/null || true
-          ./x265-profiling.exe $opt ../test-videos/360p_30fps.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/1080p_30fps.y4m -o /dev/null 2>/dev/null || true
         done
+        # Slow presets
         for opt in "$OPT_SLOWER" "$OPT_VERYSLOW"; do
-          ./x265-profiling.exe $opt ../test-videos/480p_smpte.y4m -o /dev/null 2>/dev/null || true
-          ./x265-profiling.exe $opt ../test-videos/noise_color.y4m -o /dev/null 2>/dev/null || true
+          ./x265-profiling.exe $opt ../test-videos/720p_24fps.y4m -o /dev/null 2>/dev/null || true
         done
+
+        echo "=== Multi-threading Tests ==="
+        # High thread count on 4K
+        ./x265-profiling.exe $OPT_MEDIUM_MT ../test-videos/4k_mandelbrot.y4m -o /dev/null 2>/dev/null || true
+        ./x265-profiling.exe $OPT_SLOW_MT ../test-videos/1080p_motion.y4m -o /dev/null 2>/dev/null || true
 
         llvm-profdata merge -output=../x265.profdata *.profraw
         echo "=== Profile data generated ==="
