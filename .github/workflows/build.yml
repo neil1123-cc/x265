@@ -63,13 +63,6 @@ jobs:
         path: ffmpeg
         key: ffmpeg-n8.1-lavf-v1-clang
 
-    - name: Cache mimalloc
-      id: cache-mimalloc
-      uses: actions/cache@v4
-      with:
-        path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v11
-
     - name: Cache obuparse
       id: cache-obuparse
       uses: actions/cache@v4
@@ -98,7 +91,6 @@ jobs:
         path: mimalloc
         repository: microsoft/mimalloc
         ref: v3.2.8
-      if: steps.cache-mimalloc.outputs.cache-hit != 'true'
 
     - name: Checkout obuparse
       uses: actions/checkout@v4
@@ -161,7 +153,6 @@ jobs:
       run: make install
 
     - name: Compile mimalloc
-      if: steps.cache-mimalloc.outputs.cache-hit != 'true'
       working-directory: mimalloc
       run: |
         mkdir build
@@ -172,18 +163,8 @@ jobs:
           -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
         ninja install
-        # Cache both versioned and unversioned paths
-        mkdir -p mimalloc-install/lib/cmake/mimalloc
-        mkdir -p mimalloc-install/lib/cmake/mimalloc-3.2
-        mkdir -p mimalloc-install/lib/mimalloc-3.2
-        mkdir -p mimalloc-install/include/mimalloc-3.2
-        mkdir -p mimalloc-install/lib/pkgconfig
-        cp -r /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc/
-        cp -r /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc-3.2/
-        cp -r /usr/local/lib/mimalloc-3.2/* mimalloc-install/lib/mimalloc-3.2/
-        cp -r /usr/local/include/mimalloc-3.2/* mimalloc-install/include/mimalloc-3.2/
-        cp -r /usr/local/lib/pkgconfig/mimalloc.pc mimalloc-install/lib/pkgconfig/ 2>/dev/null || true
-        mv mimalloc-install "$GITHUB_WORKSPACE/"
+        # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
+        ln -s /usr/local/lib/cmake/mimalloc-3.2 /usr/local/lib/cmake/mimalloc
 
     - name: Compile obuparse
       if: steps.cache-obuparse.outputs.cache-hit != 'true'
@@ -217,10 +198,6 @@ jobs:
         cp -r /usr/local/lib/liblsmash* lsmash-install/lib/
         cp -r /usr/local/lib/pkgconfig lsmash-install/lib/ 2>/dev/null || true
         mv lsmash-install "$GITHUB_WORKSPACE/"
-
-    - name: Install cached mimalloc
-      if: steps.cache-mimalloc.outputs.cache-hit == 'true'
-      run: cp -r mimalloc-install/* /usr/local/ 2>/dev/null || true
 
     - name: Install cached obuparse
       if: steps.cache-obuparse.outputs.cache-hit == 'true'
