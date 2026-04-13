@@ -154,6 +154,11 @@ jobs:
         echo "=== Installed to /usr/local ==="
         ls -la /usr/local/lib/cmake/
         ls -la /usr/local/lib/
+        # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
+        if [ -d /usr/local/lib/cmake/mimalloc-3.2 ] && [ ! -d /usr/local/lib/cmake/mimalloc ]; then
+          ln -s /usr/local/lib/cmake/mimalloc-3.2 /usr/local/lib/cmake/mimalloc
+          echo "Created symlink: mimalloc -> mimalloc-3.2"
+        fi
         # Create cache directory with proper structure (mimalloc v3.x uses versioned paths)
         mkdir -p mimalloc-install/lib/cmake
         mkdir -p mimalloc-install/include
@@ -208,6 +213,12 @@ jobs:
         echo "=== Verifying installation ==="
         ls -la /usr/local/lib/cmake/
         ls -la /usr/local/lib/
+        # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
+        if [ -d /usr/local/lib/cmake/mimalloc-3.2 ] && [ ! -d /usr/local/lib/cmake/mimalloc ]; then
+          ln -s /usr/local/lib/cmake/mimalloc-3.2 /usr/local/lib/cmake/mimalloc
+          echo "Created symlink: mimalloc -> mimalloc-3.2"
+        fi
+        ls -la /usr/local/lib/cmake/
 
     - name: Install cached obuparse
       if: steps.cache-obuparse.outputs.cache-hit == 'true'
