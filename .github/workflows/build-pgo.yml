@@ -276,7 +276,7 @@ jobs:
 
         # === 4K Content (Primary target for x265) ===
         # 4K with complex patterns (mandelbrot has natural motion/detail)
-        ffmpeg -f lavfi -i "mandelbrot=size=3840x2160:rate=30:end_xy=0.4\\:0.4" -t 15 -c:v rawvideo -pix_fmt yuv420p test-videos/4k_mandelbrot.y4m
+        ffmpeg -f lavfi -i "mandelbrot=size=3840x2160:rate=30" -t 15 -c:v rawvideo -pix_fmt yuv420p test-videos/4k_mandelbrot.y4m
         # 4K standard test
         ffmpeg -f lavfi -i "testsrc=duration=10:size=3840x2160:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/4k_30fps.y4m
 
@@ -288,7 +288,7 @@ jobs:
         # 1080p high framerate
         ffmpeg -f lavfi -i "testsrc2=duration=15:size=1920x1080:rate=60" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_60fps.y4m
         # 1080p mandelbrot (complex detail)
-        ffmpeg -f lavfi -i "mandelbrot=size=1920x1080:rate=30:end_xy=0.3\\:0.3" -t 15 -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_mandelbrot.y4m
+        ffmpeg -f lavfi -i "mandelbrot=size=1920x1080:rate=30" -t 15 -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_mandelbrot.y4m
 
         # === 720p Content ===
         # 720p with film grain (common encoding scenario)
