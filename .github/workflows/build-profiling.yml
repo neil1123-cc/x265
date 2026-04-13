@@ -108,8 +108,6 @@ jobs:
           p7zip
           base-devel
           git
-          autoconf
-          automake
           libtool
           mingw-w64-clang-x86_64-nasm
           mingw-w64-clang-x86_64-clang
