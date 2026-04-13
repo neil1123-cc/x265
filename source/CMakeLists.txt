@@ -26,11 +26,23 @@ include(CheckCXXCompilerFlag)
 include(CheckCSourceCompiles)
 include(CheckCXXSourceCompiles)
 
+set(CMAKE_CXX_STANDARD 11)
+
 option(FPROFILE_GENERATE "Compile executable to generate usage data" OFF)
 option(FPROFILE_USE "Compile executable using generated usage data" OFF)
 option(NATIVE_BUILD "Target the build CPU" OFF)
 option(STATIC_LINK_CRT "Statically link C and C++ runtimes for release builds" OFF)
+option(USE_MIMALLOC "Use mimalloc as allocator" OFF)
+option(USE_LTO "Enable link time optimization" OFF)
+
 mark_as_advanced(FPROFILE_USE FPROFILE_GENERATE NATIVE_BUILD)
+
+if(NATIVE_BUILD)
+    set(TARGET_CPU native CACHE STRING "The target CPU")
+else()
+    set(TARGET_CPU generic CACHE STRING "The target CPU")
+endif()
+
 # X265_BUILD must be incremented each time the public API is changed
 set(X265_BUILD 216)
 configure_file("${PROJECT_SOURCE_DIR}/x265.def.in"
@@ -39,6 +51,13 @@ configure_file("${PROJECT_SOURCE_DIR}/x265_config.h.in"
                "${PROJECT_BINARY_DIR}/x265_config.h")
 
 SET(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" "${CMAKE_MODULE_PATH}")
+
+# Add option to specify lsmash source directory
+option(SPECIFY_LSMASH_SOURCE_DIR "Specify the source directory of L-SMASH" OFF)
+if(SPECIFY_LSMASH_SOURCE_DIR)
+    set(LSMASH_SOURCE_DIR lsmash CACHE STRING "The source directory of L-SMASH")
+    include_directories(${LSMASH_SOURCE_DIR})
+endif()
 
 # System architecture detection
 if (APPLE AND CMAKE_OSX_ARCHITECTURES)
@@ -261,6 +280,8 @@ if(CC STREQUAL "xlc")
 endif()
 # this option is to enable the inclusion of dynamic HDR10 library to the libx265 compilation
 option(ENABLE_HDR10_PLUS "Enable dynamic HDR10 compilation" OFF)
+option(ENABLE_AVISYNTH "Enable AviSynth input" ON)
+option(ENABLE_VPYSYNTH "Enable VapourSynth input" ON)
 if(MSVC AND (MSVC_VERSION LESS 1800) AND ENABLE_HDR10_PLUS)
     message(FATAL_ERROR "MSVC version 12.0 or above required to support hdr10plus")
 endif()
@@ -280,28 +301,18 @@ if(GCC)
             message(FATAL_ERROR "gcc version above 4.8 required to support hdr10plus")
         endif()
         add_definitions(-std=gnu++11)
+    elseif(ENABLE_AVISYNTH)
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8")
+            message(FATAL_ERROR "gcc version above 4.8 required to support AviSynth")
+        endif()
+        add_definitions(-std=gnu++11)
     else()
         add_definitions(-std=gnu++98)
     endif()
     if(ENABLE_PIC)
          add_definitions(-fPIC)
     endif(ENABLE_PIC)
-    if(NATIVE_BUILD)
-        if(INTEL_CXX)
-            add_definitions(-xhost)
-        else()
-            add_definitions(-march=native)
-        endif()
-    elseif(X86 AND NOT X64)
-        string(FIND "${CMAKE_CXX_FLAGS}" "-march" marchPos)
-        if(marchPos LESS "0")
-            add_definitions(-march=i686)
-            if(WIN32 AND NOT INTEL_CXX AND NOT CLANG AND
-               CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.0 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
-                add_definitions(-mpreferred-stack-boundary=2)
-            endif()
-        endif()
-    endif()
+    add_definitions(-march=${TARGET_CPU})
     if(ARM AND CROSS_COMPILE_ARM)
         message(STATUS "cross compile arm")
 		set(ARM_ARGS -march=armv6 -mfloat-abi=soft -mfpu=vfp -marm -fPIC)
@@ -581,12 +592,12 @@ int main() {
         list(APPEND LINKER_OPTIONS "-static-libgcc -static-libstdc++")
     endif(STATIC_LINK_CRT)
     check_cxx_compiler_flag(-Wno-strict-overflow CC_HAS_NO_STRICT_OVERFLOW)
-    check_cxx_compiler_flag(-Wno-narrowing CC_HAS_NO_NARROWING) 
-    check_cxx_compiler_flag(-Wno-array-bounds CC_HAS_NO_ARRAY_BOUNDS) 
+    check_cxx_compiler_flag(-Wno-narrowing CC_HAS_NO_NARROWING)
+    check_cxx_compiler_flag(-Wno-array-bounds CC_HAS_NO_ARRAY_BOUNDS)
     if (CC_HAS_NO_ARRAY_BOUNDS)
         add_definitions(-Wno-array-bounds) # these are unhelpful
     endif()
-    check_cxx_compiler_flag(-ffast-math CC_HAS_FAST_MATH) 
+    check_cxx_compiler_flag(-ffast-math CC_HAS_FAST_MATH)
     if (CC_HAS_FAST_MATH)
         add_definitions(-ffast-math)
     endif()
@@ -797,7 +808,7 @@ if(POWER)
     endif()
 endif()
 
-include(Version) # determine X265_VERSION and X265_LATEST_TAG
+include(YuukiVersion) # determine X265_VERSION and X265_LATEST_TAG
 include_directories(. common encoder "${PROJECT_BINARY_DIR}")
 
 option(ENABLE_PPA "Enable PPA profiling instrumentation" OFF)
@@ -831,6 +842,18 @@ option(DETAILED_CU_STATS "Enable internal profiling of encoder work" OFF)
 if(DETAILED_CU_STATS)
     add_definitions(-DDETAILED_CU_STATS)
 endif(DETAILED_CU_STATS)
+
+if(USE_MIMALLOC)
+    find_package(mimalloc REQUIRED)
+    add_definitions(-DUSE_MIMALLOC)
+    list(APPEND PLATFORM_LIBS "-L${MIMALLOC_LIBRARY_DIR}" -lmimalloc-static)
+    include_directories(${MIMALLOC_INCLUDE_DIR})
+endif()
+
+cmake_policy(SET CMP0069 NEW)
+if(USE_LTO)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
 
 option(ENABLE_ALPHA "Enable alpha encoding in x265" OFF)
 if(ENABLE_ALPHA)
@@ -1031,6 +1054,7 @@ if((WIN32 AND ENABLE_CLI) OR (WIN32 AND ENABLE_SHARED))
         endif()
     endif()
 endif()
+option(ENABLE_UTF8 "Build UTF-8 binary" ON)
 if(CMAKE_RC_COMPILER)
     # The resource compiler does not need CFLAGS or macro defines. It
     # often breaks them
@@ -1043,7 +1067,20 @@ if(CMAKE_RC_COMPILER)
     list(GET VERSION_LIST 1 X265_VERSION_MINOR)
     set(X265_BRANCH_ID 0) # TODO: 0 - stable, 1 - default or other
     set(X265_RC_FILE "${CMAKE_CURRENT_BINARY_DIR}/x265.rc")
+    set(X265LIB_RC_FILE "${CMAKE_CURRENT_BINARY_DIR}/libx265.rc")
+    set(X265_RC_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/x265res.manifest")
+
+    set(X265_FNAME "libx265.dll")
+    set(CLI_MANIFEST "")
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/x265.rc.in" "${X265LIB_RC_FILE}" @ONLY)
+
+    set(X265_FNAME "265.exe")
+    if(ENABLE_UTF8)
+        set(CLI_MANIFEST "\n1 RT_MANIFEST \"x265res.manifest\"\n")
+    endif()
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/x265.rc.in" "${X265_RC_FILE}" @ONLY)
+
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/x265res.manifest.in" "${X265_RC_MANIFEST}" @ONLY)
 endif()
 
 if(NOT (MSVC_IDE OR XCODE))
@@ -1053,7 +1090,7 @@ option(ENABLE_SHARED "Build shared library" ON)
 if(ENABLE_SHARED)
     if(ENABLE_HDR10_PLUS)
         add_library(x265-shared SHARED "${PROJECT_BINARY_DIR}/x265.def" ${ASM_OBJS}
-                    ${X265_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> $<TARGET_OBJECTS:dynamicHDR10>)
+                    ${X265LIB_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> $<TARGET_OBJECTS:dynamicHDR10>)
         add_library(hdr10plus-shared SHARED $<TARGET_OBJECTS:dynamicHDR10>)
 
         if(MSVC)
@@ -1063,12 +1100,12 @@ if(ENABLE_SHARED)
         endif()
     else()
         add_library(x265-shared SHARED "${PROJECT_BINARY_DIR}/x265.def" ${ASM_OBJS}
-                   ${X265_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common>)
+                   ${X265LIB_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common>)
     endif()
     if(EXTRA_LIB)
         target_link_libraries(x265-shared ${EXTRA_LIB})
     endif()
-	 target_link_libraries(x265-shared ${PLATFORM_LIBS})
+    target_link_libraries(x265-shared ${PLATFORM_LIBS})
     if(SVTHEVC_FOUND)
         target_link_libraries(x265-shared ${SVT_HEVC_LIBRARY})
     endif(SVTHEVC_FOUND)
@@ -1143,13 +1180,93 @@ add_custom_target(uninstall
 
 # Main CLI application
 set(ENABLE_CLI ON CACHE BOOL "Build standalone CLI application")
+
+if(MSVC)
+    set(CMAKE_EXE_LINKER_FLAGS "/MANIFEST:NO")
+endif(MSVC)
+
+# CLI-specific option here
+option(ENABLE_LSMASH "Enable L-SMASH muxer" OFF)
+if(ENABLE_LSMASH)
+    add_definitions(-DENABLE_LSMASH)
+    list(APPEND PLATFORM_LIBS lsmash)
+endif(ENABLE_LSMASH)
+
+option(ENABLE_MKV "Enable Haali Matroska muxer" OFF)
+if(ENABLE_MKV)
+    add_definitions(-DENABLE_MKV)
+endif(ENABLE_MKV)
+
+if(ENABLE_AVISYNTH)
+    add_definitions(-DENABLE_AVISYNTH)
+endif(ENABLE_AVISYNTH)
+
+if(ENABLE_VPYSYNTH)
+    add_definitions(-DENABLE_VPYSYNTH)
+endif(ENABLE_VPYSYNTH)
+
+option(ENABLE_LAVF "Enable LAVF decoder" OFF)
+if(ENABLE_LAVF AND ENABLE_CLI)
+    find_package(FF)
+    add_definitions(-DENABLE_LAVF)
+endif()
+
+option(ENABLE_STATIC_LAVF "Link to LAVF's private libs" ON)
+if(ENABLE_STATIC_LAVF)
+    set(FFMPEG_STATIC_LIBRARIES ${PC_LIBAVUTIL_STATIC_LDFLAGS}
+                                ${PC_LIBAVFORMAT_STATIC_LDFLAGS}
+                                ${PC_LIBAVCODEC_STATIC_LDFLAGS}
+                                ${PC_LIBSWSCALE_STATIC_LDFLAGS})
+endif()
+
+option(ENABLE_ZIMG "Enable ZImg scaling libary" OFF)
+if(ENABLE_ZIMG)
+    add_definitions(-DENABLE_ZIMG)
+    list(APPEND PLATFORM_LIBS zimg)
+endif(ENABLE_ZIMG)
+
 if(ENABLE_CLI)
     file(GLOB InputFiles input/input.cpp input/yuv.cpp input/y4m.cpp input/*.h)
     file(GLOB OutputFiles output/output.cpp output/reconplay.cpp output/*.h
                           output/yuv.cpp output/y4m.cpp # recon
+                          output/gop.cpp
                           output/raw.cpp)               # muxers
+if(ENABLE_VPYSYNTH AND ENABLE_CLI)
+    find_package(Vapoursynth)
+    if(GCC)
+        set_source_files_properties(input/input.cpp input/vpy.cpp PROPERTIES COMPILE_OPTIONS "-std=gnu++11")
+    elseif(MSVC_VERSION GREATER_EQUAL "1900")
+        include(CheckCXXCompilerFlag)
+        CHECK_CXX_COMPILER_FLAG("/std:c++11" _cpp_latest_flag_supported)
+        if (_cpp_latest_flag_supported)
+            set_source_files_properties(input/input.cpp input/vpy.cpp PROPERTIES COMPILE_OPTIONS "/std:c++11")
+        endif()
+    endif()
+endif()
+    file(GLOB FilterFiles filters/*.cpp filters/*.h)
+    source_group(filters FILES ${FilterFiles})
     source_group(input FILES ${InputFiles})
     source_group(output FILES ${OutputFiles})
+    if(ENABLE_LAVF)
+        if(ENABLE_STATIC_LAVF)
+            list(APPEND PLATFORM_LIBS ${FFMPEG_STATIC_LIBRARIES})
+        else()
+            list(APPEND PLATFORM_LIBS ${FFMPEG_LIBRARIES})
+        endif()
+        list(APPEND InputFiles input/lavf.cpp)
+    endif()
+    if(ENABLE_AVISYNTH)
+        list(APPEND InputFiles input/avs.cpp)
+    endif()
+    if(ENABLE_VPYSYNTH)
+        list(APPEND InputFiles input/vpy.cpp)
+    endif()
+    if(ENABLE_LSMASH)
+        list(APPEND OutputFiles output/mp4.cpp)
+    endif()
+    if(ENABLE_MKV)
+        list(APPEND OutputFiles output/mkv.cpp output/matroska_ebml.cpp)
+    endif()
 
     check_include_files(getopt.h HAVE_GETOPT_H)
     if(NOT HAVE_GETOPT_H)
@@ -1165,16 +1282,16 @@ if(ENABLE_CLI)
     if(XCODE)
         # Xcode seems unable to link the CLI with libs, so link as one targget
         if(ENABLE_HDR10_PLUS)
-        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${GETOPT}
+        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${FilterFiles} ${GETOPT}
                         x265.cpp x265.h x265cli.cpp x265cli.h abrEncApp.cpp abrEncApp.h
                         $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> $<TARGET_OBJECTS:dynamicHDR10> ${ASM_OBJS})
         else()
-            add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${GETOPT}
+            add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${FilterFiles} ${GETOPT}
                         x265.cpp x265.h x265cli.cpp x265cli.h abrEncApp.cpp abrEncApp.h
                         $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> ${ASM_OBJS})
         endif()
     else()
-        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${GETOPT} ${X265_RC_FILE}
+        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${FilterFiles} ${GETOPT} ${X265_RC_FILE}
                        ${ExportDefs} x265.cpp x265.h x265cli.cpp x265cli.h abrEncApp.cpp abrEncApp.h)
         if(WIN32 OR NOT ENABLE_SHARED OR INTEL_CXX)
             # The CLI cannot link to the shared library on Windows, it

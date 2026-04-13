@@ -265,6 +265,15 @@ namespace X265_NS {
             }
         }
 
+        for (auto &&i : m_cliopt.filters)
+        {
+            i->setParam(m_param);
+            if (i->isFail())
+            {
+                return -1;
+            }
+        }
+        m_cliopt.output->setParam(m_param);
         /* note: we could try to acquire a different libx265 API here based on
         * the profile found during option parsing, but it must be done before
         * opening an encoder */
@@ -594,6 +603,7 @@ ret:
             /* This allows muxers to modify bitstream format */
             m_cliopt.output->setParam(m_param);
             const x265_api* api = m_cliopt.api;
+            /* This allows muxers to modify bitstream format */
             ReconPlay* reconPlay = NULL;
             if (m_cliopt.reconPlayCmd)
                 reconPlay = new ReconPlay(m_cliopt.reconPlayCmd, *m_param);
@@ -635,7 +645,10 @@ ret:
                     goto fail;
                 }
                 else
+                {
+                    m_cliopt.output->setPS(m_encoder);
                     m_cliopt.totalbytes += m_cliopt.output->writeHeaders(p_nal, nal);
+                }
             }
 
             for (int view = 0; view < m_param->numViews - !!m_param->format; view++)
@@ -667,6 +680,15 @@ ret:
                     memset(errorBuf, 0, (m_param->sourceWidth + 1) * sizeof(int16_t));
                 else
                     m_cliopt.bDither = false;
+            }
+
+            if (m_cliopt.bProgress && m_param->bStylish)
+            {
+                if (m_cliopt.framesToBeEncoded)
+                    fprintf(stderr, " %6s   %13s  %5s  %6s  %9s  %9s  %7s  %10s\n",
+                        "", "frames   ", "fps ", "kb/s ", "elapsed", "remain ", "size", "est.size");
+                else
+                    fprintf(stderr, "%6s  %5s  %6s  %9s  %7s\n", "frames", "fps ", "kb/s ", "elapsed", "size");
             }
 
             // main encoder loop
@@ -901,7 +923,18 @@ ret:
 
             /* clear progress report */
             if (m_cliopt.bProgress)
-                fprintf(stderr, "%*s\r", 80, " ");
+            {
+                if (outFrameCount)
+                {
+                    m_cliopt.prevUpdateTime = 0;
+                    m_cliopt.prevUpdateTimeFile = 0;
+                    m_cliopt.printStatus(outFrameCount);
+                }
+                if (m_param->bStylish)
+                    fprintf(stderr, "\n");
+                else
+                    fprintf(stderr, "%*s\r", 100, " ");
+            }
 
         fail:
 
@@ -930,8 +963,10 @@ ret:
             m_cliopt.output->closeFile(largest_pts, second_largest_pts);
 
             if (b_ctrl_c)
+            {
                 general_log(m_param, NULL, X265_LOG_INFO, "aborted at input frame %d, output frame %d in %s\n",
                     m_cliopt.seek + inFrameCount, stats.encodedPictureCount, profileName);
+            }
 
             X265_FREE(errorBuf);
             X265_FREE(rpuPayload);
