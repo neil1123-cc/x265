@@ -68,7 +68,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v5
+        key: mimalloc-v3.2.8-clang-v6
 
     - name: Cache obuparse
       id: cache-obuparse

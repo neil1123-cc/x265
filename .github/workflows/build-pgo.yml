@@ -35,7 +35,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v5
+        key: mimalloc-v3.2.8-clang-v6
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -151,11 +151,17 @@ jobs:
           -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
         ninja install
-        mkdir -p mimalloc-install/lib/cmake
+        echo "=== Installed to /usr/local ==="
+        ls -la /usr/local/lib/cmake/mimalloc/ 2>/dev/null || echo "CMake config not found"
+        ls -la /usr/local/lib/libmimalloc* 2>/dev/null || echo "Library not found"
+        # Create cache directory with proper structure
+        mkdir -p mimalloc-install/lib/cmake/mimalloc
         mkdir -p mimalloc-install/include
-        cp -r /usr/local/lib/cmake/mimalloc mimalloc-install/lib/cmake/ 2>/dev/null || true
-        cp -r /usr/local/lib/mimalloc* mimalloc-install/lib/ 2>/dev/null || true
-        cp -r /usr/local/include/mimalloc* mimalloc-install/include/ 2>/dev/null || true
+        cp -rv /usr/local/lib/cmake/mimalloc/* mimalloc-install/lib/cmake/mimalloc/
+        cp -rv /usr/local/lib/libmimalloc* mimalloc-install/lib/
+        cp -rv /usr/local/include/mimalloc*.h mimalloc-install/include/
+        echo "=== Cache directory contents ==="
+        ls -la mimalloc-install/lib/cmake/mimalloc/
         mv mimalloc-install "$GITHUB_WORKSPACE/"
 
     - name: Compile obuparse
@@ -191,7 +197,14 @@ jobs:
 
     - name: Install cached mimalloc
       if: steps.cache-mimalloc.outputs.cache-hit == 'true'
-      run: cp -r mimalloc-install/* /usr/local/ 2>/dev/null || true
+      run: |
+        echo "=== Installing cached mimalloc ==="
+        ls -la mimalloc-install/ || echo "Directory not found"
+        ls -la mimalloc-install/lib/cmake/mimalloc/ 2>/dev/null || echo "CMake config not found in cache"
+        cp -rv mimalloc-install/* /usr/local/
+        echo "=== Verifying installation ==="
+        ls -la /usr/local/lib/cmake/mimalloc/ 2>/dev/null || echo "CMake config not installed"
+        ls -la /usr/local/lib/mimalloc* 2>/dev/null || echo "Library not installed"
 
     - name: Install cached obuparse
       if: steps.cache-obuparse.outputs.cache-hit == 'true'
