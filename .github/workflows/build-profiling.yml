@@ -61,7 +61,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: mimalloc-install
-        key: mimalloc-v3.2.8-clang-v10
+        key: mimalloc-v3.2.8-clang-v11
 
     - name: Cache obuparse
       id: cache-obuparse
@@ -172,14 +172,16 @@ jobs:
           -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
         ninja
         ninja install
-        # Create cache with unversioned paths (mimalloc v3.x installs to mimalloc-3.2/)
+        # Cache both versioned and unversioned paths
         mkdir -p mimalloc-install/lib/cmake/mimalloc
-        mkdir -p mimalloc-install/lib/mimalloc
-        mkdir -p mimalloc-install/include/mimalloc
+        mkdir -p mimalloc-install/lib/cmake/mimalloc-3.2
+        mkdir -p mimalloc-install/lib/mimalloc-3.2
+        mkdir -p mimalloc-install/include/mimalloc-3.2
         mkdir -p mimalloc-install/lib/pkgconfig
         cp -r /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc/
-        cp -r /usr/local/lib/mimalloc-3.2/* mimalloc-install/lib/mimalloc/
-        cp -r /usr/local/include/mimalloc-3.2/* mimalloc-install/include/mimalloc/
+        cp -r /usr/local/lib/cmake/mimalloc-3.2/* mimalloc-install/lib/cmake/mimalloc-3.2/
+        cp -r /usr/local/lib/mimalloc-3.2/* mimalloc-install/lib/mimalloc-3.2/
+        cp -r /usr/local/include/mimalloc-3.2/* mimalloc-install/include/mimalloc-3.2/
         cp -r /usr/local/lib/pkgconfig/mimalloc.pc mimalloc-install/lib/pkgconfig/ 2>/dev/null || true
         mv mimalloc-install "$GITHUB_WORKSPACE/"
 
