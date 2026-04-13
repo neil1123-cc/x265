@@ -806,17 +806,23 @@ endif()
 
 option(ENABLE_ALPHA "Enable alpha encoding in x265" OFF)
 if(ENABLE_ALPHA)
-    x265_add_definitions(-DENABLE_ALPHA)
+    x265_add_definitions(-DENABLE_ALPHA=1)
+else()
+    x265_add_definitions(-DENABLE_ALPHA=0)
 endif()
 
 option(ENABLE_MULTIVIEW "Enable Multi-view encoding in HEVC" OFF)
 if(ENABLE_MULTIVIEW)
-    x265_add_definitions(-DENABLE_MULTIVIEW)
+    x265_add_definitions(-DENABLE_MULTIVIEW=1)
+else()
+    x265_add_definitions(-DENABLE_MULTIVIEW=0)
 endif()
 
 option(ENABLE_SCC_EXT "Enable screen content coding extension in HEVC" OFF)
 if(ENABLE_SCC_EXT)
-    x265_add_definitions(-DENABLE_SCC_EXT)
+    x265_add_definitions(-DENABLE_SCC_EXT=1)
+else()
+    x265_add_definitions(-DENABLE_SCC_EXT=0)
 endif()
 
 # ============================================================================
