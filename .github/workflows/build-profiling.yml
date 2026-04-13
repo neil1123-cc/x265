@@ -164,7 +164,11 @@ jobs:
         ninja
         ninja install
         # Create compatibility symlink for CMake (mimalloc v3.x uses versioned directories)
-        ln -s /usr/local/lib/cmake/mimalloc-3.2 /usr/local/lib/cmake/mimalloc
+        shopt -s nullglob
+        for dir in /usr/local/lib/cmake/mimalloc-*; do
+          ln -s "$dir" /usr/local/lib/cmake/mimalloc
+          break
+        done
 
     - name: Compile obuparse
       if: steps.cache-obuparse.outputs.cache-hit != 'true'
