@@ -138,7 +138,7 @@ jobs:
       working-directory: ffmpeg
       run: |
         PGO_OPT="--enable-avdevice --enable-avfilter --enable-ffmpeg --enable-indev=lavfi"
-        for f in testsrc testsrc2 smptebars nullsrc geq gradients format scale; do
+        for f in testsrc testsrc2 smptebars smptehdbars nullsrc geq gradients format scale noise; do
           PGO_OPT="$PGO_OPT --enable-filter=$f"
         done
         ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
@@ -234,6 +234,7 @@ jobs:
           -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O2 -flto=thin -fmerge-all-constants -I/usr/local/include" \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
         ninja -C build/8b &
 
@@ -241,6 +242,7 @@ jobs:
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
           -DTARGET_CPU=${{inputs.target_cpu}} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_CXX_FLAGS="-O2 -flto=thin -fmerge-all-constants -I/usr/local/include" \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
         ninja -C build/12b &
 
@@ -262,7 +264,8 @@ jobs:
           -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=${{inputs.target_cpu}} \
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="-O2 -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include"
+          -DCMAKE_CXX_FLAGS="-O2 -flto=thin -fmerge-all-constants -fprofile-instr-generate -fprofile-update=atomic -I/usr/local/include" \
+          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja
         mv x265.exe x265-profiling.exe
 
