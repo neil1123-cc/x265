@@ -40,6 +40,17 @@
 #include <memory.h>
 #include <assert.h>
 
+/* Default values for feature macros if not defined by CMake */
+#ifndef ENABLE_MULTIVIEW
+#define ENABLE_MULTIVIEW 0
+#endif
+#ifndef ENABLE_ALPHA
+#define ENABLE_ALPHA 0
+#endif
+#ifndef ENABLE_SCC_EXT
+#define ENABLE_SCC_EXT 0
+#endif
+
 #include "x265.h"
 
 #if ENABLE_PPA && ENABLE_VTUNE
