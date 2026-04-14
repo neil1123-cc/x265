@@ -101,8 +101,6 @@ endif()
 set(X265_BUILD 215)
 configure_file("${PROJECT_SOURCE_DIR}/x265.def.in"
                "${PROJECT_BINARY_DIR}/x265.def")
-configure_file("${PROJECT_SOURCE_DIR}/x265_config.h.in"
-               "${PROJECT_BINARY_DIR}/x265_config.h")
 
 SET(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" "${CMAKE_MODULE_PATH}")
 
@@ -824,6 +822,10 @@ if(ENABLE_SCC_EXT)
 else()
     x265_add_definitions(-DENABLE_SCC_EXT=0)
 endif()
+
+# Generate x265_config.h with correct macro values (must be after option definitions)
+configure_file("${PROJECT_SOURCE_DIR}/x265_config.h.in"
+               "${PROJECT_BINARY_DIR}/x265_config.h")
 
 # ============================================================================
 # Apply directory-level settings for OBJECT libraries
