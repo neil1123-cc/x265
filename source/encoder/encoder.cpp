@@ -176,7 +176,7 @@ Encoder::Encoder()
 }
 
 namespace {
-inline char *strcatFilename(const char *input, const char *suffix)
+inline char *strcatFilenameEncEnc(const char *input, const char *suffix)
 {
     char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
     if (!output)
@@ -528,7 +528,7 @@ void Encoder::create()
 
     if (strlen(m_param->analysisSave) && m_param->bUseAnalysisFile)
     {
-        char* temp = strcatFilename(m_param->analysisSave, ".temp");
+        char* temp = strcatFilenameEnc(m_param->analysisSave, ".temp");
         if (!temp)
             m_aborted = true;
         else
@@ -550,7 +550,7 @@ void Encoder::create()
             name = defaultAnalysisFileName;
         if (m_param->rc.bStatWrite)
         {
-            char* temp = strcatFilename(name, ".temp");
+            char* temp = strcatFilenameEnc(name, ".temp");
             if (!temp)
                 m_aborted = true;
             else
@@ -1013,7 +1013,7 @@ void Encoder::destroy()
         const char* name = strlen(m_param->analysisSave) ? m_param->analysisSave : m_param->analysisReuseFileName;
         if (!strlen(name))
             name = defaultAnalysisFileName;
-        char* temp = strcatFilename(name, ".temp");
+        char* temp = strcatFilenameEnc(name, ".temp");
         if (temp)
         {
             x265_unlink(name);

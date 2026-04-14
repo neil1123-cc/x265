@@ -96,7 +96,7 @@ inline int calcLength(uint32_t x)
 }
 
 namespace {
-inline char *strcatFilename(const char *input, const char *suffix)
+inline char *strcatFilenameRcRc(const char *input, const char *suffix)
 {
     char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
     if (!output)
@@ -524,7 +524,7 @@ bool RateControl::init(const SPS& sps)
                     return false;
                 if (m_param->rc.cuTree)
                 {
-                    char *tmpFile = strcatFilename(fileName, ".cutree");
+                    char *tmpFile = strcatFilenameRc(fileName, ".cutree");
                     if (!tmpFile)
                         return false;
                     m_cutreeStatFileIn = x265_fopen(tmpFile, "rb");
@@ -775,7 +775,7 @@ bool RateControl::init(const SPS& sps)
         if (m_param->rc.bStatWrite)
         {
             char *p, *statFileTmpname;
-            statFileTmpname = strcatFilename(fileName, ".temp");
+            statFileTmpname = strcatFilenameRc(fileName, ".temp");
             if (!statFileTmpname)
                 return false;
             m_statFileOut = x265_fopen(statFileTmpname, "wb");
@@ -793,7 +793,7 @@ bool RateControl::init(const SPS& sps)
             {
                 if (X265_SHARE_MODE_FILE == m_param->rc.dataShareMode)
                 {
-                    statFileTmpname = strcatFilename(fileName, ".cutree.temp");
+                    statFileTmpname = strcatFilenameRc(fileName, ".cutree.temp");
                     if (!statFileTmpname)
                         return false;
                     m_cutreeStatFileOut = x265_fopen(statFileTmpname, "wb");
@@ -3431,7 +3431,7 @@ void RateControl::destroy()
     if (m_statFileOut)
     {
         fclose(m_statFileOut);
-        char *tmpFileName = strcatFilename(fileName, ".temp");
+        char *tmpFileName = strcatFilenameRc(fileName, ".temp");
         int bError = 1;
         if (tmpFileName)
         {
@@ -3448,8 +3448,8 @@ void RateControl::destroy()
     if (m_cutreeStatFileOut)
     {
         fclose(m_cutreeStatFileOut);
-        char *tmpFileName = strcatFilename(fileName, ".cutree.temp");
-        char *newFileName = strcatFilename(fileName, ".cutree");
+        char *tmpFileName = strcatFilenameRc(fileName, ".cutree.temp");
+        char *newFileName = strcatFilenameRc(fileName, ".cutree");
         int bError = 1;
         if (tmpFileName && newFileName)
         {
