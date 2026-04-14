@@ -96,7 +96,7 @@ inline int calcLength(uint32_t x)
 }
 
 namespace {
-inline char *strcatFilenameRcRc(const char *input, const char *suffix)
+inline char *strcatFilenameRc(const char *input, const char *suffix)
 {
     char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
     if (!output)

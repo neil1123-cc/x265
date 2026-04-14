@@ -176,7 +176,7 @@ Encoder::Encoder()
 }
 
 namespace {
-inline char *strcatFilenameEncEnc(const char *input, const char *suffix)
+inline char *strcatFilenameEnc(const char *input, const char *suffix)
 {
     char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
     if (!output)
