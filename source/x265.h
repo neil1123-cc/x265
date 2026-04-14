@@ -28,6 +28,18 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include "x265_config.h"
+
+/* Default values for feature macros if not defined by CMake */
+#ifndef ENABLE_MULTIVIEW
+#define ENABLE_MULTIVIEW 0
+#endif
+#ifndef ENABLE_ALPHA
+#define ENABLE_ALPHA 0
+#endif
+#ifndef ENABLE_SCC_EXT
+#define ENABLE_SCC_EXT 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
