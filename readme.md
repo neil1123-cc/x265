@@ -148,8 +148,9 @@ x265 采用 [GNU GPL v2](LICENSE) 许可证，也可获取商业许可。
 
 ## 致谢
 
-- [x265](https://bitbucket.org/multicoreware/x265_git) - MulticoreWare
+- [x265](https://bitbucket.org/multicoreware/x265_git) - MulticoreWare 官方编码器
 - [x265-Yuuki-Asuna](https://github.com/msg7086/x265-Yuuki-Asuna) - Yuuki mod 作者
+- [AmusementClub/x265](https://github.com/AmusementClub/x265) - Kyouko mod 来源
 - [FFmpeg](https://ffmpeg.org/) - FFmpeg 项目
 - [mimalloc](https://github.com/microsoft/mimalloc) - Microsoft
 - [L-SMASH](https://github.com/vimeo/l-smash) - Vimeo
