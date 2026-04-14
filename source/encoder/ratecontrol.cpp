@@ -95,7 +95,8 @@ inline int calcLength(uint32_t x)
     return z + lut[x];
 }
 
-static inline char *strcatFilename(const char *input, const char *suffix)
+namespace {
+inline char *strcatFilename(const char *input, const char *suffix)
 {
     char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
     if (!output)
@@ -106,6 +107,7 @@ static inline char *strcatFilename(const char *input, const char *suffix)
     strcpy(output, input);
     strcat(output, suffix);
     return output;
+}
 }
 
 typedef struct CUTreeSharedDataItem
