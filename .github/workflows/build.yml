@@ -52,8 +52,8 @@ jobs:
       shell: bash
       run: |
         cd x265
-        git fetch origin profdata-x86-64 --depth=1 || echo "Branch not found"
-        git checkout profdata-x86-64 -- x265.profdata 2>/dev/null || echo "profdata not found"
+        git fetch origin profdata-x86-64 --depth=1 || { echo "Branch not found"; exit 0; }
+        git checkout FETCH_HEAD -- x265.profdata 2>/dev/null || echo "profdata not found"
         mkdir -p ../build
         mv x265.profdata ../build/x265.profdata 2>/dev/null || echo "No profdata"
 
@@ -226,7 +226,7 @@ jobs:
         CPU=${{matrix.target_cpu}}
         PGO_FLAG=""
         if [ -f build/x265.profdata ]; then
-          PGO_FLAG="-fprofile-instr-use=build/x265.profdata"
+          PGO_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265.profdata"
           echo "Using PGO profdata"
         else
           echo "Building without PGO"
