@@ -37,8 +37,9 @@ list(LENGTH X265_HEAD_TAG_ARR X265_HEAD_TAG_LEN)
 
 # Validate we have enough parts
 if(X265_HEAD_TAG_LEN LESS 3)
-    set(X265_VERSION "4.1+${X265_HEAD_TAG}")
-    set(X265_LATEST_TAG "4.1")
+    # HEAD is exactly on a tag, use tag as version directly
+    string(REPLACE "M" "" X265_LATEST_TAG ${X265_HEAD_TAG})
+    set(X265_VERSION "${X265_LATEST_TAG}")
     set(X265_TAG_DISTANCE 0)
     message(STATUS "x265 Mod: ${MOD_BUILD}")
     message(STATUS "x265 Release Version: ${X265_VERSION}")
