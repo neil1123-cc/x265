@@ -161,6 +161,7 @@ typedef uint64_t sse_t;
 #endif
 
 #define MAX_UINT        0xFFFFFFFFU // max. value of unsigned 32-bit integer
+#define MAX_UINT64      0xFFFFFFFFFFFFFFFFULL // max. value of unsigned 64-bit integer
 #define MAX_INT         2147483647  // max. value of signed 32-bit integer
 #define MAX_INT64       0x7FFFFFFFFFFFFFFFLL  // max. value of signed 64-bit integer
 #define MAX_DOUBLE      1.7e+308    // max. value of double-type value
@@ -351,6 +352,9 @@ typedef int16_t  coeff_t;      // transform coefficient
 #define PIXEL_MAX ((1 << X265_DEPTH) - 1)
 
 #define INTEGRAL_PLANE_NUM          12 // 12 integral planes for 32x32, 32x24, 32x8, 24x32, 16x16, 16x12, 16x4, 12x16, 8x32, 8x8, 4x16 and 4x4.
+
+#define MAX_NUM_PUS_PER_CTU      593   // Maximum number of PUs in a 64x64 CTU
+#define MAX_NUM_PU_SIZES         24    // Number of distinct PU sizes in a 64x64 CTU
 
 #define NAL_TYPE_OVERHEAD 2
 #define START_CODE_OVERHEAD 3 
