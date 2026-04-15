@@ -229,7 +229,7 @@ void MP4Output::setParam(x265_param *p_param)
     lsmash_media_parameters_t media_param;
     lsmash_initialize_media_parameters(&media_param);
     media_param.timescale = i_media_timescale;
-    media_param.media_handler_name = strdup("L-SMASH Video Media Handler");
+    media_param.media_handler_name = (char*)"L-SMASH Video Media Handler";
     MP4_FAIL_IF_ERR(lsmash_set_media_parameters(p_root, i_track, &media_param),
                     "failed to set media parameters for video.\n");
     i_video_timescale = lsmash_get_media_timescale(p_root, i_track);
