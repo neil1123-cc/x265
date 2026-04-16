@@ -278,7 +278,7 @@ int MP4Output::openFile(const char *psz_filename)
     summary = (lsmash_video_summary_t *)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
     MP4_FAIL_IF_ERR_EX(!summary,
                        "failed to allocate memory for summary information of video.\n");
-    summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
+    summary->sample_type = ISOM_CODEC_TYPE_HEV1_VIDEO;
 
     return 0;
 }
