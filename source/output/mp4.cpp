@@ -208,7 +208,7 @@ int MP4Output::openFile(const char *psz_filename)
 
     MP4_FAIL_IF_ERR_EX(lsmash_open_file(psz_filename, 0, &file_param) < 0, "failed to open an output file.\n");
     if (b_fragments)
-        file_param.mode |= LSMASH_FILE_MODE_FRAGMENTED;
+        file_param.mode = static_cast<lsmash_file_mode>(file_param.mode | LSMASH_FILE_MODE_FRAGMENTED);
 
     summary = (lsmash_video_summary_t *)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
     MP4_FAIL_IF_ERR_EX(!summary,
