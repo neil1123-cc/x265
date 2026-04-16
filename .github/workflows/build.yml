@@ -77,7 +77,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: lsmash-install
-        key: lsmash-latest-ucrt-gcc-v1
+        key: lsmash-latest-ucrt-gcc-v2
 
     - name: Checkout FFmpeg
       uses: actions/checkout@v4
@@ -197,8 +197,11 @@ jobs:
     - name: Compile L-SMASH
       if: steps.cache-lsmash.outputs.cache-hit != 'true'
       working-directory: lsmash
+      shell: msys2 {0}
+      env:
+        MSYSTEM: UCRT64
       run: |
-        ./configure --prefix=/usr/local --cc=/ucrt64/bin/gcc.exe \
+        ./configure --prefix=/usr/local --cc=gcc \
           --extra-cflags="-O0 -I/usr/local/include" \
           --extra-ldflags="-L/usr/local/lib" \
           --extra-libs="-lobuparse"
