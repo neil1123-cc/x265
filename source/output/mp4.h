@@ -27,6 +27,10 @@ protected:
     int64_t i_start_offset;
     uint64_t i_first_cts;
     uint64_t i_prev_dts;
+    uint64_t i_max_cts;
+    uint64_t i_second_max_cts;
+    uint64_t i_max_dts;
+    uint64_t i_second_max_dts;
     uint32_t i_sei_size;
     uint8_t *p_sei_buffer;
     int i_numframe;
@@ -62,6 +66,10 @@ public:
         i_start_offset = 0;
         i_first_cts = 0;
         i_prev_dts = 0;
+        i_max_cts = 0;
+        i_second_max_cts = 0;
+        i_max_dts = 0;
+        i_second_max_dts = 0;
         i_sei_size = 0;
         p_sei_buffer = NULL;
         i_numframe = 0;

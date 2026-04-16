@@ -169,24 +169,35 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
                     i_time_inc, i_video_timescale, i_movie_timescale);
         if(i_track)
         {
+            uint64_t scaled_default_delta = GetTimeScaled(i_time_inc);
+            uint64_t scaled_last_delta = i_numframe > 1 ? (i_max_dts - i_second_max_dts) : scaled_default_delta;
+            uint64_t scaled_duration = i_numframe > 0 ? (i_max_cts - i_first_cts + (scaled_last_delta ? scaled_last_delta : scaled_default_delta)) : 0;
+            uint64_t scaled_end = i_numframe > 0 ? (i_first_cts + scaled_duration) : 0;
+
             /* Flush the rest of samples and add the last sample_delta. */
             last_delta = largest_pts - second_largest_pts;
-            int flush_ret = lsmash_flush_pooled_samples(p_root, i_track, GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc));
+            int flush_ret = lsmash_flush_pooled_samples(p_root, i_track, scaled_last_delta ? scaled_last_delta : scaled_default_delta);
             general_log(NULL, "mp4", X265_LOG_INFO,
-                        "closeFile flush_ret=%d last_delta=%u scaled_delta=%lld\n",
+                        "closeFile flush_ret=%d last_delta=%u scaled_delta=%llu internal_dts_delta=%llu\n",
                         flush_ret, last_delta,
-                        (long long)GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc));
+                        (unsigned long long)GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc),
+                        (unsigned long long)(scaled_last_delta ? scaled_last_delta : scaled_default_delta));
             MP4_LOG_IF_ERR(flush_ret,
                            "failed to flush the rest of samples.\n");
 
             if(i_movie_timescale != 0 && i_video_timescale != 0)      /* avoid zero division */
-                actual_duration = ((double)GetTimeScaled((largest_pts + last_delta) * i_time_inc) / i_video_timescale) * i_movie_timescale;
+                actual_duration = ((double)scaled_duration / i_video_timescale) * i_movie_timescale;
             else
                 MP4_LOG_ERROR("timescale is broken.\n");
             general_log(NULL, "mp4", X265_LOG_INFO,
-                        "closeFile actual_duration=%.3f scaled_end=%lld\n",
+                        "closeFile actual_duration=%.3f scaled_end=%llu internal_duration=%llu max_cts=%llu second_max_cts=%llu max_dts=%llu second_max_dts=%llu\n",
                         actual_duration,
-                        (long long)GetTimeScaled((largest_pts + last_delta) * i_time_inc));
+                        (unsigned long long)scaled_end,
+                        (unsigned long long)scaled_duration,
+                        (unsigned long long)i_max_cts,
+                        (unsigned long long)i_second_max_cts,
+                        (unsigned long long)i_max_dts,
+                        (unsigned long long)i_second_max_dts);
 
             /*
              * Declare the explicit time-line mapping.
@@ -500,6 +511,32 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     p_sample->cts = cts;
     p_sample->index = i_sample_entry;
     p_sample->prop.ra_flags = b_keyframe ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
+
+    if (!i_numframe)
+    {
+        i_max_cts = cts;
+        i_second_max_cts = cts;
+        i_max_dts = dts;
+        i_second_max_dts = dts;
+    }
+    else
+    {
+        if (cts >= i_max_cts)
+        {
+            i_second_max_cts = i_max_cts;
+            i_max_cts = cts;
+        }
+        else if (cts > i_second_max_cts)
+            i_second_max_cts = cts;
+
+        if (dts >= i_max_dts)
+        {
+            i_second_max_dts = i_max_dts;
+            i_max_dts = dts;
+        }
+        else if (dts > i_second_max_dts)
+            i_second_max_dts = dts;
+    }
 
     if (b_fragments && i_numframe && p_sample->prop.ra_flags != ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE)
     {
