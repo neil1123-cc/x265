@@ -219,6 +219,33 @@ jobs:
     - name: Setup build dirs
       run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all
 
+    - name: L-SMASH smoke test
+      run: |
+        cat > build/lsmash_smoke.c <<'EOF'
+        #include <stdio.h>
+        #include <lsmash.h>
+
+        int main(void)
+        {
+          lsmash_root_t *root = lsmash_create_root();
+          if (!root)
+          {
+            fprintf(stderr, "lsmash_create_root returned NULL\n");
+            return 1;
+          }
+          lsmash_destroy_root(root);
+          return 0;
+        }
+        EOF
+
+        cc -O0 build/lsmash_smoke.c -I/usr/local/include -L/usr/local/lib \
+          -llsmash -lobuparse -o build/lsmash-smoke.exe
+        cc -O2 -flto=thin build/lsmash_smoke.c -I/usr/local/include -L/usr/local/lib \
+          -llsmash -lobuparse -o build/lsmash-smoke-thinlto.exe
+
+        build/lsmash-smoke.exe
+        build/lsmash-smoke-thinlto.exe
+
     - name: Compile x265 (all variants parallel)
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
@@ -232,7 +259,7 @@ jobs:
           echo "Building without PGO"
         fi
 
-        CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
+        CXX_FLAGS="-O3 -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
 
         # === Configure and build 8bit CLI ===
         echo "=== Building 8bit CLI ==="
@@ -243,7 +270,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         ninja -C build/8b &
 
         # === Configure and build 10bit CLI ===
@@ -255,7 +282,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         ninja -C build/10b &
 
         # === Configure and build 12bit CLI ===
@@ -267,7 +294,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         ninja -C build/12b &
 
         # === Configure and build 8bit multilib ===
@@ -280,7 +307,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         ninja -C build/8b-lib &
 
         # === Configure and build 12bit multilib ===
@@ -293,7 +320,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         ninja -C build/12b-lib &
 
         wait
@@ -313,7 +340,7 @@ jobs:
           -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         ninja -C build/all
         echo "=== All builds complete ==="
 
