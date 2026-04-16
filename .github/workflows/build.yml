@@ -112,7 +112,7 @@ jobs:
       uses: msys2/setup-msys2@v2
       with:
         msystem: CLANG64
-        update: true
+        update: false
         install: >-
           p7zip
           base-devel
@@ -198,7 +198,7 @@ jobs:
       if: steps.cache-lsmash.outputs.cache-hit != 'true'
       working-directory: lsmash
       run: |
-        ./configure --prefix=/usr/local --cc=x86_64-w64-mingw32-gcc \
+        ./configure --prefix=/usr/local --cc=/ucrt64/bin/gcc.exe \
           --extra-cflags="-O0 -I/usr/local/include" \
           --extra-ldflags="-L/usr/local/lib" \
           --extra-libs="-lobuparse"
