@@ -415,7 +415,7 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     {
         memcpy(pp, p_sei_buffer, i_sei_size);
         pp += i_sei_size;
-        delete p_sei_buffer;
+        delete[] p_sei_buffer;
         p_sei_buffer = NULL;
         i_sei_size = 0;
     }
