@@ -431,20 +431,8 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     i_sei_size = 0;
     if(nalcount >= 4)
     {
-        for (uint32_t i = 3; i < nalcount; i++)
-            i_sei_size += p_nal[i].sizeBytes;
-
-        /* SEI */
-        p_sei_buffer = new uint8_t[i_sei_size];
-        MP4_FAIL_IF_ERR(!p_sei_buffer,
-                        "failed to allocate sei transition buffer.\n");
-
-        uint8_t *p_sei_pt = p_sei_buffer;
-        for (uint32_t i = 3; i < nalcount; i++)
-        {
-            memcpy(p_sei_pt, p_nal[i].payload, p_nal[i].sizeBytes);
-            p_sei_pt += p_nal[i].sizeBytes;
-        }
+        general_log(x265Param, "mp4", X265_LOG_INFO,
+                    "writeHeaders skip_sei_buffer nalcount=%u\n", nalcount);
     }
 
     return vps_size + sps_size + pps_size;
