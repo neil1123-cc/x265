@@ -77,7 +77,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: lsmash-install
-        key: lsmash-latest-clang-v1
+        key: lsmash-latest-clang-v2-smoke
 
     - name: Checkout FFmpeg
       uses: actions/checkout@v4
