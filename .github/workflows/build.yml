@@ -184,6 +184,12 @@ jobs:
         cp /usr/local/lib/libobuparse.a obuparse-install/lib/
         mv obuparse-install "$GITHUB_WORKSPACE/"
 
+    - name: Install cached obuparse
+      if: steps.cache-obuparse.outputs.cache-hit == 'true'
+      run: |
+        cp obuparse-install/include/* /usr/local/include/
+        cp obuparse-install/lib/* /usr/local/lib/
+
     - name: Compile L-SMASH
       if: steps.cache-lsmash.outputs.cache-hit != 'true'
       working-directory: lsmash
@@ -202,12 +208,6 @@ jobs:
         cp -r /usr/local/lib/liblsmash* lsmash-install/lib/
         cp -r /usr/local/lib/pkgconfig lsmash-install/lib/ 2>/dev/null || true
         mv lsmash-install "$GITHUB_WORKSPACE/"
-
-    - name: Install cached obuparse
-      if: steps.cache-obuparse.outputs.cache-hit == 'true'
-      run: |
-        cp obuparse-install/include/* /usr/local/include/
-        cp obuparse-install/lib/* /usr/local/lib/
 
     - name: Install cached L-SMASH
       if: steps.cache-lsmash.outputs.cache-hit == 'true'
