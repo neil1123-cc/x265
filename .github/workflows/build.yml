@@ -257,8 +257,12 @@ jobs:
         CPU=${{matrix.target_cpu}}
         PGO_FLAG=""
         if [ -f build/x265.profdata ]; then
-          PGO_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265.profdata"
-          echo "Using PGO profdata"
+          if llvm-profdata show build/x265.profdata >/dev/null 2>&1; then
+            PGO_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265.profdata"
+            echo "Using PGO profdata"
+          else
+            echo "Skipping incompatible PGO profdata"
+          fi
         else
           echo "Building without PGO"
         fi
