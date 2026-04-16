@@ -1,6 +1,31 @@
 #include "mp4.h"
 
+#if _WIN32
+#include <windows.h>
+#endif
+
 #define NALU_LENGTH_SIZE 4
+
+static inline int x265_is_regular_file_path(const char *path)
+{
+#if _WIN32
+    int ret = -1;
+    wchar_t path_utf16[MAX_PATH * 2];
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, path_utf16, sizeof(path_utf16) / sizeof(wchar_t)))
+    {
+        struct _stati64 file_stat;
+        ret = !(WaitNamedPipeW(path_utf16, 0) || GetLastError() == ERROR_SEM_TIMEOUT);
+        if (ret && !_wstati64(path_utf16, &file_stat))
+            ret = S_ISREG(file_stat.st_mode);
+    }
+    return ret;
+#else
+    struct stat file_stat;
+    if (stat(path, &file_stat))
+        return 1;
+    return S_ISREG(file_stat.st_mode);
+#endif
+}
 
 typedef struct
 {
@@ -136,17 +161,32 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
     if(p_root)
     {
         double actual_duration = 0;
+        uint32_t last_delta = 0;
+        general_log(NULL, "mp4", X265_LOG_INFO,
+                    "closeFile root=%p track=%u frames=%d fragments=%d stdout=%d largest_pts=%lld second_largest_pts=%lld first_cts=%" PRIu64 " time_inc=%" PRIu64 " video_ts=%u movie_ts=%u\n",
+                    p_root, i_track, i_numframe, b_fragments, b_stdout,
+                    (long long)largest_pts, (long long)second_largest_pts, i_first_cts,
+                    i_time_inc, i_video_timescale, i_movie_timescale);
         if(i_track)
         {
             /* Flush the rest of samples and add the last sample_delta. */
-            uint32_t last_delta = largest_pts - second_largest_pts;
-            MP4_LOG_IF_ERR(lsmash_flush_pooled_samples(p_root, i_track, GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc)),
+            last_delta = largest_pts - second_largest_pts;
+            int flush_ret = lsmash_flush_pooled_samples(p_root, i_track, GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc));
+            general_log(NULL, "mp4", X265_LOG_INFO,
+                        "closeFile flush_ret=%d last_delta=%u scaled_delta=%lld\n",
+                        flush_ret, last_delta,
+                        (long long)GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc));
+            MP4_LOG_IF_ERR(flush_ret,
                            "failed to flush the rest of samples.\n");
 
             if(i_movie_timescale != 0 && i_video_timescale != 0)      /* avoid zero division */
                 actual_duration = ((double)GetTimeScaled((largest_pts + last_delta) * i_time_inc) / i_video_timescale) * i_movie_timescale;
             else
                 MP4_LOG_ERROR("timescale is broken.\n");
+            general_log(NULL, "mp4", X265_LOG_INFO,
+                        "closeFile actual_duration=%.3f scaled_end=%lld\n",
+                        actual_duration,
+                        (long long)GetTimeScaled((largest_pts + last_delta) * i_time_inc));
 
             /*
              * Declare the explicit time-line mapping.
@@ -166,12 +206,22 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
             if (!b_fragments)
             {
-                MP4_LOG_IF_ERR(lsmash_create_explicit_timeline_map(p_root, i_track, edit),
+                int map_ret = lsmash_create_explicit_timeline_map(p_root, i_track, edit);
+                general_log(NULL, "mp4", X265_LOG_INFO,
+                            "closeFile create_timeline_ret=%d duration=%.3f start=%" PRIu64 "\n",
+                            map_ret, actual_duration, i_first_cts);
+                MP4_LOG_IF_ERR(map_ret,
                                "failed to set timeline map for video.\n");
             }
             else if (!b_stdout)
-                MP4_LOG_IF_ERR(lsmash_modify_explicit_timeline_map(p_root, i_track, 1, edit),
+            {
+                int map_ret = lsmash_modify_explicit_timeline_map(p_root, i_track, 1, edit);
+                general_log(NULL, "mp4", X265_LOG_INFO,
+                            "closeFile modify_timeline_ret=%d duration=%.3f start=%" PRIu64 "\n",
+                            map_ret, actual_duration, i_first_cts);
+                MP4_LOG_IF_ERR(map_ret,
                                "failed to update timeline map for video.\n");
+            }
         }
 
         remux_cb_param cb_param;
@@ -181,7 +231,11 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
         remux_info.func = remux_callback;
         remux_info.buffer_size = 4 * 1024 * 1024;
         remux_info.param = &cb_param;
-        MP4_LOG_IF_ERR(lsmash_finish_movie(p_root, &remux_info), "failed to finish movie.\n");
+        int finish_ret = lsmash_finish_movie(p_root, &remux_info);
+        general_log(NULL, "mp4", X265_LOG_INFO,
+                    "closeFile finish_movie_ret=%d fragments=%d stdout=%d frames=%d\n",
+                    finish_ret, b_fragments, b_stdout, i_numframe);
+        MP4_LOG_IF_ERR(finish_ret, "failed to finish movie.\n");
     }
 
     sign();
@@ -192,6 +246,7 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
 int MP4Output::openFile(const char *psz_filename)
 {
     int b_regular = strcmp(psz_filename, "-");
+    b_regular = b_regular && x265_is_regular_file_path(psz_filename);
     if (b_regular)
     {
         FILE *fh = x265_fopen(psz_filename, "wb");
@@ -202,6 +257,8 @@ int MP4Output::openFile(const char *psz_filename)
 
     b_stdout = !strcmp(psz_filename, "-");
     b_fragments = !b_regular;
+    general_log(NULL, "mp4", X265_LOG_INFO, "openFile regular=%d stdout=%d fragments=%d file=%s\n",
+                b_regular, b_stdout, b_fragments, psz_filename);
 
     p_root = lsmash_create_root();
     MP4_FAIL_IF_ERR_EX(!p_root, "failed to create root.\n");
