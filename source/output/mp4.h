@@ -5,6 +5,8 @@
 #include "common.h"
 #include <fstream>
 #include <iostream>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <lsmash.h>
 
 namespace X265_NS {
@@ -36,6 +38,8 @@ protected:
     uint32_t fpsNum;
     uint32_t fpsDenom;
     uint32_t fpsScale;
+    bool b_stdout;
+    bool b_fragments;
     void FixTimeScale(uint64_t &);
     int64_t GetTimeScaled(int64_t);
     InputFileInfo info;
@@ -46,6 +50,30 @@ public:
     {
         info = inputInfo;
         b_fail = false;
+        b_stdout = false;
+        b_fragments = false;
+        p_root = NULL;
+        summary = NULL;
+        i_movie_timescale = 0;
+        i_video_timescale = 0;
+        i_track = 0;
+        i_sample_entry = 0;
+        i_time_inc = 0;
+        i_start_offset = 0;
+        i_first_cts = 0;
+        i_prev_dts = 0;
+        i_sei_size = 0;
+        p_sei_buffer = NULL;
+        i_numframe = 0;
+        i_init_delta = 0;
+        i_delay_frames = 0;
+        memset(&file_param, 0, sizeof(file_param));
+        old_timescale = 0;
+        old_time_inc = 0;
+        fpsNum = 0;
+        fpsDenom = 0;
+        fpsScale = 0;
+        x265Param = NULL;
         if(openFile(fname) != 0)
             b_fail = true;
     }
