@@ -449,8 +449,8 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
 {
     const bool b_keyframe = pic.sliceType == X265_TYPE_IDR;
     int i_size = 0;
-    const int i_pts = pic.pts;
-    const int i_dts = pic.dts - i_delay_frames;
+    const int64_t i_pts = pic.pts;
+    const int64_t i_dts = pic.dts;
     uint64_t dts, cts;
     general_log(x265Param, "mp4", X265_LOG_DEBUG, "Write Frame: DTS: %8lld  PTS: %8lld\n", pic.dts, pic.pts);
 
