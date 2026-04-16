@@ -401,6 +401,15 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     {
         i_start_offset = i_dts * -1;
         i_first_cts = GetTimeScaled(i_start_offset * i_time_inc);
+        if (b_fragments)
+        {
+            lsmash_edit_t edit;
+            edit.duration = ISOM_EDIT_DURATION_UNKNOWN32;
+            edit.start_time = i_first_cts;
+            edit.rate = ISOM_EDIT_MODE_NORMAL;
+            MP4_LOG_IF_ERR(lsmash_create_explicit_timeline_map(p_root, i_track, edit),
+                           "failed to set timeline map for video.\n");
+        }
     }
 
     for(uint8_t i = 0; i < nalcount; i++)
@@ -434,6 +443,14 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     p_sample->cts = cts;
     p_sample->index = i_sample_entry;
     p_sample->prop.ra_flags = b_keyframe ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
+
+    if (b_fragments && i_numframe && p_sample->prop.ra_flags != ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE)
+    {
+        MP4_FAIL_IF_ERR(lsmash_flush_pooled_samples(p_root, i_track, p_sample->dts - i_prev_dts),
+                        "failed to flush the rest of samples.\n");
+        MP4_FAIL_IF_ERR(lsmash_create_fragment_movie(p_root),
+                        "failed to create a movie fragment.\n");
+    }
 
     /* Append data per sample. */
     MP4_FAIL_IF_ERR(lsmash_append_sample(p_root, i_track, p_sample),
