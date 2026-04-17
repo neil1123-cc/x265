@@ -36,19 +36,20 @@ jobs:
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
-        msystem: CLANG64
+        msystem: UCRT64
         update: false
         install: >-
           base-devel
-          mingw-w64-clang-x86_64-clang
-          mingw-w64-clang-x86_64-make
           mingw-w64-ucrt-x86_64-gcc
           mingw-w64-ucrt-x86_64-make
 
     - name: Compile obuparse
       working-directory: obuparse
+      shell: msys2 {0}
+      env:
+        MSYSTEM: UCRT64
       run: |
-        make CC=cc libobuparse.a
+        make CC=gcc libobuparse.a
         install -v obuparse.h /usr/local/include
         install -v libobuparse.a /usr/local/lib
 
@@ -59,8 +60,8 @@ jobs:
         MSYSTEM: UCRT64
       run: |
         ./configure --prefix=/usr/local --cc=gcc \
-          --extra-cflags="-O0 -I/usr/local/include" \
-          --extra-ldflags="-L/usr/local/lib" \
+          --extra-cflags="-O0 -I$GITHUB_WORKSPACE/obuparse -I/usr/local/include" \
+          --extra-ldflags="-L$GITHUB_WORKSPACE/obuparse -L/usr/local/lib" \
           --extra-libs="-lobuparse"
         make -j$(nproc)
         make install
