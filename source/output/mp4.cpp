@@ -511,7 +511,7 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     }
 
     dts = GetTimeScaled((i_dts + i_start_offset) * i_time_inc);
-    cts = dts;
+    cts = GetTimeScaled((i_pts + i_start_offset) * i_time_inc);
 
     p_sample->dts = dts;
     p_sample->cts = cts;
