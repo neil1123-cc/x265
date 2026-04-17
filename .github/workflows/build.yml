@@ -15,7 +15,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lsmash-smoke:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: Checkout obuparse
+      uses: actions/checkout@v4
+      with:
+        path: obuparse
+        repository: dwbuiten/obuparse
+
+    - name: Checkout L-SMASH
+      uses: actions/checkout@v4
+      with:
+        path: lsmash
+        repository: vimeo/l-smash
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: CLANG64
+        update: false
+        install: >-
+          base-devel
+          mingw-w64-clang-x86_64-clang
+          mingw-w64-clang-x86_64-make
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-make
+
+    - name: Compile obuparse
+      working-directory: obuparse
+      run: |
+        make CC=cc libobuparse.a
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+
+    - name: Compile L-SMASH
+      working-directory: lsmash
+      shell: msys2 {0}
+      env:
+        MSYSTEM: UCRT64
+      run: |
+        ./configure --prefix=/usr/local --cc=gcc \
+          --extra-cflags="-O0 -I/usr/local/include" \
+          --extra-ldflags="-L/usr/local/lib" \
+          --extra-libs="-lobuparse"
+        make -j$(nproc)
+        make install
+
+    - name: L-SMASH smoke test
+      run: |
+        cat > lsmash_smoke.c <<'EOF'
+        #include <stdio.h>
+        #include <lsmash.h>
+
+        int main(void)
+        {
+          lsmash_root_t *root = lsmash_create_root();
+          if (!root)
+          {
+            fprintf(stderr, "lsmash_create_root returned NULL\n");
+            return 1;
+          }
+          lsmash_destroy_root(root);
+          return 0;
+        }
+        EOF
+
+        cc -O0 lsmash_smoke.c -I/usr/local/include -L/usr/local/lib \
+          -llsmash -lobuparse -o lsmash-smoke.exe
+        ./lsmash-smoke.exe
+
   build:
+    needs: lsmash-smoke
     runs-on: windows-latest
     defaults:
       run:
@@ -34,6 +108,9 @@ jobs:
           - znver3
           - znver4
           - znver5
+        lto_mode:
+          - off
+          - on
 
     steps:
     - name: Checkout x265
@@ -226,35 +303,12 @@ jobs:
     - name: Setup build dirs
       run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all
 
-    - name: L-SMASH smoke test
-      run: |
-        cat > build/lsmash_smoke.c <<'EOF'
-        #include <stdio.h>
-        #include <lsmash.h>
-
-        int main(void)
-        {
-          lsmash_root_t *root = lsmash_create_root();
-          if (!root)
-          {
-            fprintf(stderr, "lsmash_create_root returned NULL\n");
-            return 1;
-          }
-          lsmash_destroy_root(root);
-          return 0;
-        }
-        EOF
-
-        cc -O0 build/lsmash_smoke.c -I/usr/local/include -L/usr/local/lib \
-          -llsmash -lobuparse -o build/lsmash-smoke.exe
-
-        build/lsmash-smoke.exe
-
     - name: Compile x265 (all variants parallel)
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
         CPU=${{matrix.target_cpu}}
+        LTO_MODE=${{matrix.lto_mode}}
         PGO_FLAG=""
         if [ -f build/x265.profdata ]; then
           if llvm-profdata show build/x265.profdata >/dev/null 2>&1; then
@@ -267,7 +321,12 @@ jobs:
           echo "Building without PGO"
         fi
 
-        CXX_FLAGS="-O3 -fmerge-all-constants -I/usr/local/include $PGO_FLAG"
+        LTO_FLAG=""
+        if [ "$LTO_MODE" = "on" ]; then
+          LTO_FLAG="-flto"
+        fi
+
+        CXX_FLAGS="-O3 -fmerge-all-constants -I/usr/local/include $PGO_FLAG $LTO_FLAG"
 
         # === Configure and build 8bit CLI ===
         echo "=== Building 8bit CLI ==="
@@ -369,7 +428,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: x265-win64-${{matrix.target_cpu}}-clang
+        name: x265-win64-${{matrix.target_cpu}}-clang-lto-${{matrix.lto_mode}}
         path: dist/*
 
     - name: Compress for release
