@@ -333,20 +333,6 @@ void MP4Output::setParam(x265_param *p_param)
     summary->height = p_param->sourceHeight;
     uint32_t i_display_width = p_param->sourceWidth << 16;
     uint32_t i_display_height = p_param->sourceHeight << 16;
-    if(p_param->vui.sarWidth && p_param->vui.sarHeight)
-    {
-        double sar = (double)p_param->vui.sarWidth / p_param->vui.sarHeight;
-        if(sar > 1.0)
-            i_display_width *= sar;
-        else
-            i_display_height /= sar;
-        summary->par_h = p_param->vui.sarWidth;
-        summary->par_v = p_param->vui.sarHeight;
-    }
-    summary->color.primaries_index = p_param->vui.colorPrimaries;
-    summary->color.transfer_index  = p_param->vui.transferCharacteristics;
-    summary->color.matrix_index    = p_param->vui.matrixCoeffs >= 0 ? p_param->vui.matrixCoeffs : ISOM_MATRIX_INDEX_UNSPECIFIED;
-    summary->color.full_range      = p_param->vui.bEnableVideoFullRangeFlag >= 0 ? p_param->vui.bEnableVideoFullRangeFlag : 0;
 
     /* Set video track parameters. */
     lsmash_track_parameters_t track_param;
