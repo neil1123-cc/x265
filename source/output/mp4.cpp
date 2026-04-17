@@ -247,9 +247,9 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
         remux_info.func = remux_callback;
         remux_info.buffer_size = 4 * 1024 * 1024;
         remux_info.param = &cb_param;
-        int finish_ret = lsmash_finish_movie(p_root, &remux_info);
+        int finish_ret = lsmash_finish_movie(p_root, NULL);
         general_log(NULL, "mp4", X265_LOG_INFO,
-                    "closeFile finish_movie_ret=%d fragments=%d stdout=%d frames=%d\n",
+                    "closeFile finish_movie_ret=%d fragments=%d stdout=%d frames=%d remux=null\n",
                     finish_ret, b_fragments, b_stdout, i_numframe);
         MP4_LOG_IF_ERR(finish_ret, "failed to finish movie.\n");
     }
