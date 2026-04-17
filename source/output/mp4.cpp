@@ -217,9 +217,12 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
             if (!b_fragments)
             {
+                int map_ret = lsmash_create_explicit_timeline_map(p_root, i_track, edit);
                 general_log(NULL, "mp4", X265_LOG_INFO,
-                            "closeFile skip_timeline_map duration=%.3f start=%" PRIu64 "\n",
-                            actual_duration, i_first_cts);
+                            "closeFile create_timeline_ret=%d duration=%.3f start=%" PRIu64 "\n",
+                            map_ret, actual_duration, i_first_cts);
+                MP4_LOG_IF_ERR(map_ret,
+                               "failed to set timeline map for video.\n");
             }
             else if (!b_stdout)
             {
@@ -278,7 +281,7 @@ int MP4Output::openFile(const char *psz_filename)
     summary = (lsmash_video_summary_t *)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
     MP4_FAIL_IF_ERR_EX(!summary,
                        "failed to allocate memory for summary information of video.\n");
-    summary->sample_type = ISOM_CODEC_TYPE_HEV1_VIDEO;
+    summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
 
     return 0;
 }
@@ -333,6 +336,20 @@ void MP4Output::setParam(x265_param *p_param)
     summary->height = p_param->sourceHeight;
     uint32_t i_display_width = p_param->sourceWidth << 16;
     uint32_t i_display_height = p_param->sourceHeight << 16;
+    if(p_param->vui.sarWidth && p_param->vui.sarHeight)
+    {
+        double sar = (double)p_param->vui.sarWidth / p_param->vui.sarHeight;
+        if(sar > 1.0)
+            i_display_width *= sar;
+        else
+            i_display_height /= sar;
+        summary->par_h = p_param->vui.sarWidth;
+        summary->par_v = p_param->vui.sarHeight;
+    }
+    summary->color.primaries_index = p_param->vui.colorPrimaries;
+    summary->color.transfer_index  = p_param->vui.transferCharacteristics;
+    summary->color.matrix_index    = p_param->vui.matrixCoeffs >= 0 ? p_param->vui.matrixCoeffs : ISOM_MATRIX_INDEX_UNSPECIFIED;
+    summary->color.full_range      = p_param->vui.bEnableVideoFullRangeFlag >= 0 ? p_param->vui.bEnableVideoFullRangeFlag : 0;
 
     /* Set video track parameters. */
     lsmash_track_parameters_t track_param;
@@ -429,8 +446,20 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     i_sei_size = 0;
     if(nalcount >= 4)
     {
-        general_log(x265Param, "mp4", X265_LOG_INFO,
-                    "writeHeaders skip_sei_buffer nalcount=%u\n", nalcount);
+        for (uint32_t i = 3; i < nalcount; i++)
+            i_sei_size += p_nal[i].sizeBytes;
+
+        /* SEI */
+        p_sei_buffer = new uint8_t[i_sei_size];
+        MP4_FAIL_IF_ERR(!p_sei_buffer,
+                        "failed to allocate sei transition buffer.\n");
+
+        uint8_t *p_sei_pt = p_sei_buffer;
+        for (uint32_t i = 3; i < nalcount; i++)
+        {
+            memcpy(p_sei_pt, p_nal[i].payload, p_nal[i].sizeBytes);
+            p_sei_pt += p_nal[i].sizeBytes;
+        }
     }
 
     return vps_size + sps_size + pps_size;
@@ -487,6 +516,21 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
         pp += size;
     }
 
+    if (i_numframe < 8)
+    {
+        char nal_types[128];
+        int pos = 0;
+        nal_types[0] = '\0';
+        for (uint8_t i = 0; i < nalcount && pos < (int)sizeof(nal_types) - 8; i++)
+        {
+            int nal_type = p_nalu[i].sizeBytes > NALU_LENGTH_SIZE ? ((p_nalu[i].payload[NALU_LENGTH_SIZE] >> 1) & 0x3f) : -1;
+            pos += snprintf(nal_types + pos, sizeof(nal_types) - pos, "%s%d", i ? "," : "", nal_type);
+        }
+        general_log(x265Param, "mp4", X265_LOG_INFO,
+                    "writeFrame nal_types frame=%d nalcount=%u types=%s\n",
+                    i_numframe, nalcount, nal_types);
+    }
+
     dts = GetTimeScaled((i_dts + i_start_offset) * i_time_inc);
     cts = GetTimeScaled((i_pts + i_start_offset) * i_time_inc);
 
@@ -494,22 +538,6 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     p_sample->cts = cts;
     p_sample->index = i_sample_entry;
     p_sample->prop.ra_flags = b_keyframe ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
-    p_sample->prop.independent = pic.sliceType == X265_TYPE_IDR || pic.sliceType == X265_TYPE_I
-                               ? ISOM_SAMPLE_IS_INDEPENDENT
-                               : ISOM_SAMPLE_IS_NOT_INDEPENDENT;
-    p_sample->prop.disposable = pic.sliceType == X265_TYPE_B
-                              ? ISOM_SAMPLE_IS_DISPOSABLE
-                              : ISOM_SAMPLE_IS_NOT_DISPOSABLE;
-    p_sample->prop.redundant = ISOM_SAMPLE_HAS_NO_REDUNDANCY;
-    if (pic.sliceType != X265_TYPE_B)
-        p_sample->prop.allow_earlier = QT_SAMPLE_EARLIER_PTS_ALLOWED;
-    general_log(x265Param, "mp4", X265_LOG_INFO,
-                "writeFrame sample_props frame=%d sliceType=%d dts=%" PRIu64 " cts=%" PRIu64 " ra=%u indep=%u disp=%u allow_earlier=%u\n",
-                i_numframe, pic.sliceType, dts, cts,
-                p_sample->prop.ra_flags,
-                p_sample->prop.independent,
-                p_sample->prop.disposable,
-                p_sample->prop.allow_earlier);
 
     if (!i_numframe)
     {
