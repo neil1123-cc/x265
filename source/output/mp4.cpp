@@ -374,9 +374,14 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
 
     lsmash_codec_specific_t *cs = lsmash_create_codec_specific_data(LSMASH_CODEC_SPECIFIC_DATA_TYPE_ISOM_VIDEO_HEVC,
                                   LSMASH_CODEC_SPECIFIC_FORMAT_STRUCTURED);
+    MP4_FAIL_IF_ERR(!cs || !cs->data.structured,
+                    "failed to allocate HEVC codec specific data.\n");
 
     lsmash_hevc_specific_parameters_t *param = (lsmash_hevc_specific_parameters_t *)cs->data.structured;
     param->lengthSizeMinusOne = NALU_LENGTH_SIZE - 1;
+    general_log(x265Param, "mp4", X265_LOG_INFO,
+                "writeHeaders hvcc_init nalcount=%u vps=%u sps=%u pps=%u sample_type=%u lengthSizeMinusOne=%u\n",
+                nalcount, vps_size, sps_size, pps_size, summary->sample_type, param->lengthSizeMinusOne);
 
     /* VPS */
     if(lsmash_append_hevc_dcr_nalu(param, HEVC_DCR_NALU_TYPE_VPS, vps, vps_size))
@@ -402,7 +407,11 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
         return -1;
     }
 
-    if(lsmash_add_codec_specific_data((lsmash_summary_t *)summary, cs))
+    int add_cs_ret = lsmash_add_codec_specific_data((lsmash_summary_t *)summary, cs);
+    general_log(x265Param, "mp4", X265_LOG_INFO,
+                "writeHeaders add_codec_specific_ret=%d summary=%p cs=%p\n",
+                add_cs_ret, summary, cs);
+    if(add_cs_ret)
     {
         MP4_LOG_ERROR("failed to add H.264 specific info.\n");
         return -1;
@@ -411,6 +420,9 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     lsmash_destroy_codec_specific_data(cs);
 
     i_sample_entry = lsmash_add_sample_entry(p_root, i_track, summary);
+    general_log(x265Param, "mp4", X265_LOG_INFO,
+                "writeHeaders add_sample_entry=%u track=%u summary=%p\n",
+                i_sample_entry, i_track, summary);
     MP4_FAIL_IF_ERR(!i_sample_entry,
                     "failed to add sample entry for video.\n");
 
