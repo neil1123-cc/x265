@@ -1,45 +1,6 @@
 #include "mp4.h"
 
-#if _WIN32
-#include <windows.h>
-#endif
-
 #define NALU_LENGTH_SIZE 4
-
-static inline int x265_is_regular_file_path(const char *path)
-{
-#if _WIN32
-    int ret = -1;
-    wchar_t path_utf16[MAX_PATH * 2];
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, path_utf16, sizeof(path_utf16) / sizeof(wchar_t)))
-    {
-        struct _stati64 file_stat;
-        ret = !(WaitNamedPipeW(path_utf16, 0) || GetLastError() == ERROR_SEM_TIMEOUT);
-        if (ret && !_wstati64(path_utf16, &file_stat))
-            ret = S_ISREG(file_stat.st_mode);
-    }
-    return ret;
-#else
-    struct stat file_stat;
-    if (stat(path, &file_stat))
-        return 1;
-    return S_ISREG(file_stat.st_mode);
-#endif
-}
-
-typedef struct
-{
-    int64_t start;
-    int no_progress;
-} remux_cb_param;
-
-static inline int x265_is_regular_file(FILE *filehandle)
-{
-    struct stat file_stat;
-    if (fstat(fileno(filehandle), &file_stat))
-        return 1;
-    return S_ISREG(file_stat.st_mode);
-}
 
 /*******************/
 
@@ -68,29 +29,6 @@ if( cond )\
 
 using namespace X265_NS;
 using namespace std;
-
-int remux_callback(void *param, uint64_t done, uint64_t total)
-{
-    remux_cb_param *cb_param = (remux_cb_param *)param;
-    if (cb_param->no_progress && done != total)
-        return 0;
-    int64_t elapsed = x265_mdate() - cb_param->start;
-    double byterate = done / (elapsed / 1000000.);
-    fprintf(stderr, "remux [%5.2lf%%], %" PRIu64 "/%" PRIu64 " KiB, %u KiB/s, ",
-            done * 100. / total, done / 1024, total / 1024, (unsigned)byterate / 1024);
-    if (done == total)
-    {
-        unsigned sec = (unsigned)(elapsed / 1000000);
-        fprintf(stderr, "total elapsed %u:%02u:%02u\n\n", sec / 3600, (sec / 60) % 60, sec % 60);
-    }
-    else
-    {
-        unsigned eta = (unsigned)((total - done) / byterate);
-        fprintf(stderr, "eta %u:%02u:%02u\r", eta / 3600, (eta / 60) % 60, eta % 60);
-    }
-    fflush(stderr);
-    return 0;
-}
 
 void MP4Output::FixTimeScale(uint64_t &i_media_timescale) {
     old_timescale = 0;
@@ -121,20 +59,10 @@ int64_t MP4Output::GetTimeScaled(int64_t xts) {
 
 void MP4Output::remove_mp4_hnd()
 {
-    if (summary)
-    {
-        lsmash_cleanup_summary((lsmash_summary_t *)summary);
-        summary = NULL;
-    }
-    if (p_root)
-    {
-        lsmash_close_file(&file_param);
-        lsmash_destroy_root(p_root);
-        p_root = NULL;
-    }
+    lsmash_cleanup_summary((lsmash_summary_t *)summary);
+    lsmash_close_file(&file_param);
+    lsmash_destroy_root(p_root);
     delete[] p_sei_buffer;
-    p_sei_buffer = NULL;
-    i_sei_size = 0;
 }
 
 /*******************/
@@ -161,48 +89,17 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
     if(p_root)
     {
         double actual_duration = 0;
-        uint32_t last_delta = 0;
-        general_log(NULL, "mp4", X265_LOG_INFO,
-                    "closeFile root=%p track=%u frames=%d fragments=%d stdout=%d largest_pts=%lld second_largest_pts=%lld first_cts=%" PRIu64 " time_inc=%" PRIu64 " video_ts=%u movie_ts=%u\n",
-                    p_root, i_track, i_numframe, b_fragments, b_stdout,
-                    (long long)largest_pts, (long long)second_largest_pts, i_first_cts,
-                    i_time_inc, i_video_timescale, i_movie_timescale);
         if(i_track)
         {
-            uint64_t scaled_default_delta = GetTimeScaled(i_time_inc);
-            uint64_t scaled_last_delta = 0;
-            uint64_t scaled_duration = 0;
-            uint64_t scaled_end = 0;
-
             /* Flush the rest of samples and add the last sample_delta. */
-            last_delta = largest_pts - second_largest_pts;
-            scaled_last_delta = GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc);
-            int flush_ret = lsmash_flush_pooled_samples(p_root, i_track, scaled_last_delta ? scaled_last_delta : scaled_default_delta);
-            general_log(NULL, "mp4", X265_LOG_INFO,
-                        "closeFile flush_ret=%d last_delta=%u scaled_delta=%llu internal_dts_delta=%llu\n",
-                        flush_ret, last_delta,
-                        (unsigned long long)GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc),
-                        (unsigned long long)(scaled_last_delta ? scaled_last_delta : scaled_default_delta));
-            MP4_LOG_IF_ERR(flush_ret,
+            uint32_t last_delta = largest_pts - second_largest_pts;
+            MP4_LOG_IF_ERR(lsmash_flush_pooled_samples(p_root, i_track, GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc)),
                            "failed to flush the rest of samples.\n");
 
             if(i_movie_timescale != 0 && i_video_timescale != 0)      /* avoid zero division */
-            {
-                actual_duration = ((double)((largest_pts + last_delta) * i_time_inc) / i_video_timescale) * i_movie_timescale;
-                scaled_duration = GetTimeScaled((largest_pts + last_delta) * i_time_inc);
-                scaled_end = i_first_cts + scaled_duration;
-            }
+                actual_duration = ((double)GetTimeScaled((largest_pts + last_delta) * i_time_inc) / i_video_timescale) * i_movie_timescale;
             else
                 MP4_LOG_ERROR("timescale is broken.\n");
-            general_log(NULL, "mp4", X265_LOG_INFO,
-                        "closeFile actual_duration=%.3f scaled_end=%llu internal_duration=%llu max_cts=%llu second_max_cts=%llu max_dts=%llu second_max_dts=%llu\n",
-                        actual_duration,
-                        (unsigned long long)scaled_end,
-                        (unsigned long long)scaled_duration,
-                        (unsigned long long)i_max_cts,
-                        (unsigned long long)i_second_max_cts,
-                        (unsigned long long)i_max_dts,
-                        (unsigned long long)i_second_max_dts);
 
             /*
              * Declare the explicit time-line mapping.
@@ -220,23 +117,13 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.duration   = actual_duration;
             edit.start_time = i_first_cts;
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
-            general_log(NULL, "mp4", X265_LOG_INFO,
-                        "closeFile skip_timeline_map duration=%.3f start=%" PRIu64 " fragments=%d stdout=%d\n",
-                        actual_duration, i_first_cts, b_fragments, b_stdout);
+            MP4_LOG_IF_ERR(lsmash_create_explicit_timeline_map(p_root, i_track, edit),
+                           "failed to set timeline map for video.\n");
+            MP4_LOG_IF_ERR(lsmash_modify_explicit_timeline_map(p_root, i_track, 1, edit),
+                           "failed to update timeline map for video.\n");
         }
 
-        remux_cb_param cb_param;
-        cb_param.no_progress = 1;
-        cb_param.start = x265_mdate();
-        lsmash_adhoc_remux_t remux_info;
-        remux_info.func = remux_callback;
-        remux_info.buffer_size = 4 * 1024 * 1024;
-        remux_info.param = &cb_param;
-        int finish_ret = lsmash_finish_movie(p_root, NULL);
-        general_log(NULL, "mp4", X265_LOG_INFO,
-                    "closeFile finish_movie_ret=%d fragments=%d stdout=%d frames=%d remux=null\n",
-                    finish_ret, b_fragments, b_stdout, i_numframe);
-        MP4_LOG_IF_ERR(finish_ret, "failed to finish movie.\n");
+        MP4_LOG_IF_ERR(lsmash_finish_movie(p_root, NULL), "failed to finish movie.\n");
     }
 
     sign();
@@ -246,27 +133,14 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
 
 int MP4Output::openFile(const char *psz_filename)
 {
-    int b_regular = strcmp(psz_filename, "-");
-    b_regular = b_regular && x265_is_regular_file_path(psz_filename);
-    if (b_regular)
-    {
-        FILE *fh = x265_fopen(psz_filename, "wb");
-        MP4_FAIL_IF_ERR_EX(!fh, "cannot open output file `%s'.\n", psz_filename);
-        b_regular = x265_is_regular_file(fh);
-        fclose(fh);
-    }
-
-    b_stdout = !strcmp(psz_filename, "-");
-    b_fragments = !b_regular;
-    general_log(NULL, "mp4", X265_LOG_INFO, "openFile regular=%d stdout=%d fragments=%d file=%s\n",
-                b_regular, b_stdout, b_fragments, psz_filename);
+    FILE *fh = x265_fopen(psz_filename, "wb");
+    MP4_FAIL_IF_ERR(!fh, "cannot open output file `%s'.\n", psz_filename);
+    fclose(fh);
 
     p_root = lsmash_create_root();
     MP4_FAIL_IF_ERR_EX(!p_root, "failed to create root.\n");
 
     MP4_FAIL_IF_ERR_EX(lsmash_open_file(psz_filename, 0, &file_param) < 0, "failed to open an output file.\n");
-    if (b_fragments)
-        file_param.mode = static_cast<lsmash_file_mode>(file_param.mode | LSMASH_FILE_MODE_FRAGMENTED);
 
     summary = (lsmash_video_summary_t *)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
     MP4_FAIL_IF_ERR_EX(!summary,
@@ -381,15 +255,9 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
 
     lsmash_codec_specific_t *cs = lsmash_create_codec_specific_data(LSMASH_CODEC_SPECIFIC_DATA_TYPE_ISOM_VIDEO_HEVC,
                                   LSMASH_CODEC_SPECIFIC_FORMAT_STRUCTURED);
-    MP4_FAIL_IF_ERR(!cs || !cs->data.structured,
-                    "failed to allocate HEVC codec specific data.\n");
 
     lsmash_hevc_specific_parameters_t *param = (lsmash_hevc_specific_parameters_t *)cs->data.structured;
-    memset(param, 0, sizeof(*param));
     param->lengthSizeMinusOne = NALU_LENGTH_SIZE - 1;
-    general_log(x265Param, "mp4", X265_LOG_INFO,
-                "writeHeaders hvcc_init nalcount=%u vps=%u sps=%u pps=%u sample_type=%u lengthSizeMinusOne=%u\n",
-                nalcount, vps_size, sps_size, pps_size, summary->sample_type, param->lengthSizeMinusOne);
 
     /* VPS */
     if(lsmash_append_hevc_dcr_nalu(param, HEVC_DCR_NALU_TYPE_VPS, vps, vps_size))
@@ -415,11 +283,7 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
         return -1;
     }
 
-    int add_cs_ret = lsmash_add_codec_specific_data((lsmash_summary_t *)summary, cs);
-    general_log(x265Param, "mp4", X265_LOG_INFO,
-                "writeHeaders add_codec_specific_ret=%d summary=%p cs=%p\n",
-                add_cs_ret, summary, cs);
-    if(add_cs_ret)
+    if(lsmash_add_codec_specific_data((lsmash_summary_t *)summary, cs))
     {
         MP4_LOG_ERROR("failed to add H.264 specific info.\n");
         return -1;
@@ -428,17 +292,26 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     lsmash_destroy_codec_specific_data(cs);
 
     i_sample_entry = lsmash_add_sample_entry(p_root, i_track, summary);
-    general_log(x265Param, "mp4", X265_LOG_INFO,
-                "writeHeaders add_sample_entry=%u track=%u summary=%p\n",
-                i_sample_entry, i_track, summary);
     MP4_FAIL_IF_ERR(!i_sample_entry,
                     "failed to add sample entry for video.\n");
 
     i_sei_size = 0;
     if(nalcount >= 4)
     {
-        general_log(x265Param, "mp4", X265_LOG_INFO,
-                    "writeHeaders skip_sei_buffer nalcount=%u\n", nalcount);
+        for (uint32_t i = 3; i < nalcount; i++)
+            i_sei_size += p_nal[i].sizeBytes;
+
+        /* SEI */
+        p_sei_buffer = new uint8_t[i_sei_size];
+        MP4_FAIL_IF_ERR(!p_sei_buffer,
+                        "failed to allocate sei transition buffer.\n");
+
+        uint8_t *p_sei_pt = p_sei_buffer;
+        for (uint32_t i = 3; i < nalcount; i++)
+        {
+            memcpy(p_sei_pt, p_nal[i].payload, p_nal[i].sizeBytes);
+            p_sei_pt += p_nal[i].sizeBytes;
+        }
     }
 
     return vps_size + sps_size + pps_size;
@@ -451,8 +324,8 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
 {
     const bool b_keyframe = pic.sliceType == X265_TYPE_IDR;
     int i_size = 0;
-    const int64_t i_pts = pic.pts;
-    const int64_t i_dts = pic.dts;
+    const int i_pts = pic.pts;
+    const int i_dts = pic.dts - i_delay_frames;
     uint64_t dts, cts;
     general_log(x265Param, "mp4", X265_LOG_DEBUG, "Write Frame: DTS: %8lld  PTS: %8lld\n", pic.dts, pic.pts);
 
@@ -460,15 +333,6 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     {
         i_start_offset = i_dts * -1;
         i_first_cts = GetTimeScaled(i_start_offset * i_time_inc);
-        if (b_fragments)
-        {
-            lsmash_edit_t edit;
-            edit.duration = ISOM_EDIT_DURATION_UNKNOWN32;
-            edit.start_time = i_first_cts;
-            edit.rate = ISOM_EDIT_MODE_NORMAL;
-            MP4_LOG_IF_ERR(lsmash_create_explicit_timeline_map(p_root, i_track, edit),
-                           "failed to set timeline map for video.\n");
-        }
     }
 
     for(uint8_t i = 0; i < nalcount; i++)
@@ -495,21 +359,6 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
         pp += size;
     }
 
-    if (i_numframe < 8)
-    {
-        char nal_types[128];
-        int pos = 0;
-        nal_types[0] = '\0';
-        for (uint8_t i = 0; i < nalcount && pos < (int)sizeof(nal_types) - 8; i++)
-        {
-            int nal_type = p_nalu[i].sizeBytes > NALU_LENGTH_SIZE ? ((p_nalu[i].payload[NALU_LENGTH_SIZE] >> 1) & 0x3f) : -1;
-            pos += snprintf(nal_types + pos, sizeof(nal_types) - pos, "%s%d", i ? "," : "", nal_type);
-        }
-        general_log(x265Param, "mp4", X265_LOG_INFO,
-                    "writeFrame nal_types frame=%d nalcount=%u types=%s\n",
-                    i_numframe, nalcount, nal_types);
-    }
-
     dts = GetTimeScaled((i_dts + i_start_offset) * i_time_inc);
     cts = GetTimeScaled((i_pts + i_start_offset) * i_time_inc);
 
@@ -517,44 +366,6 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     p_sample->cts = cts;
     p_sample->index = i_sample_entry;
     p_sample->prop.ra_flags = b_keyframe ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
-    p_sample->prop.independent = b_keyframe ? ISOM_SAMPLE_IS_INDEPENDENT : ISOM_SAMPLE_IS_NOT_INDEPENDENT;
-    p_sample->prop.disposable = pic.sliceType == X265_TYPE_B ? ISOM_SAMPLE_IS_DISPOSABLE : ISOM_SAMPLE_IS_NOT_DISPOSABLE;
-    p_sample->prop.redundant = ISOM_SAMPLE_HAS_NO_REDUNDANCY;
-    p_sample->prop.allow_earlier = pic.sliceType == X265_TYPE_B ? QT_SAMPLE_EARLIER_PTS_ALLOWED : 0;
-
-    if (!i_numframe)
-    {
-        i_max_cts = cts;
-        i_second_max_cts = cts;
-        i_max_dts = dts;
-        i_second_max_dts = dts;
-    }
-    else
-    {
-        if (cts >= i_max_cts)
-        {
-            i_second_max_cts = i_max_cts;
-            i_max_cts = cts;
-        }
-        else if (cts > i_second_max_cts)
-            i_second_max_cts = cts;
-
-        if (dts >= i_max_dts)
-        {
-            i_second_max_dts = i_max_dts;
-            i_max_dts = dts;
-        }
-        else if (dts > i_second_max_dts)
-            i_second_max_dts = dts;
-    }
-
-    if (b_fragments && i_numframe && p_sample->prop.ra_flags != ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE)
-    {
-        MP4_FAIL_IF_ERR(lsmash_flush_pooled_samples(p_root, i_track, p_sample->dts - i_prev_dts),
-                        "failed to flush the rest of samples.\n");
-        MP4_FAIL_IF_ERR(lsmash_create_fragment_movie(p_root),
-                        "failed to create a movie fragment.\n");
-    }
 
     /* Append data per sample. */
     MP4_FAIL_IF_ERR(lsmash_append_sample(p_root, i_track, p_sample),
