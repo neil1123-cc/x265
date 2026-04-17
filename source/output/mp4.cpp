@@ -220,24 +220,9 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.duration   = actual_duration;
             edit.start_time = i_first_cts;
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
-            if (!b_fragments)
-            {
-                int map_ret = lsmash_create_explicit_timeline_map(p_root, i_track, edit);
-                general_log(NULL, "mp4", X265_LOG_INFO,
-                            "closeFile create_timeline_ret=%d duration=%.3f start=%" PRIu64 "\n",
-                            map_ret, actual_duration, i_first_cts);
-                MP4_LOG_IF_ERR(map_ret,
-                               "failed to set timeline map for video.\n");
-            }
-            else if (!b_stdout)
-            {
-                int map_ret = lsmash_modify_explicit_timeline_map(p_root, i_track, 1, edit);
-                general_log(NULL, "mp4", X265_LOG_INFO,
-                            "closeFile modify_timeline_ret=%d duration=%.3f start=%" PRIu64 "\n",
-                            map_ret, actual_duration, i_first_cts);
-                MP4_LOG_IF_ERR(map_ret,
-                               "failed to update timeline map for video.\n");
-            }
+            general_log(NULL, "mp4", X265_LOG_INFO,
+                        "closeFile skip_timeline_map duration=%.3f start=%" PRIu64 " fragments=%d stdout=%d\n",
+                        actual_duration, i_first_cts, b_fragments, b_stdout);
         }
 
         remux_cb_param cb_param;
