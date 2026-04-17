@@ -392,6 +392,7 @@ int MP4Output::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
                     "failed to allocate HEVC codec specific data.\n");
 
     lsmash_hevc_specific_parameters_t *param = (lsmash_hevc_specific_parameters_t *)cs->data.structured;
+    memset(param, 0, sizeof(*param));
     param->lengthSizeMinusOne = NALU_LENGTH_SIZE - 1;
     general_log(x265Param, "mp4", X265_LOG_INFO,
                 "writeHeaders hvcc_init nalcount=%u vps=%u sps=%u pps=%u sample_type=%u lengthSizeMinusOne=%u\n",
