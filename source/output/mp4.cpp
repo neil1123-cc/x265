@@ -494,6 +494,22 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     p_sample->cts = cts;
     p_sample->index = i_sample_entry;
     p_sample->prop.ra_flags = b_keyframe ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
+    p_sample->prop.independent = pic.sliceType == X265_TYPE_IDR || pic.sliceType == X265_TYPE_I
+                               ? ISOM_SAMPLE_IS_INDEPENDENT
+                               : ISOM_SAMPLE_IS_NOT_INDEPENDENT;
+    p_sample->prop.disposable = pic.sliceType == X265_TYPE_B
+                              ? ISOM_SAMPLE_IS_DISPOSABLE
+                              : ISOM_SAMPLE_IS_NOT_DISPOSABLE;
+    p_sample->prop.redundant = ISOM_SAMPLE_HAS_NO_REDUNDANCY;
+    if (pic.sliceType != X265_TYPE_B)
+        p_sample->prop.allow_earlier = QT_SAMPLE_EARLIER_PTS_ALLOWED;
+    general_log(x265Param, "mp4", X265_LOG_INFO,
+                "writeFrame sample_props frame=%d sliceType=%d dts=%" PRIu64 " cts=%" PRIu64 " ra=%u indep=%u disp=%u allow_earlier=%u\n",
+                i_numframe, pic.sliceType, dts, cts,
+                p_sample->prop.ra_flags,
+                p_sample->prop.independent,
+                p_sample->prop.disposable,
+                p_sample->prop.allow_earlier);
 
     if (!i_numframe)
     {
