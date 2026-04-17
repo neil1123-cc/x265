@@ -59,14 +59,16 @@ jobs:
       env:
         MSYSTEM: UCRT64
       run: |
-        ./configure --prefix=/usr/local --cc=gcc \
-          --extra-cflags="-O0 -I$GITHUB_WORKSPACE/obuparse -I/usr/local/include" \
-          --extra-ldflags="-L$GITHUB_WORKSPACE/obuparse -L/usr/local/lib" \
+        ./configure --cc=gcc \
+          --extra-cflags="-O0 -I$GITHUB_WORKSPACE/obuparse" \
+          --extra-ldflags="-L$GITHUB_WORKSPACE/obuparse" \
           --extra-libs="-lobuparse"
-        make -j$(nproc)
-        make install
+        make -j$(nproc) lib
 
     - name: L-SMASH smoke test
+      shell: msys2 {0}
+      env:
+        MSYSTEM: UCRT64
       run: |
         cat > lsmash_smoke.c <<'EOF'
         #include <stdio.h>
@@ -85,7 +87,7 @@ jobs:
         }
         EOF
 
-        cc -O0 lsmash_smoke.c -I/usr/local/include -L/usr/local/lib \
+        gcc -O0 lsmash_smoke.c -Ilsmash -Llsmash -Lobuparse \
           -llsmash -lobuparse -o lsmash-smoke.exe
         ./lsmash-smoke.exe
 
