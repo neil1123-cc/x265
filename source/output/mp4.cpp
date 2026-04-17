@@ -170,12 +170,13 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
         if(i_track)
         {
             uint64_t scaled_default_delta = GetTimeScaled(i_time_inc);
-            uint64_t scaled_last_delta = i_numframe > 1 ? (i_max_dts - i_second_max_dts) : scaled_default_delta;
-            uint64_t scaled_duration = i_numframe > 0 ? (i_max_cts - i_first_cts + (scaled_last_delta ? scaled_last_delta : scaled_default_delta)) : 0;
-            uint64_t scaled_end = i_numframe > 0 ? (i_first_cts + scaled_duration) : 0;
+            uint64_t scaled_last_delta = 0;
+            uint64_t scaled_duration = 0;
+            uint64_t scaled_end = 0;
 
             /* Flush the rest of samples and add the last sample_delta. */
             last_delta = largest_pts - second_largest_pts;
+            scaled_last_delta = GetTimeScaled((last_delta ? last_delta : 1) * i_time_inc);
             int flush_ret = lsmash_flush_pooled_samples(p_root, i_track, scaled_last_delta ? scaled_last_delta : scaled_default_delta);
             general_log(NULL, "mp4", X265_LOG_INFO,
                         "closeFile flush_ret=%d last_delta=%u scaled_delta=%llu internal_dts_delta=%llu\n",
@@ -186,7 +187,11 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
                            "failed to flush the rest of samples.\n");
 
             if(i_movie_timescale != 0 && i_video_timescale != 0)      /* avoid zero division */
-                actual_duration = ((double)scaled_duration / i_video_timescale) * i_movie_timescale;
+            {
+                actual_duration = ((double)((largest_pts + last_delta) * i_time_inc) / i_video_timescale) * i_movie_timescale;
+                scaled_duration = GetTimeScaled((largest_pts + last_delta) * i_time_inc);
+                scaled_end = i_first_cts + scaled_duration;
+            }
             else
                 MP4_LOG_ERROR("timescale is broken.\n");
             general_log(NULL, "mp4", X265_LOG_INFO,
@@ -217,9 +222,12 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
             if (!b_fragments)
             {
+                int map_ret = lsmash_create_explicit_timeline_map(p_root, i_track, edit);
                 general_log(NULL, "mp4", X265_LOG_INFO,
-                            "closeFile skip_timeline_map duration=%.3f start=%" PRIu64 "\n",
-                            actual_duration, i_first_cts);
+                            "closeFile create_timeline_ret=%d duration=%.3f start=%" PRIu64 "\n",
+                            map_ret, actual_duration, i_first_cts);
+                MP4_LOG_IF_ERR(map_ret,
+                               "failed to set timeline map for video.\n");
             }
             else if (!b_stdout)
             {
