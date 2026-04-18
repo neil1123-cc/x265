@@ -117,10 +117,6 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.duration   = actual_duration;
             edit.start_time = i_first_cts;
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
-            MP4_LOG_IF_ERR(lsmash_create_explicit_timeline_map(p_root, i_track, edit),
-                           "failed to set timeline map for video.\n");
-            MP4_LOG_IF_ERR(lsmash_modify_explicit_timeline_map(p_root, i_track, 1, edit),
-                           "failed to update timeline map for video.\n");
         }
 
         MP4_LOG_IF_ERR(lsmash_finish_movie(p_root, NULL), "failed to finish movie.\n");
