@@ -30,6 +30,35 @@ if( cond )\
 using namespace X265_NS;
 using namespace std;
 
+typedef struct
+{
+    int64_t start;
+    int no_progress;
+} remux_cb_param;
+
+int remux_callback(void *param, uint64_t done, uint64_t total)
+{
+    remux_cb_param *cb_param = (remux_cb_param *)param;
+    if (cb_param->no_progress && done != total)
+        return 0;
+    int64_t elapsed = x265_mdate() - cb_param->start;
+    double byterate = done / (elapsed / 1000000.);
+    fprintf(stderr, "remux [%5.2lf%%], %" PRIu64 "/%" PRIu64 " KiB, %u KiB/s, ",
+            done * 100. / total, done / 1024, total / 1024, (unsigned)byterate / 1024);
+    if (done == total)
+    {
+        unsigned sec = (unsigned)(elapsed / 1000000);
+        fprintf(stderr, "total elapsed %u:%02u:%02u\n\n", sec / 3600, (sec / 60) % 60, sec % 60);
+    }
+    else
+    {
+        unsigned eta = (unsigned)((total - done) / byterate);
+        fprintf(stderr, "eta %u:%02u:%02u\r", eta / 3600, (eta / 60) % 60, eta % 60);
+    }
+    fflush(stderr);
+    return 0;
+}
+
 void MP4Output::FixTimeScale(uint64_t &i_media_timescale) {
     old_timescale = 0;
     return; /* Until we have VFR support */
@@ -119,7 +148,14 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
         }
 
-        MP4_LOG_IF_ERR(lsmash_finish_movie(p_root, NULL), "failed to finish movie.\n");
+        remux_cb_param cb_param;
+        cb_param.no_progress = 1;
+        cb_param.start = x265_mdate();
+        lsmash_adhoc_remux_t remux_info;
+        remux_info.func = remux_callback;
+        remux_info.buffer_size = 4 * 1024 * 1024;
+        remux_info.param = &cb_param;
+        MP4_LOG_IF_ERR(lsmash_finish_movie(p_root, &remux_info), "failed to finish movie.\n");
     }
 
     sign();
