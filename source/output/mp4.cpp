@@ -395,7 +395,7 @@ int MP4Output::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     cts = GetTimeScaled((i_pts + i_start_offset) * i_time_inc);
 
     p_sample->dts = dts;
-    p_sample->cts = cts;
+    p_sample->cts = dts;
     p_sample->index = i_sample_entry;
     p_sample->prop.ra_flags = b_keyframe ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
 
