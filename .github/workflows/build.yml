@@ -398,3 +398,139 @@ jobs:
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true
+
+
+  build-gcc-contrast:
+    needs: lsmash-smoke
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: Checkout x265
+      uses: actions/checkout@v4
+      with:
+        path: x265
+
+    - name: Checkout FFmpeg
+      uses: actions/checkout@v4
+      with:
+        path: ffmpeg
+        repository: FFmpeg/FFmpeg
+        ref: n8.1
+
+    - name: Checkout obuparse
+      uses: actions/checkout@v4
+      with:
+        path: obuparse
+        repository: dwbuiten/obuparse
+
+    - name: Checkout L-SMASH
+      uses: actions/checkout@v4
+      with:
+        path: lsmash
+        repository: vimeo/l-smash
+
+    - name: Setup MSYS2 (GCC)
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: false
+        install: >-
+          p7zip
+          base-devel
+          git
+          libtool
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-binutils
+          mingw-w64-ucrt-x86_64-make
+          mingw-w64-ucrt-x86_64-pkgconf
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-ninja
+          mingw-w64-ucrt-x86_64-nasm
+
+    - name: Compile FFmpeg (gcc/ucrt)
+      working-directory: ffmpeg
+      run: |
+        ./configure --prefix=/usr/local --enable-gpl \
+          --disable-runtime-cpudetect --disable-all --disable-autodetect \
+          --enable-avformat --enable-avcodec \
+          --disable-everything --disable-network \
+          --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf \
+          --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
+          --enable-protocol=file \
+          --cc=gcc --cxx=g++ --cpu=x86-64
+        make -j$(nproc)
+        make install
+
+    - name: Compile obuparse (gcc)
+      working-directory: obuparse
+      run: |
+        make CC=gcc libobuparse.a
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+
+    - name: Compile L-SMASH (gcc)
+      working-directory: lsmash
+      run: |
+        ./configure --prefix=/usr/local --cc=gcc \
+          --extra-cflags="-O0 -I/usr/local/include" \
+          --extra-ldflags="-L/usr/local/lib" \
+          --extra-libs="-lobuparse"
+        make -j$(nproc)
+        make install
+        cp importer/importer.h /usr/local/include/lsmash_importer.h
+
+    - name: Setup build dirs
+      run: mkdir -p build-gcc/8b-lib build-gcc/12b-lib build-gcc/all build-gcc/dist
+
+    - name: Compile x265 all-only (gcc contrast)
+      env:
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
+      run: |
+        CXX_FLAGS="-O3 -fmerge-all-constants -I/usr/local/include"
+
+        cmake -GNinja x265/source -B build-gcc/8b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+          -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=x86-64 \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=OFF \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS"
+        ninja -C build-gcc/8b-lib
+
+        cmake -GNinja x265/source -B build-gcc/12b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=x86-64 \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=OFF \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS"
+        ninja -C build-gcc/12b-lib
+
+        cp build-gcc/8b-lib/libx265.a build-gcc/all/libx265_8b.a
+        cp build-gcc/12b-lib/libx265.a build-gcc/all/libx265_12b.a
+
+        cmake -GNinja x265/source -B build-gcc/all -DCMAKE_PREFIX_PATH=/usr/local \
+          -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+          -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
+          -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
+          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
+          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=x86-64 \
+          -DUSE_MIMALLOC=OFF \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DCMAKE_CXX_FLAGS="$CXX_FLAGS"
+        ninja -C build-gcc/all
+        strip -s build-gcc/all/x265.exe
+        cp build-gcc/all/x265.exe build-gcc/dist/x265.exe
+
+    - name: Upload gcc contrast artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: x265-win64-x86-64-gcc-contrast
+        path: build-gcc/dist/*
