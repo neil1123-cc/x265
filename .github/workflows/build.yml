@@ -380,7 +380,7 @@ jobs:
       shell: bash
       run: |
         set -o pipefail
-        python3 -c "w,h=320,180;fpsn,fpsd=24000,1001;frames=10;f=open('mini.y4m','wb');f.write(f'YUV4MPEG2 W{w} H{h} F{fpsn}:{fpsd} Ip A0:0 C420jpeg\\n'.encode());frame=bytes([16])*(w*h)+bytes([128])*(w*h//4)+bytes([128])*(w*h//4);for _ in range(frames):f.write(b'FRAME\\n');f.write(frame);f.close()"
+        python3 -c "w,h=320,180;fpsn,fpsd=24000,1001;frames=10;f=open('mini.y4m','wb');f.write(f'YUV4MPEG2 W{w} H{h} F{fpsn}:{fpsd} Ip A0:0 C420jpeg\\n'.encode());frame=bytes([16])*(w*h)+bytes([128])*(w*h//4)+bytes([128])*(w*h//4);[(f.write(b'FRAME\\n'),f.write(frame)) for _ in range(frames)];f.close()"
         set +e
         build/all/x265.exe --input mini.y4m --y4m -o smoke.mp4 --preset medium --crf 28 --log-level full 2>&1 | tee smoke.log
         SMOKE_RET=${PIPESTATUS[0]}
@@ -551,7 +551,7 @@ jobs:
       run: |
         set -o pipefail
         export PATH="/ucrt64/bin:$PATH"
-        python3 -c "w,h=320,180;fpsn,fpsd=24000,1001;frames=10;f=open('mini.y4m','wb');f.write(f'YUV4MPEG2 W{w} H{h} F{fpsn}:{fpsd} Ip A0:0 C420jpeg\\n'.encode());frame=bytes([16])*(w*h)+bytes([128])*(w*h//4)+bytes([128])*(w*h//4);for _ in range(frames):f.write(b'FRAME\\n');f.write(frame);f.close()"
+        python3 -c "w,h=320,180;fpsn,fpsd=24000,1001;frames=10;f=open('mini.y4m','wb');f.write(f'YUV4MPEG2 W{w} H{h} F{fpsn}:{fpsd} Ip A0:0 C420jpeg\\n'.encode());frame=bytes([16])*(w*h)+bytes([128])*(w*h//4)+bytes([128])*(w*h//4);[(f.write(b'FRAME\\n'),f.write(frame)) for _ in range(frames)];f.close()"
         set +e
         build-gcc/all/x265.exe --input mini.y4m --y4m -o smoke-gcc.mp4 --preset medium --crf 28 --log-level full 2>&1 | tee smoke-gcc.log
         SMOKE_GCC_RET=${PIPESTATUS[0]}
