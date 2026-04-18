@@ -552,6 +552,17 @@ jobs:
         set +e
         build-gcc/all/x265.exe --input mini.y4m --y4m -o smoke-gcc.mp4 --preset medium --crf 28 --log-level full 2>&1 | tee smoke-gcc.log
         SMOKE_GCC_RET=${PIPESTATUS[0]}
+        if [ "$SMOKE_GCC_RET" -eq 127 ]; then
+          {
+            echo "=== gcc smoke runtime diagnostics ==="
+            uname -a
+            pwd
+            ls -la build-gcc/all || true
+            ls -la /ucrt64/bin/libstdc++-6.dll /ucrt64/bin/libgcc_s_seh-1.dll /ucrt64/bin/libwinpthread-1.dll || true
+            command -v ldd || true
+            ldd build-gcc/all/x265.exe || true
+          } | tee -a smoke-gcc.log
+        fi
         set -e
         echo "gcc_smoke_exit_code=$SMOKE_GCC_RET" | tee -a smoke-gcc.log
         python3 -c "import os;d=open('smoke-gcc.mp4','rb').read() if os.path.exists('smoke-gcc.mp4') else b'';print('size',len(d),'ftyp',d.find(b'ftyp'),'moov',d.find(b'moov'),'mdat',d.find(b'mdat'))" | tee -a smoke-gcc.log
