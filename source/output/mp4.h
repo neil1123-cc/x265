@@ -27,10 +27,6 @@ protected:
     int64_t i_start_offset;
     uint64_t i_first_cts;
     uint64_t i_prev_dts;
-    uint64_t i_max_cts;
-    uint64_t i_second_max_cts;
-    uint64_t i_max_dts;
-    uint64_t i_second_max_dts;
     uint32_t i_sei_size;
     uint8_t *p_sei_buffer;
     int i_numframe;
@@ -42,8 +38,6 @@ protected:
     uint32_t fpsNum;
     uint32_t fpsDenom;
     uint32_t fpsScale;
-    bool b_stdout;
-    bool b_fragments;
     void FixTimeScale(uint64_t &);
     int64_t GetTimeScaled(int64_t);
     InputFileInfo info;
@@ -54,8 +48,6 @@ public:
     {
         info = inputInfo;
         b_fail = false;
-        b_stdout = false;
-        b_fragments = false;
         p_root = NULL;
         summary = NULL;
         i_movie_timescale = 0;
@@ -66,10 +58,6 @@ public:
         i_start_offset = 0;
         i_first_cts = 0;
         i_prev_dts = 0;
-        i_max_cts = 0;
-        i_second_max_cts = 0;
-        i_max_dts = 0;
-        i_second_max_dts = 0;
         i_sei_size = 0;
         p_sei_buffer = NULL;
         i_numframe = 0;

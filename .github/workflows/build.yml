@@ -102,18 +102,8 @@ jobs:
       matrix:
         target_cpu:
           - x86-64
-          - haswell
-          - skylake
-          - alderlake
-          - raptorlake
-          - arrowlake
-          - znver2
-          - znver3
-          - znver4
-          - znver5
         lto_mode:
           - off
-          - on
 
     steps:
     - name: Checkout x265
@@ -304,7 +294,7 @@ jobs:
 
     # === Build x265 (All variants in parallel) ===
     - name: Setup build dirs
-      run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all
+      run: mkdir -p build/8b-lib build/12b-lib build/all
 
     - name: Compile x265 (all variants parallel)
       env:
@@ -330,42 +320,6 @@ jobs:
         fi
 
         CXX_FLAGS="-O3 -fmerge-all-constants -I/usr/local/include $PGO_FLAG $LTO_FLAG"
-
-        # === Configure and build 8bit CLI ===
-        echo "=== Building 8bit CLI ==="
-        cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
-          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
-          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=OFF -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS=""
-        ninja -C build/8b &
-
-        # === Configure and build 10bit CLI ===
-        echo "=== Building 10bit CLI ==="
-        cmake -GNinja x265/source -B build/10b -DCMAKE_PREFIX_PATH=/usr/local \
-          -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
-          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=OFF -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS=""
-        ninja -C build/10b &
-
-        # === Configure and build 12bit CLI ===
-        echo "=== Building 12bit CLI ==="
-        cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
-          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_LSMASH=ON -DENABLE_MKV=ON -DTARGET_CPU=$CPU \
-          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=OFF -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
-          -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-          -DCMAKE_EXE_LINKER_FLAGS=""
-        ninja -C build/12b &
 
         # === Configure and build 8bit multilib ===
         echo "=== Building 8bit multilib ==="
@@ -394,7 +348,7 @@ jobs:
         ninja -C build/12b-lib &
 
         wait
-        echo "=== All CLI and multilib builds complete ==="
+        echo "=== Multilib builds complete ==="
 
         # === Build all-bit-depth version ===
         echo "=== Building all-bit-depth version ==="
@@ -412,20 +366,14 @@ jobs:
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS=""
         ninja -C build/all
-        echo "=== All builds complete ==="
+        echo "=== All build complete ==="
 
-        # Strip all executables
-        strip -s build/8b/x265.exe
-        strip -s build/10b/x265.exe
-        strip -s build/12b/x265.exe
+        # Strip executable
         strip -s build/all/x265.exe
 
     - name: Package
       run: |
         mkdir dist
-        cp build/8b/x265.exe dist/x265-8bit.exe
-        cp build/10b/x265.exe dist/x265-10bit.exe
-        cp build/12b/x265.exe dist/x265-12bit.exe
         cp build/all/x265.exe dist/x265.exe
 
     - name: Upload artifact
@@ -439,11 +387,11 @@ jobs:
       run: |
         cd dist
         7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z \
-          x265-8bit.exe x265-10bit.exe x265-12bit.exe x265.exe
+          x265.exe
 
     - name: Release
       uses: softprops/action-gh-release@v2
-      if: github.event_name == 'workflow_dispatch'
+      if: github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/')
       with:
         tag_name: ${{ steps.tag.outputs.version }}
         files: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z
