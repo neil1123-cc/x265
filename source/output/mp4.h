@@ -5,8 +5,6 @@
 #include "common.h"
 #include <fstream>
 #include <iostream>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <lsmash.h>
 
 namespace X265_NS {
