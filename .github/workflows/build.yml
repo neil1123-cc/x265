@@ -376,11 +376,20 @@ jobs:
         mkdir dist
         cp build/all/x265.exe dist/x265.exe
 
-    - name: Upload artifact
+    - name: MP4 smoke (clang)
+      shell: bash
+      run: |
+        python3 -c "w,h=320,180;fpsn,fpsd=24000,1001;frames=10;f=open('mini.y4m','wb');f.write(f'YUV4MPEG2 W{w} H{h} F{fpsn}:{fpsd} Ip A0:0 C420jpeg\\n'.encode());frame=bytes([16])*(w*h)+bytes([128])*(w*h//4)+bytes([128])*(w*h//4);[f.write(b'FRAME\\n') or f.write(frame) for _ in range(frames)];f.close()"
+        build/all/x265.exe --input mini.y4m --y4m -o smoke.mp4 --preset medium --crf 28 --log-level full > smoke.log 2>&1 || true
+        python3 -c "import os;d=open('smoke.mp4','rb').read() if os.path.exists('smoke.mp4') else b'';print('size',len(d),'ftyp',d.find(b'ftyp'),'moov',d.find(b'moov'),'mdat',d.find(b'mdat'))"
+
+    - name: Upload MP4 smoke logs (clang)
       uses: actions/upload-artifact@v4
       with:
-        name: x265-win64-${{matrix.target_cpu}}-clang-lto-${{matrix.lto_mode}}
-        path: dist/*
+        name: mp4-smoke-clang
+        path: |
+          smoke.log
+          smoke.mp4
 
     - name: Compress for release
       if: github.event_name == 'workflow_dispatch'
@@ -528,6 +537,21 @@ jobs:
         ninja -C build-gcc/all
         strip -s build-gcc/all/x265.exe
         cp build-gcc/all/x265.exe build-gcc/dist/x265.exe
+
+    - name: MP4 smoke (gcc contrast)
+      shell: bash
+      run: |
+        python3 -c "w,h=320,180;fpsn,fpsd=24000,1001;frames=10;f=open('mini.y4m','wb');f.write(f'YUV4MPEG2 W{w} H{h} F{fpsn}:{fpsd} Ip A0:0 C420jpeg\\n'.encode());frame=bytes([16])*(w*h)+bytes([128])*(w*h//4)+bytes([128])*(w*h//4);[f.write(b'FRAME\\n') or f.write(frame) for _ in range(frames)];f.close()"
+        build-gcc/all/x265.exe --input mini.y4m --y4m -o smoke-gcc.mp4 --preset medium --crf 28 --log-level full > smoke-gcc.log 2>&1 || true
+        python3 -c "import os;d=open('smoke-gcc.mp4','rb').read() if os.path.exists('smoke-gcc.mp4') else b'';print('size',len(d),'ftyp',d.find(b'ftyp'),'moov',d.find(b'moov'),'mdat',d.find(b'mdat'))"
+
+    - name: Upload MP4 smoke logs (gcc)
+      uses: actions/upload-artifact@v4
+      with:
+        name: mp4-smoke-gcc
+        path: |
+          smoke-gcc.log
+          smoke-gcc.mp4
 
     - name: Upload gcc contrast artifact
       uses: actions/upload-artifact@v4
