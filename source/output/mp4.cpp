@@ -148,14 +148,7 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
             edit.rate       = ISOM_EDIT_MODE_NORMAL;
         }
 
-        remux_cb_param cb_param;
-        cb_param.no_progress = 1;
-        cb_param.start = x265_mdate();
-        lsmash_adhoc_remux_t remux_info;
-        remux_info.func = remux_callback;
-        remux_info.buffer_size = 4 * 1024 * 1024;
-        remux_info.param = &cb_param;
-        MP4_LOG_IF_ERR(lsmash_finish_movie(p_root, &remux_info), "failed to finish movie.\n");
+        MP4_LOG_IF_ERR(lsmash_finish_movie(p_root, NULL), "failed to finish movie.\n");
     }
 
     sign();
