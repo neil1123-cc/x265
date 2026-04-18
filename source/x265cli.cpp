@@ -28,9 +28,6 @@
 #include "x265cli.h"
 #include "svt.h"
 
-#ifdef ENABLE_LSMASH
-#include <lsmash.h>
-#endif
 #ifdef ENABLE_LAVF
 #include "libavformat/version.h"
 #include "libavcodec/version.h"
@@ -47,9 +44,6 @@ namespace X265_NS {
     {
         x265_log(param, X265_LOG_INFO, "HEVC encoder version %s\n", api->version_str);
         x265_log(param, X265_LOG_INFO, "build info %s\n", api->build_info_str);
-        #ifdef ENABLE_LSMASH
-            x265_log(param, X265_LOG_INFO, "(lsmash %d.%d.%d)\n", LSMASH_VERSION_MAJOR, LSMASH_VERSION_MINOR, LSMASH_VERSION_MICRO);
-        #endif
         #ifdef ENABLE_LAVF
             x265_log(param, X265_LOG_INFO, "(libavformat %d.%d.%d)\n", LIBAVFORMAT_VERSION_MAJOR, LIBAVFORMAT_VERSION_MINOR, LIBAVFORMAT_VERSION_MICRO);
             x265_log(param, X265_LOG_INFO, "(libavcodec  %d.%d.%d)\n", LIBAVCODEC_VERSION_MAJOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO);
@@ -74,9 +68,6 @@ namespace X265_NS {
         H0("-V/--version                     Show version info and exit\n");
         H0("\nOutput Options:\n");
         H0("-o/--output <filename>           Output file name. Default is raw bitstream"
-#ifdef ENABLE_LSMASH
-            ", MP4 if *.mp4"
-#endif
 #ifdef ENABLE_MKV
             ", MKV if *.mkv"
 #endif

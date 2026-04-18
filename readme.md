@@ -11,7 +11,7 @@
 - **多架构优化构建** - 支持 x86-64、Haswell、Skylake、Alder Lake、Raptor Lake、Arrow Lake、Zen 2/3/4/5
 - **多 bit-depth 支持** - 8-bit、10-bit、12-bit 和全深度模式
 - **LAVF 输入支持** - 支持 FFmpeg 输入格式（mov, mkv, ts, avi 等）
-- **L-SMASH/MKV 输出** - 支持 MP4 和 MKV 容器输出
+- **MKV 输出** - 支持 MKV 容器输出
 - **mimalloc 内存分配器** - 微软高性能内存分配器
 - **PGO + LTO 优化** - Profile-Guided Optimization 和 Link-Time Optimization
 
@@ -22,7 +22,6 @@
 | x265 | 4.1 + Kyouko mod | HEVC 编码器 |
 | FFmpeg | n8.1 | LAVF 输入支持 |
 | mimalloc | v3.2.8 | 高性能内存分配器 |
-| L-SMASH | `04e39f1` | MP4/MOV 输出支持 |
 | obuparse | `c2156b4` | AV1 解析支持 |
 | Clang | 22.1.3 | 编译器 (MSYS2 CLANG64) |
 | CMake | 4.3.1 | 构建系统 |
@@ -136,7 +135,6 @@ ninja -C build
 |------|--------|------|
 | `ENABLE_SHARED` | ON | 构建动态库 |
 | `ENABLE_LAVF` | OFF | FFmpeg 输入支持 |
-| `ENABLE_LSMASH` | OFF | L-SMASH 输出支持 |
 | `ENABLE_MKV` | OFF | MKV 输出支持 |
 | `USE_MIMALLOC` | OFF | 使用 mimalloc |
 | `ENABLE_UNITY_BUILD` | OFF | Unity Build 加速编译 |
@@ -153,7 +151,6 @@ x265 采用 [GNU GPL v2](LICENSE) 许可证，也可获取商业许可。
 - [AmusementClub/x265](https://github.com/AmusementClub/x265) - Kyouko mod 来源
 - [FFmpeg](https://ffmpeg.org/) - FFmpeg 项目
 - [mimalloc](https://github.com/microsoft/mimalloc) - Microsoft
-- [L-SMASH](https://github.com/vimeo/l-smash) - Vimeo
 
 ---
 

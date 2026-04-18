@@ -44,14 +44,6 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "mimalloc latest release: $TAG"
 
-      - name: Get latest lsmash commit
-        id: lsmash
-        run: |
-          SHA=$(curl -s "https://api.github.com/repos/vimeo/l-smash/commits?per_page=1" | \
-            jq -r '.[0].sha')
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
-          echo "lsmash latest commit: $SHA"
-
       - name: Get latest obuparse commit
         id: obuparse
         run: |
@@ -73,21 +65,17 @@ jobs:
           echo "ffmpeg=$FFMPEG" >> $GITHUB_OUTPUT
           echo "mimalloc=$MIMALLOC" >> $GITHUB_OUTPUT
 
-          # lsmash, obuparse from cache file (if exists)
+          # obuparse from cache file (if exists)
           if [ -f .github/deps-cache.json ]; then
-            LSMASH_SHA=$(jq -r '.lsmash // ""' .github/deps-cache.json)
             OBUPARSE_SHA=$(jq -r '.obuparse // ""' .github/deps-cache.json)
           else
-            LSMASH_SHA=""
             OBUPARSE_SHA=""
           fi
-          echo "lsmash_sha=$LSMASH_SHA" >> $GITHUB_OUTPUT
           echo "obuparse_sha=$OBUPARSE_SHA" >> $GITHUB_OUTPUT
 
           echo "=== Current versions ==="
           echo "FFmpeg: $FFMPEG"
           echo "mimalloc: $MIMALLOC"
-          echo "lsmash: $LSMASH_SHA"
           echo "obuparse: $OBUPARSE_SHA"
 
       # ============================================
@@ -116,15 +104,6 @@ jobs:
             echo "mimalloc_changed=true" >> $GITHUB_OUTPUT
           else
             echo "mimalloc_changed=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Check lsmash
-          if [ -n "${{ steps.current.outputs.lsmash_sha }}" ] && [ "${{ steps.lsmash.outputs.sha }}" != "${{ steps.current.outputs.lsmash_sha }}" ]; then
-            CHANGES="${CHANGES}lsmash new commit, "
-            NEED_BUILD="true"
-            echo "lsmash_changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "lsmash_changed=false" >> $GITHUB_OUTPUT
           fi
 
           # Check obuparse
@@ -176,7 +155,6 @@ jobs:
           mkdir -p .github
           cat > .github/deps-cache.json << EOF
           {
-            "lsmash": "${{ steps.lsmash.outputs.sha }}",
             "obuparse": "${{ steps.obuparse.outputs.sha }}",
             "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
