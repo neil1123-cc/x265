@@ -1454,7 +1454,6 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     if (!prepared)
         return -1;
 
-    bool independent = false;
     lsmash_sample_t* outSample = lsmash_create_sample((uint32_t)prep.sampleSize);
     if (!outSample)
     {
@@ -1483,57 +1482,12 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         out += sample.nal[i].sizeBytes;
     }
 
-    independent = IS_X265_TYPE_I(sample.pic->sliceType);
-    if (sample.pic->poc < 0)
-    {
-        lsmash_delete_sample(outSample);
-        MP4_LOG_ERROR("negative POC for MP4 sample properties.\n");
-        m_fail = true;
-        return -1;
-    }
-
     outSample->dts = prep.sampleDts;
     outSample->cts = prep.sampleCts;
     outSample->index = m_sampleEntry;
-    outSample->prop.post_roll.identifier = (uint32_t)sample.pic->poc;
-    outSample->prop.leading = prep.hasLeadingVcl ? (prep.hasRadl ? ISOM_SAMPLE_IS_DECODABLE_LEADING
-                                                                 : ISOM_SAMPLE_IS_UNDECODABLE_LEADING)
-                              : isFirstSample() ? ISOM_SAMPLE_IS_NOT_LEADING
-                              : (independent || prep.sampleCts >= m_lastIntraCts) ? ISOM_SAMPLE_IS_NOT_LEADING
-                                                                                  : ISOM_SAMPLE_IS_UNDECODABLE_LEADING;
-    outSample->prop.independent = independent
-                                ? ISOM_SAMPLE_IS_INDEPENDENT
-                                : ISOM_SAMPLE_IS_NOT_INDEPENDENT;
-    const bool disposable = prep.hasSublayerNonRef && prep.sampleTemporalIdSet
-                         && prep.sampleTemporalId == m_maxTemporalId;
-    outSample->prop.disposable = disposable
-                               ? ISOM_SAMPLE_IS_DISPOSABLE
-                               : ISOM_SAMPLE_IS_NOT_DISPOSABLE;
-    outSample->prop.redundant = ISOM_SAMPLE_HAS_NO_REDUNDANCY;
-    if (prep.keyframe)
-    {
-        outSample->prop.ra_flags = (sample.pic->sliceType == X265_TYPE_IDR)
-                                 ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_CLOSED_RAP
-                                 : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_OPEN_RAP;
-    }
-    else if (prep.hasRecoveryPoint && prep.recoveryPocCnt)
-    {
-        int64_t recoveryComplete = 0;
-        if (!checkedAddInt64((int64_t)sample.pic->poc, (int64_t)prep.recoveryPocCnt, recoveryComplete)
-            || recoveryComplete < 0 || recoveryComplete > UINT32_MAX)
-        {
-            lsmash_delete_sample(outSample);
-            MP4_LOG_ERROR("invalid recovery point range for MP4 sample.\n");
-            m_fail = true;
-            return -1;
-        }
-        outSample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_POST_ROLL_START;
-        outSample->prop.post_roll.complete = (uint32_t)recoveryComplete;
-    }
-    else if (prep.hasRecoveryPoint)
-        outSample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_RAP;
-    else
-        outSample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
+    outSample->prop.ra_flags = prep.keyframe
+                             ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC
+                             : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
 
     if (lsmash_append_sample(m_root, m_track, outSample))
     {
@@ -1545,8 +1499,6 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
 
     if (isFirstSample() || prep.sampleCts < m_firstCts)
         m_firstCts = prep.sampleCts;
-    if (independent)
-        m_lastIntraCts = prep.sampleCts;
     m_prevDts = prep.sampleDts;
     if (isFirstSample())
     {
