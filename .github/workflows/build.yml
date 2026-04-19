@@ -144,10 +144,30 @@ jobs:
       working-directory: ffmpeg
       run: make install
 
+    - name: Compile obuparse
+      if: steps.cache-obuparse.outputs.cache-hit != 'true'
+      working-directory: obuparse
+      run: |
+        make CC=cc libobuparse.a
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+        # Create cache copy (use relative path for actions/cache)
+        mkdir -p obuparse-install/include
+        mkdir -p obuparse-install/lib
+        cp /usr/local/include/obuparse.h obuparse-install/include/
+        cp /usr/local/lib/libobuparse.a obuparse-install/lib/
+        mv obuparse-install "$GITHUB_WORKSPACE/"
+
+    - name: Install cached obuparse
+      if: steps.cache-obuparse.outputs.cache-hit == 'true'
+      run: |
+        cp obuparse-install/include/* /usr/local/include/
+        cp obuparse-install/lib/* /usr/local/lib/
+
     - name: Compile L-SMASH
       working-directory: l-smash
       run: |
-        ./configure --prefix=/usr/local --cc=cc
+        ./configure --prefix=/usr/local --cc=cc --extra-cflags=-I/usr/local/include --extra-ldflags=-L/usr/local/lib
         make -j$(nproc)
         make install
 
@@ -168,26 +188,6 @@ jobs:
           ln -s "$dir" /usr/local/lib/cmake/mimalloc
           break
         done
-
-    - name: Compile obuparse
-      if: steps.cache-obuparse.outputs.cache-hit != 'true'
-      working-directory: obuparse
-      run: |
-        make CC=cc libobuparse.a
-        install -v obuparse.h /usr/local/include
-        install -v libobuparse.a /usr/local/lib
-        # Create cache copy (use relative path for actions/cache)
-        mkdir -p obuparse-install/include
-        mkdir -p obuparse-install/lib
-        cp /usr/local/include/obuparse.h obuparse-install/include/
-        cp /usr/local/lib/libobuparse.a obuparse-install/lib/
-        mv obuparse-install "$GITHUB_WORKSPACE/"
-
-    - name: Install cached obuparse
-      if: steps.cache-obuparse.outputs.cache-hit == 'true'
-      run: |
-        cp obuparse-install/include/* /usr/local/include/
-        cp obuparse-install/lib/* /usr/local/lib/
 
     # === Build x265 (All variants in parallel) ===
     - name: Setup build dirs
