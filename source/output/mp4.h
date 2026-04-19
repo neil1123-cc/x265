@@ -16,6 +16,7 @@
 
 #include <lsmash.h>
 
+#include <array>
 #include <string>
 
 namespace X265_NS {
@@ -33,6 +34,8 @@ protected:
     lsmash_video_summary_t* m_summary;
     lsmash_file_parameters_t m_fileParam;
     bool m_fileOpen;
+    std::array<lsmash_brand_type, 6> m_brands;
+    std::string m_mediaHandlerName;
 
     uint32_t m_movieTimescale;
     uint32_t m_videoTimescale;

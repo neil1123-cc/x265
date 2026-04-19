@@ -356,6 +356,8 @@ MP4Muxer::MP4Muxer()
     m_root = NULL;
     m_summary = NULL;
     m_seiBuffer = NULL;
+    m_brands.fill(static_cast<lsmash_brand_type>(0));
+    m_mediaHandlerName = "L-SMASH Video Media Handler";
     memset(m_paramSetBuffer, 0, sizeof(m_paramSetBuffer));
     resetRuntimeState();
 }
@@ -658,6 +660,7 @@ void MP4Muxer::resetRuntimeState()
     m_maxTemporalId = 0;
     memset(&m_fileParam, 0, sizeof(m_fileParam));
     m_fileOpen = false;
+    m_brands.fill(static_cast<lsmash_brand_type>(0));
     m_movieTimescale = 0;
     m_videoTimescale = 0;
     m_track = 0;
@@ -993,15 +996,14 @@ bool MP4Muxer::setParam(const x265_param* param)
     uint16_t matrixIndex = param->vui.matrixCoeffs >= 0 ? param->vui.matrixCoeffs : unspecifiedMatrixIndex;
     uint8_t fullRange = param->vui.bEnableVideoFullRangeFlag >= 0 ? param->vui.bEnableVideoFullRangeFlag : 0;
 
-    lsmash_brand_type brands[6] = { static_cast<lsmash_brand_type>(0) };
     uint32_t brandCount = 0;
-    brands[brandCount++] = ISOM_BRAND_TYPE_MP42;
-    brands[brandCount++] = ISOM_BRAND_TYPE_MP41;
-    brands[brandCount++] = ISOM_BRAND_TYPE_ISOM;
+    m_brands[brandCount++] = ISOM_BRAND_TYPE_MP42;
+    m_brands[brandCount++] = ISOM_BRAND_TYPE_MP41;
+    m_brands[brandCount++] = ISOM_BRAND_TYPE_ISOM;
 
     lsmash_file_parameters_t* fparam = &m_fileParam;
-    fparam->major_brand = brands[0];
-    fparam->brands = brands;
+    fparam->major_brand = m_brands[0];
+    fparam->brands = m_brands.data();
     fparam->brand_count = brandCount;
     fparam->minor_version = 0;
     MP4_FAIL_IF(!lsmash_set_file(m_root, fparam),
@@ -1029,8 +1031,7 @@ bool MP4Muxer::setParam(const x265_param* param)
     lsmash_media_parameters_t mediaParam;
     lsmash_initialize_media_parameters(&mediaParam);
     mediaParam.timescale = mediaTimescale;
-    char mediaHandlerName[] = "L-SMASH Video Media Handler";
-    mediaParam.media_handler_name = mediaHandlerName;
+    mediaParam.media_handler_name = const_cast<char*>(m_mediaHandlerName.c_str());
     MP4_FAIL_IF(lsmash_set_media_parameters(m_root, track, &mediaParam),
                 "failed to set media parameters for video.\n");
 
