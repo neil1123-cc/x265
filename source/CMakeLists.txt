@@ -1180,6 +1180,9 @@ if(ENABLE_STATIC_LAVF)
                                 ${PC_LIBAVFORMAT_STATIC_LDFLAGS}
                                 ${PC_LIBAVCODEC_STATIC_LDFLAGS}
                                 ${PC_LIBSWSCALE_STATIC_LDFLAGS})
+    if(WIN32)
+        list(REMOVE_ITEM FFMPEG_STATIC_LIBRARIES -ldl)
+    endif()
 endif()
 
 option(ENABLE_ZIMG "Enable ZImg scaling libary" OFF)
