@@ -647,7 +647,13 @@ ret:
                 else
                 {
                     m_cliopt.output->setPS(m_encoder);
-                    m_cliopt.totalbytes += m_cliopt.output->writeHeaders(p_nal, nal);
+                    int headerBytes = m_cliopt.output->writeHeaders(p_nal, nal);
+                    if (headerBytes < 0)
+                    {
+                        m_ret = 3;
+                        goto fail;
+                    }
+                    m_cliopt.totalbytes += headerBytes;
                 }
             }
 
@@ -859,7 +865,13 @@ ret:
                     }
                     if (nal)
                     {
-                        m_cliopt.totalbytes += m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                        int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                        if (frameBytes < 0)
+                        {
+                            m_ret = 3;
+                            goto fail;
+                        }
+                        m_cliopt.totalbytes += frameBytes;
                         if (pts_queue)
                         {
                             pts_queue->push(-pic_out[0].pts);
@@ -897,7 +909,13 @@ ret:
                 }
                 if (nal)
                 {
-                    m_cliopt.totalbytes += m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                    int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                    if (frameBytes < 0)
+                    {
+                        m_ret = 3;
+                        goto fail;
+                    }
+                    m_cliopt.totalbytes += frameBytes;
                     if (pts_queue)
                     {
                         pts_queue->push(-pic_out[0].pts);
@@ -951,16 +969,26 @@ ret:
 
             int64_t second_largest_pts = 0;
             int64_t largest_pts = 0;
-            if (pts_queue && pts_queue->size() >= 2)
+            if (pts_queue)
             {
-                second_largest_pts = -pts_queue->top();
-                pts_queue->pop();
-                largest_pts = -pts_queue->top();
-                pts_queue->pop();
+                if (!pts_queue->empty())
+                {
+                    largest_pts = -pts_queue->top();
+                    pts_queue->pop();
+                    second_largest_pts = largest_pts;
+                    if (!pts_queue->empty())
+                    {
+                        second_largest_pts = largest_pts;
+                        largest_pts = -pts_queue->top();
+                        pts_queue->pop();
+                    }
+                }
                 delete pts_queue;
                 pts_queue = NULL;
             }
             m_cliopt.output->closeFile(largest_pts, second_largest_pts);
+            if (m_cliopt.output->isFail() && !m_ret)
+                m_ret = 3;
 
             if (b_ctrl_c)
             {

@@ -61,7 +61,7 @@ namespace X265_NS {
 
         H0("\nSyntax: x265 [options] infile [-o] outfile\n");
         H0("    infile can be YUV or Y4M, or frame server format\n");
-        H0("    outfile is raw HEVC bitstream\n");
+        H0("    outfile is raw HEVC bitstream, or MP4/MKV/GOP when the extension matches\n");
         H0("\nExecutable Options:\n");
         H0("-h/--help                        Show this help text and exit\n");
         H0("   --fullhelp                    Show all options and exit\n");
@@ -70,6 +70,9 @@ namespace X265_NS {
         H0("-o/--output <filename>           Output file name. Default is raw bitstream"
 #ifdef ENABLE_MKV
             ", MKV if *.mkv"
+#endif
+#ifdef ENABLE_LSMASH
+            ", MP4 if *.mp4"
 #endif
             "\n");
         H0("-D/--output-depth 8|10|12        Output bit depth (also internal bit depth). Default %d\n", param->internalBitDepth);
