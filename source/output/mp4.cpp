@@ -477,7 +477,7 @@ bool MP4Muxer::finalizeTimeline(int64_t largestPts, int64_t lastDelta)
     if (flushedMediaDuration && !actualDuration)
         actualDuration = 1;
 
-    lsmash_edit_t edit = { 0 };
+    lsmash_edit_t edit = {};
     edit.duration = actualDuration;
     edit.start_time = m_firstCts;
     edit.rate = ISOM_EDIT_MODE_NORMAL;
@@ -531,7 +531,7 @@ bool MP4Muxer::analyzeSampleNals(const ContainerSample& sample, bool& hasLeading
                 MP4_FAIL_IF(sampleTemporalId != nalTemporalId,
                             "inconsistent temporal id across VCL NAL units in MP4 sample.\n");
             hasVcl = true;
-            hasSublayerNonRef |= (nalType <= NAL_UNIT_CODED_SLICE_RSV_VCL_R15) && ((nalType & 1) == 0);
+            hasSublayerNonRef |= (nalType <= NAL_UNIT_CODED_SLICE_RASL_R) && ((nalType & 1) == 0);
             if (nalType == NAL_UNIT_CODED_SLICE_RADL_N || nalType == NAL_UNIT_CODED_SLICE_RADL_R)
             {
                 hasLeadingVcl = true;
@@ -786,6 +786,12 @@ void MP4Muxer::cleanupHandle()
     resetRuntimeState();
 }
 
+void MP4Muxer::cleanupOutputFile()
+{
+    if (!m_filename.empty())
+        x265_unlink(m_filename.c_str());
+}
+
 void MP4Muxer::sign()
 {
     if (!m_root)
@@ -813,6 +819,8 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
     m_timebaseNum = info.timebaseNum;
     m_timebaseDenom = info.timebaseDenom;
 
+    m_filename = fname;
+
     FILE* fh = x265_fopen(fname, "wb");
     if (!fh)
     {
@@ -827,6 +835,7 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
     {
         MP4_LOG_ERROR("failed to create root.\n");
         m_fail = true;
+        cleanupOutputFile();
         return false;
     }
 
@@ -835,6 +844,7 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
         MP4_LOG_ERROR("failed to open output file in L-SMASH.\n");
         m_fail = true;
         cleanupHandle();
+        cleanupOutputFile();
         return false;
     }
     m_fileOpen = true;
@@ -845,6 +855,7 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
         MP4_LOG_ERROR("failed to allocate summary information for video.\n");
         m_fail = true;
         cleanupHandle();
+        cleanupOutputFile();
         return false;
     }
     m_summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
@@ -907,7 +918,7 @@ bool MP4Muxer::setParam(const x265_param* param)
     {
         MP4_FAIL_IF(!(m_timeInc && m_movieTimescale && m_videoTimescale),
                     "MP4 muxer lost timeline state before resetting parameters.\n");
-        MP4_FAIL_IF(param->sourceWidth != m_summary->width || param->sourceHeight != m_summary->height,
+        MP4_FAIL_IF((uint32_t)param->sourceWidth != m_summary->width || (uint32_t)param->sourceHeight != m_summary->height,
                     "cannot change MP4 frame dimensions after track initialization.\n");
         MP4_FAIL_IF(param->vui.sarWidth != (int)m_summary->par_h || param->vui.sarHeight != (int)m_summary->par_v,
                     "cannot change MP4 sample aspect ratio after track initialization.\n");
@@ -945,7 +956,7 @@ bool MP4Muxer::setParam(const x265_param* param)
     MP4_FAIL_IF(mediaTimescale > UINT32_MAX,
                 "MP4 media timescale %" PRIu64 " exceeds maximum\n", mediaTimescale);
 
-    MP4_FAIL_IF(param->sourceWidth > (UINT32_MAX >> 16) || param->sourceHeight > (UINT32_MAX >> 16),
+    MP4_FAIL_IF((uint32_t)param->sourceWidth > (UINT32_MAX >> 16) || (uint32_t)param->sourceHeight > (UINT32_MAX >> 16),
                 "source dimensions exceed MP4 fixed-point display range.\n");
     uint32_t displayWidth = param->sourceWidth << 16;
     uint32_t displayHeight = param->sourceHeight << 16;
@@ -1237,8 +1248,10 @@ int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
     }
     if (!validateParameterState("MP4 muxer reached stream start with partial parameter state.\n",
                                 "MP4 muxer parameters are incomplete before beginning stream.\n"))
+    {
         m_fail = true;
         return -1;
+    }
     if (!(m_sampleEntry != 0))
     {
         MP4_LOG_ERROR("MP4 headers must be configured before beginning stream.\n");
@@ -1284,8 +1297,10 @@ int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
                                      "missing VPS/SPS/PPS payload pointer in stream headers.\n",
                                      "invalid VPS/SPS/PPS size in stream headers.\n",
                                      "NAL payload type does not match MP4 stream header metadata.\n"))
+    {
         m_fail = true;
         return -1;
+    }
 
     for (uint32_t i = 0; i < 3; i++)
     {
@@ -1294,13 +1309,13 @@ int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
         {
             MP4_LOG_ERROR("stream VPS/SPS/PPS payload size does not match configured MP4 header state.\n");
             m_fail = true;
-        return -1;
+            return -1;
         }
         if (memcmp(m_paramSetBuffer[i], paramSetNal[i].payload + NALU_LENGTH_SIZE, payloadSize))
         {
             MP4_LOG_ERROR("stream VPS/SPS/PPS payload does not match configured MP4 header state.\n");
             m_fail = true;
-        return -1;
+            return -1;
         }
     }
 
@@ -1316,7 +1331,10 @@ int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
                                                     "missing NAL payload pointer in stream headers.\n",
                                                     "invalid empty NAL in stream headers.\n",
                                                     "NAL payload type does not match MP4 stream header metadata.\n"))
-            return m_fail = true;
+        {
+            m_fail = true;
+            return -1;
+        }
         MP4_FAIL_IF(nal[i].type <= NAL_UNIT_CODED_SLICE_CRA,
                     "MP4 stream headers must not contain VCL NAL units.\n");
         if (i < seiOffset)
@@ -1339,7 +1357,7 @@ int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
             {
                 MP4_LOG_ERROR("stream header SEI payload does not match configured MP4 header state.\n");
                 m_fail = true;
-        return -1;
+                return -1;
             }
             seiBytes += nal[i].sizeBytes;
         }
@@ -1362,8 +1380,10 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     }
     if (!validateParameterState("MP4 muxer reached sample write with partial parameter state.\n",
                                 "MP4 muxer parameters are incomplete before writing sample.\n"))
+    {
         m_fail = true;
         return -1;
+    }
     if (!(m_sampleEntry != 0))
     {
         MP4_LOG_ERROR("missing MP4 sample entry before writing sample.\n");
@@ -1395,7 +1415,7 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         m_fail = true;
         return -1;
     }
-    SamplePreparation prep = { 0 };
+    SamplePreparation prep = {};
     const bool prepared = [&]() {
         if (!analyzeSampleNals(sample, prep.hasLeadingVcl, prep.hasRadl, prep.hasRecoveryPoint,
                                prep.hasSublayerNonRef, prep.sampleTemporalIdSet, prep.sampleTemporalId,
@@ -1416,11 +1436,15 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         MP4_FAIL_IF(sampleSize64 > INT_MAX, "sample payload too large for muxer buffer.\n");
         prep.sampleSize = (int)sampleSize64;
         if (!scaleSampleTimestamps(prep.pts, prep.dts, prep.sampleDts, prep.sampleCts))
-            return m_fail = true;
+        {
+            m_fail = true;
+            return false;
+        }
         if (!isFirstSample() && prep.sampleDts <= m_prevDts)
         {
             MP4_LOG_ERROR("non-increasing DTS detected while writing MP4 sample.\n");
-            return m_fail = true;
+            m_fail = true;
+            return false;
         }
         MP4_FAIL_IF((m_seiBuffer && !m_seiSize) || (!m_seiBuffer && m_seiSize),
                     "inconsistent SEI transition state before assembling MP4 sample.\n");
@@ -1487,10 +1511,9 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     outSample->prop.redundant = ISOM_SAMPLE_HAS_NO_REDUNDANCY;
     if (prep.keyframe)
     {
-        outSample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC;
-        outSample->prop.ra_flags |= (sample.pic->sliceType == X265_TYPE_IDR)
-                                  ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_CLOSED_RAP
-                                  : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_RAP;
+        outSample->prop.ra_flags = (sample.pic->sliceType == X265_TYPE_IDR)
+                                 ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_CLOSED_RAP
+                                 : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_OPEN_RAP;
     }
     else if (prep.hasRecoveryPoint && prep.recoveryPocCnt)
     {
@@ -1501,7 +1524,7 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
             lsmash_delete_sample(outSample);
             MP4_LOG_ERROR("invalid recovery point range for MP4 sample.\n");
             m_fail = true;
-        return -1;
+            return -1;
         }
         outSample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_POST_ROLL_START;
         outSample->prop.post_roll.complete = (uint32_t)recoveryComplete;
@@ -1660,6 +1683,8 @@ void MP4Muxer::finalize(int64_t largestPts, int64_t secondLargestPts)
     }
 
     cleanupHandle();
+    if (m_fail)
+        cleanupOutputFile();
 }
 
 bool MP4Muxer::isFail() const
@@ -1671,6 +1696,7 @@ void MP4Muxer::abort()
 {
     m_fail = true;
     cleanupHandle();
+    cleanupOutputFile();
 }
 
 MP4Output::MP4Output(const char* fname, InputFileInfo& inputInfo)

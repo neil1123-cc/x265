@@ -16,6 +16,8 @@
 
 #include <lsmash.h>
 
+#include <string>
+
 namespace X265_NS {
 
 class MP4Muxer : public ContainerMuxer
@@ -56,6 +58,7 @@ protected:
     uint32_t m_fpsNum;
     uint32_t m_fpsDenom;
     uint32_t m_fpsScale;
+    std::string m_filename;
 
     bool validateParameterState(const char* partialMessage, const char* incompleteMessage) const;
     bool isFirstSample() const;
@@ -74,6 +77,7 @@ protected:
     void fixTimeScale(uint64_t& mediaTimescale, uint32_t fpsDenom);
     int64_t getTimeScaled(int64_t ts) const;
     void cleanupHandle();
+    void cleanupOutputFile();
     void sign();
 
 public:
