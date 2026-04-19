@@ -69,11 +69,6 @@ protected:
     bool fail();
     int failWrite();
     void clearBufferedParameterSets();
-                                  const char* invalidError, uint64_t& scaledTs) const;
-    bool scaleSampleTimestamps(int64_t pts, int64_t dts, uint64_t& sampleDts, uint64_t& sampleCts);
-    bool fail();
-    int failWrite();
-    void clearBufferedParameterSets();
     void clearBufferedSeiState();
     void resetRuntimeState();
     void fixTimeScale(uint64_t& mediaTimescale, uint32_t fpsDenom);
