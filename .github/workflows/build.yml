@@ -122,6 +122,7 @@ jobs:
           mingw-w64-clang-x86_64-pkgconf
           mingw-w64-clang-x86_64-cmake
           mingw-w64-clang-x86_64-ninja
+          mingw-w64-clang-x86_64-ffmpeg
 
     - name: Compile FFmpeg (lavf input only)
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
