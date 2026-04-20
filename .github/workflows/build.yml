@@ -296,16 +296,16 @@ jobs:
           echo '=== gcc+lld control link attempt ==='
           rm -rf gcc_lld_bin
           mkdir -p gcc_lld_bin
-          cp "$(command -v ld.lld)" gcc_lld_bin/ld
-          cp "$(command -v ld.lld)" gcc_lld_bin/ld.exe
-          chmod +x gcc_lld_bin/ld gcc_lld_bin/ld.exe
+          for name in ld ld.exe x86_64-w64-mingw32-ld x86_64-w64-mingw32-ld.exe; do
+            cp "$(command -v ld.lld)" "gcc_lld_bin/$name"
+          done
+          chmod +x gcc_lld_bin/*
           set +e
           env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="$PWD/gcc_lld_bin:/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
             command -v ld || true
             command -v ld.exe || true
-            ld --version || true
-            ld.exe --version || true
-            gcc -v -fuse-ld=lld -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib \
+            gcc -print-prog-name=ld
+            gcc -B"$PWD/gcc_lld_bin/" -v -fuse-ld=lld -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib \
               -Wl,--verbose -Wl,-Map,lsmash_root_smoke_gcc_lld.map -llsmash -lobuparse \
               -o lsmash_root_smoke_gcc_lld.exe
           ' >gcc_lld_stdout.txt 2>gcc_lld_link.txt
