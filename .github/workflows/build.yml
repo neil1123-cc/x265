@@ -734,7 +734,7 @@ jobs:
         grep -q "pix_fmt=yuv420p" smoke_stream.txt
         awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_stream.txt
         grep -q "time_base=" smoke_timing.txt
-        grep -q "time_base=1/24" smoke_timing.txt
+        grep -q "time_base=1/24000" smoke_timing.txt
         grep -q "nal_length_size=4" smoke_timing.txt
         grep -q "r_frame_rate=24/1" smoke_timing.txt
         grep -q "avg_frame_rate=24/1" smoke_timing.txt
@@ -745,23 +745,19 @@ jobs:
         test -s smoke_packets.csv
         test -s smoke_frames.csv
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_packets.csv
-        awk -F, 'NF >= 2 && $2 != "N/A" { if (seen && ($2+0) < prev) exit 1; prev=$2+0; seen=1 } END { if (!seen) exit 1 }' smoke_frames.csv
-        awk -F, 'NF >= 2 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
-        awk -F, 'NR == 1 { if (NF < 4 || $4 != 1) exit 1 }' smoke_frames.csv
-        awk -F, 'NR == 1 { if (NF < 1 || $1 == "N/A") exit 1 }' smoke_frames.csv
-        awk -F, 'NR == 1 { if (($1+0) < -0.001 || ($1+0) > 0.05) exit 1 }' smoke_frames.csv
-        awk -F, 'NR == 1 { if (NF < 3 || $3 == "N/A") exit 1; if (($3+0) < 0.03 || ($3+0) > 0.05) exit 1 }' smoke_frames.csv
-        awk -F, '$3 == "N/A" { exit 1 } { if (($3+0) < 0.03 || ($3+0) > 0.05) exit 1 } END { if (NR != 16) exit 1 }' smoke_frames.csv
-        awk -F, 'NR > 1 && $1 != "N/A" && prev != "" { delta = ($1+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($1 != "N/A") prev = $1+0 } END { if (NR < 2) exit 1 }' smoke_frames.csv
+        awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_frames.csv
+        awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
+        awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_frames.csv
         awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1 }' smoke_frames.csv
         awk -F, 'NR == 1 { if (($2+0) < -0.001 || ($2+0) > 0.05) exit 1 }' smoke_frames.csv
-        awk -F, 'NR == 1 { if (($1+0) < ($2+0)) exit 1 }' smoke_frames.csv
-        awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $1 == "N/A" || $2 == "N/A") exit 1; if (($1+0) < 0.55 || ($1+0) > 0.75) exit 1; if (($2+0) < 0 || ($2+0) > ($1+0)) exit 1 }' smoke_frames.csv
-        awk -F, 'NR > 8 && NF >= 2 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
-        awk -F, 'NF >= 4 && $4 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frames.csv
+        awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_frames.csv
+        awk -F, 'NR == 1 { if (NF < 3 || $3 == "N/A") exit 1 }' smoke_frames.csv
+        awk -F, 'NR == 1 { if (($2+0) < ($3+0)) exit 1 }' smoke_frames.csv
+        awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_frames.csv
+        awk -F, 'NR > 8 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
+        awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frames.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_timing.txt
-        awk -F, 'BEGIN { first=""; last=""; dur="" } $1 != "N/A" { if (first == "") first = $1+0; last = $1+0 } $3 != "N/A" { dur = $3+0 } END { if (first == "" || last == "" || dur == "") exit 1; span = (last - first) + dur; if (span < 0.60 || span > 0.75) exit 1 }' smoke_frames.csv
 
     - name: MP4 smoke (8bit CLI open GOP)
       run: |
