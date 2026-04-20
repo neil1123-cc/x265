@@ -294,8 +294,17 @@ jobs:
         fi
         if [ -x /mingw64/bin/gcc ]; then
           echo '=== gcc+lld control link attempt ==='
+          rm -rf gcc_lld_bin
+          mkdir -p gcc_lld_bin
+          cat > gcc_lld_bin/ld <<'EOF'
+          #!/usr/bin/env bash
+          exec /clang64/bin/ld.lld "$@"
+          EOF
+          chmod +x gcc_lld_bin/ld
           set +e
-          env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin" /usr/bin/bash -lc '
+          env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="$PWD/gcc_lld_bin:/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
+            command -v ld
+            ld --version || true
             gcc -v -fuse-ld=lld -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib \
               -Wl,--verbose -Wl,-Map,lsmash_root_smoke_gcc_lld.map -llsmash -lobuparse \
               -o lsmash_root_smoke_gcc_lld.exe
