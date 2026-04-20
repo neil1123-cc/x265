@@ -221,7 +221,7 @@ jobs:
         if [ -x /mingw64/bin/gcc ]; then
           echo '=== gcc+bfd control link attempt ==='
           set +e
-          /mingw64/bin/gcc -v -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,-Map,lsmash_root_smoke_gcc_bfd.map -llsmash -lobuparse -o lsmash_root_smoke_gcc_bfd.exe >gcc_bfd_stdout.txt 2>gcc_bfd_link.txt
+          /mingw64/bin/gcc -v -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,--verbose -Wl,-Map,lsmash_root_smoke_gcc_bfd.map -llsmash -lobuparse -o lsmash_root_smoke_gcc_bfd.exe >gcc_bfd_stdout.txt 2>gcc_bfd_link.txt
           gcc_bfd_status=$?
           set -e
           echo "gcc+bfd exit code: $gcc_bfd_status"
@@ -232,7 +232,11 @@ jobs:
           if [ -s gcc_bfd_link.txt ]; then
             echo '=== gcc+bfd stderr ==='
             cat gcc_bfd_link.txt
+            echo '=== gcc+bfd stderr tail ==='
+            tail -n 80 gcc_bfd_link.txt
           fi
+          echo '=== gcc+bfd temp files ==='
+          ls -1 lsmash_root_smoke_gcc_bfd* 2>/dev/null || true
           if [ -f ./lsmash_root_smoke_gcc_bfd.exe ]; then
             echo 'gcc+bfd exe produced'
           else
