@@ -577,12 +577,15 @@ void MP4Muxer::sign()
 
 bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
 {
+    MP4_LOG_INFO("init begin. file=%s timebase=%d/%d\n",
+                 fname ? fname : "(null)", info.timebaseNum, info.timebaseDenom);
     MP4_FAIL_IF(!fname || !fname[0], "invalid output filename for MP4 muxer.\n");
     m_timebaseNum = info.timebaseNum;
     m_timebaseDenom = info.timebaseDenom;
 
     m_filename = fname;
 
+    MP4_LOG_INFO("init probing writable output file.\n");
     FILE* fh = x265_fopen(fname, "wb");
     if (!fh)
     {
@@ -592,6 +595,7 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
     }
     fclose(fh);
 
+    MP4_LOG_INFO("init creating L-SMASH root.\n");
     m_root = lsmash_create_root();
     if (!m_root)
     {
@@ -601,6 +605,7 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
         return false;
     }
 
+    MP4_LOG_INFO("init opening file in L-SMASH.\n");
     if (lsmash_open_file(fname, 0, &m_fileParam) < 0)
     {
         MP4_LOG_ERROR("failed to open output file in L-SMASH.\n");
@@ -611,6 +616,7 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
     }
     m_fileOpen = true;
 
+    MP4_LOG_INFO("init creating video summary.\n");
     m_summary = (lsmash_video_summary_t*)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
     if (!m_summary)
     {
@@ -621,6 +627,7 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
         return false;
     }
     m_summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
+    MP4_LOG_INFO("init ready. root=%p summary=%p fileOpen=%d\n", m_root, m_summary, m_fileOpen ? 1 : 0);
 
     return true;
 }
