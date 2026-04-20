@@ -960,7 +960,7 @@ jobs:
         grep -q "pix_fmt=yuv420p" smoke_frac_stream.txt
         awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_frac_stream.txt
         grep -q "time_base=" smoke_frac_timing.txt
-        grep -q "time_base=1001/24000" smoke_frac_timing.txt
+        grep -q "time_base=1/24000" smoke_frac_timing.txt
         if grep -q '^nal_length_size=' smoke_frac_timing.txt; then grep -q "nal_length_size=4" smoke_frac_timing.txt; fi
         grep -q "r_frame_rate=24000/1001" smoke_frac_timing.txt
         grep -q "avg_frame_rate=24000/1001" smoke_frac_timing.txt
