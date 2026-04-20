@@ -418,11 +418,11 @@ jobs:
               echo "--- $obj sections ---"
               objdump -h "$obj" || true
               echo "--- $obj headers ---"
-              objdump -x "$obj" | grep -E 'COMDAT|LINK_ONCE|\.refptr|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' || true
+              (objdump -x "$obj" | grep -E 'COMDAT|LINK_ONCE|\.refptr|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)') || true
               if command -v llvm-readobj >/dev/null 2>&1; then
                 echo "--- $obj llvm-readobj ---"
                 dump_file="${obj%.o}.llvm-readobj.txt"
-                llvm-readobj --file-headers --sections --symbols "$obj" > "$dump_file"
+                llvm-readobj --file-headers --sections --symbols "$obj" > "$dump_file" || true
                 grep -E 'Name: \.rdata\$\.refptr|Name: \.refptr|Name: \.text|Symbol:|AuxSectionDef|AuxWeakExternal|Section:|SectionNumber:|Selection:|AssociativeSection:|IMAGE_SCN_LNK_COMDAT|IMAGE_SCN_MEM_(READ|WRITE|EXECUTE)|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' "$dump_file" || true
               fi
             fi
