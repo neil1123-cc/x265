@@ -107,6 +107,7 @@ jobs:
       with:
         path: l-smash
         repository: vimeo/l-smash
+        ref: v2.18.0
 
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
