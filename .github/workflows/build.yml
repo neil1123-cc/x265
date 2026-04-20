@@ -294,20 +294,34 @@ jobs:
         fi
         if [ -x /mingw64/bin/gcc ]; then
           echo '=== gcc+lld control link attempt ==='
-          rm -rf gcc_lld_bin
-          mkdir -p gcc_lld_bin
-          for name in ld ld.exe x86_64-w64-mingw32-ld x86_64-w64-mingw32-ld.exe; do
-            cp "$(command -v ld.lld)" "gcc_lld_bin/$name"
-          done
-          chmod +x gcc_lld_bin/*
           set +e
-          env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="$PWD/gcc_lld_bin:/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
-            command -v ld || true
-            command -v ld.exe || true
-            gcc -print-prog-name=ld
-            gcc -B"$PWD/gcc_lld_bin/" -v -fuse-ld=lld -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib \
-              -Wl,--verbose -Wl,-Map,lsmash_root_smoke_gcc_lld.map -llsmash -lobuparse \
-              -o lsmash_root_smoke_gcc_lld.exe
+          env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
+            gcc -v -save-temps -O0 -g -I/usr/local/include -c lsmash_root_smoke.c \
+              -o lsmash_root_smoke_gcc_lld-lsmash_root_smoke.o
+            gcc_libdir="$(dirname "$(gcc -print-libgcc-file-name)")"
+            mingw_lib="$(dirname "$(gcc -print-file-name=crt2.o)")"
+            mingw_target_lib="/mingw64/x86_64-w64-mingw32/lib"
+            crt2="$(gcc -print-file-name=crt2.o)"
+            crtbegin="$(gcc -print-file-name=crtbegin.o)"
+            crtend="$(gcc -print-file-name=crtend.o)"
+            manifest="$(gcc -print-file-name=default-manifest.o)"
+            echo "gcc libdir: $gcc_libdir"
+            echo "mingw lib: $mingw_lib"
+            echo "target lib: $mingw_target_lib"
+            echo "crt2: $crt2"
+            echo "crtbegin: $crtbegin"
+            echo "crtend: $crtend"
+            echo "manifest: $manifest"
+            /clang64/bin/ld.lld -m i386pep -Bdynamic \
+              -o lsmash_root_smoke_gcc_lld.exe \
+              "$crt2" "$crtbegin" \
+              -L/usr/local/lib -L"$gcc_libdir" -L"$mingw_lib" -L"$mingw_target_lib" \
+              lsmash_root_smoke_gcc_lld-lsmash_root_smoke.o \
+              --verbose -Map lsmash_root_smoke_gcc_lld.map \
+              -llsmash -lobuparse \
+              -lmingw32 -lgcc -lgcc_eh -lmingwex -lmsvcrt -lkernel32 -lpthread -ladvapi32 -lshell32 -luser32 -lkernel32 \
+              -lmingw32 -lgcc -lgcc_eh -lmingwex -lmsvcrt -lkernel32 \
+              "$manifest" "$crtend"
           ' >gcc_lld_stdout.txt 2>gcc_lld_link.txt
           gcc_lld_status=$?
           set -e
