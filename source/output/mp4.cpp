@@ -1455,6 +1455,8 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     if (!prepared)
         return -1;
 
+    general_log(NULL, "mp4", X265_LOG_DEBUG, "creating MP4 sample size=%d scaledDts=%" PRIu64 " scaledCts=%" PRIu64 "\n",
+                prep.sampleSize, prep.sampleDts, prep.sampleCts);
     lsmash_sample_t* outSample = lsmash_create_sample((uint32_t)prep.sampleSize);
     if (!outSample)
     {
@@ -1490,6 +1492,8 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
                              ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC
                              : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
 
+    general_log(NULL, "mp4", X265_LOG_DEBUG, "appending MP4 sample track=%u entry=%u\n",
+                m_track, m_sampleEntry);
     if (lsmash_append_sample(m_root, m_track, outSample))
     {
         lsmash_delete_sample(outSample);
@@ -1700,6 +1704,7 @@ int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
         return -1;
     }
 
+    general_log(NULL, "mp4", X265_LOG_DEBUG, "configuring MP4 parameter sets\n");
     if (!m_muxer.configureParameterSets(nal, nalcount))
     {
         m_muxer.abort();
@@ -1707,6 +1712,7 @@ int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
         return -1;
     }
 
+    general_log(NULL, "mp4", X265_LOG_DEBUG, "beginning MP4 stream\n");
     int bytes = m_muxer.beginStream(nal, nalcount);
     if (bytes < 0)
     {
@@ -1732,6 +1738,8 @@ int MP4Output::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture& 
     sample.nalCount = nalcount;
     sample.pic = &pic;
 
+    general_log(NULL, "mp4", X265_LOG_DEBUG, "writing MP4 sample pts=%" PRId64 " dts=%" PRId64 " nal=%u\n",
+                pic.pts, pic.dts, nalcount);
     int bytes = m_muxer.writeSample(sample);
     if (bytes < 0)
     {
