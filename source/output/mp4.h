@@ -35,7 +35,6 @@ protected:
     lsmash_file_parameters_t m_fileParam;
     bool m_fileOpen;
     std::array<lsmash_brand_type, 6> m_brands;
-    std::string m_mediaHandlerName;
 
     uint32_t m_movieTimescale;
     uint32_t m_videoTimescale;

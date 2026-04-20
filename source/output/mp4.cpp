@@ -357,7 +357,6 @@ MP4Muxer::MP4Muxer()
     m_summary = NULL;
     m_seiBuffer = NULL;
     m_brands.fill(static_cast<lsmash_brand_type>(0));
-    m_mediaHandlerName = "L-SMASH Video Media Handler";
     memset(m_paramSetBuffer, 0, sizeof(m_paramSetBuffer));
     resetRuntimeState();
 }
@@ -1031,7 +1030,9 @@ bool MP4Muxer::setParam(const x265_param* param)
     lsmash_media_parameters_t mediaParam;
     lsmash_initialize_media_parameters(&mediaParam);
     mediaParam.timescale = mediaTimescale;
-    mediaParam.media_handler_name = const_cast<char*>(m_mediaHandlerName.c_str());
+    mediaParam.media_handler_name = strdup("L-SMASH Video Media Handler");
+    MP4_FAIL_IF(!mediaParam.media_handler_name,
+                "failed to allocate media handler name for video.\n");
     MP4_FAIL_IF(lsmash_set_media_parameters(m_root, track, &mediaParam),
                 "failed to set media parameters for video.\n");
 
