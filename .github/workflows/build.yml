@@ -221,7 +221,11 @@ jobs:
         if [ -x /mingw64/bin/gcc ]; then
           echo '=== gcc+bfd control link attempt ==='
           set +e
-          /mingw64/bin/gcc -v -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,--verbose -Wl,-Map,lsmash_root_smoke_gcc_bfd.map -llsmash -lobuparse -o lsmash_root_smoke_gcc_bfd.exe >gcc_bfd_stdout.txt 2>gcc_bfd_link.txt
+          env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin" /usr/bin/bash -lc '
+            gcc -v -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib \
+              -Wl,--verbose -Wl,-Map,lsmash_root_smoke_gcc_bfd.map -llsmash -lobuparse \
+              -o lsmash_root_smoke_gcc_bfd.exe
+          ' >gcc_bfd_stdout.txt 2>gcc_bfd_link.txt
           gcc_bfd_status=$?
           set -e
           echo "gcc+bfd exit code: $gcc_bfd_status"
