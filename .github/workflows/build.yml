@@ -133,6 +133,8 @@ jobs:
           mingw-w64-clang-x86_64-ninja
           mingw-w64-clang-x86_64-gdb
           mingw-w64-clang-x86_64-ffmpeg
+          mingw-w64-x86_64-binutils
+          mingw-w64-x86_64-gcc
 
     - name: Compile FFmpeg (lavf input only)
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -206,26 +208,28 @@ jobs:
         }
         EOF
         echo '=== smoke toolchain ==='
-        command -v cc clang ld.lld ld.bfd || true
+        command -v cc clang ld.lld ld.bfd /mingw64/bin/gcc /mingw64/bin/ld.bfd || true
         cc --version || true
         clang --version || true
         ld.lld --version || true
         ld.bfd --version || true
+        /mingw64/bin/gcc --version || true
+        /mingw64/bin/ld.bfd --version || true
         echo '=== default driver link line ==='
         cc -### -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,-Map,lsmash_root_smoke.map -llsmash -lobuparse -o lsmash_root_smoke.exe 2>&1 || true
         cc -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,-Map,lsmash_root_smoke.map -llsmash -lobuparse -o lsmash_root_smoke.exe
-        if command -v clang >/dev/null 2>&1; then
-          echo '=== explicit bfd link attempt ==='
-          if clang -fuse-ld=bfd -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,-Map,lsmash_root_smoke_bfd.map -llsmash -lobuparse -o lsmash_root_smoke_bfd.exe 2>bfd_link.txt; then
-            echo 'bfd link ok'
-            if ./lsmash_root_smoke_bfd.exe; then
-              echo 'bfd smoke ok'
+        if [ -x /mingw64/bin/gcc ]; then
+          echo '=== gcc+bfd control link attempt ==='
+          if /mingw64/bin/gcc -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,-Map,lsmash_root_smoke_gcc_bfd.map -llsmash -lobuparse -o lsmash_root_smoke_gcc_bfd.exe 2>gcc_bfd_link.txt; then
+            echo 'gcc+bfd link ok'
+            if ./lsmash_root_smoke_gcc_bfd.exe; then
+              echo 'gcc+bfd smoke ok'
             else
-              echo 'bfd smoke crashed'
+              echo 'gcc+bfd smoke crashed'
             fi
           else
-            echo 'bfd link unavailable'
-            cat bfd_link.txt
+            echo 'gcc+bfd link unavailable'
+            cat gcc_bfd_link.txt
           fi
         fi
         if ! ./lsmash_root_smoke.exe; then
@@ -235,11 +239,11 @@ jobs:
           nm -n ./lsmash_root_smoke.exe | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
           echo '=== link map ==='
           grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' lsmash_root_smoke.map || true
-          if [ -f ./lsmash_root_smoke_bfd.exe ]; then
-            echo '=== bfd exe symbols ==='
-            nm -n ./lsmash_root_smoke_bfd.exe | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
-            echo '=== bfd link map ==='
-            grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' lsmash_root_smoke_bfd.map || true
+          if [ -f ./lsmash_root_smoke_gcc_bfd.exe ]; then
+            echo '=== gcc+bfd exe symbols ==='
+            nm -n ./lsmash_root_smoke_gcc_bfd.exe | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
+            echo '=== gcc+bfd link map ==='
+            grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' lsmash_root_smoke_gcc_bfd.map || true
           fi
           echo '=== archive disassembly ==='
           objdump -drC /usr/local/lib/liblsmash.a > lsmash_archive.objdump.txt
@@ -255,13 +259,13 @@ jobs:
             echo "--- exe $sym ---"
             sed -n "/<$sym>/,/^$/p" lsmash_exe.objdump.txt || true
           done
-          if [ -f ./lsmash_root_smoke_bfd.exe ]; then
-            echo '=== bfd exe disassembly ==='
-            objdump -drC ./lsmash_root_smoke_bfd.exe > lsmash_exe_bfd.objdump.txt
-            grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_exe_bfd.objdump.txt || true
+          if [ -f ./lsmash_root_smoke_gcc_bfd.exe ]; then
+            echo '=== gcc+bfd exe disassembly ==='
+            objdump -drC ./lsmash_root_smoke_gcc_bfd.exe > lsmash_exe_gcc_bfd.objdump.txt
+            grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_exe_gcc_bfd.objdump.txt || true
             for sym in lsmash_create_root allocate_box_by_default lsmash_memdup; do
-              echo "--- bfd exe $sym ---"
-              sed -n "/<$sym>/,/^$/p" lsmash_exe_bfd.objdump.txt || true
+              echo "--- gcc+bfd exe $sym ---"
+              sed -n "/<$sym>/,/^$/p" lsmash_exe_gcc_bfd.objdump.txt || true
             done
           fi
           gdb -batch -q ./lsmash_root_smoke.exe \
