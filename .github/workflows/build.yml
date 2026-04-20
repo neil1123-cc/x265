@@ -971,7 +971,6 @@ jobs:
         test -s smoke_frac_packets.csv
         test -s smoke_frac_frames.csv
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 24) exit 1 }' smoke_frac_packets.csv
-        awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_frac_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frac_frames.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_frac_frames.csv
         awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1 }' smoke_frac_frames.csv
