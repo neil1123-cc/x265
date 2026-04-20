@@ -210,21 +210,20 @@ jobs:
           gdb -batch -q ./lsmash_root_smoke.exe \
             -ex run \
             -ex "bt full" \
-            -ex "frame 1" \
-            -ex "info args" \
-            -ex "info locals" \
-            -ex "p/x ptr" \
-            -ex "p/x size" \
-            -ex "frame 2" \
-            -ex "info args" \
-            -ex "info locals" \
-            -ex "p/x nonexist_ptr" \
-            -ex "p/x data_type_size" \
-            -ex "x/16gx nonexist_ptr" \
-            -ex "frame 3" \
-            -ex "info args" \
-            -ex "info locals" \
             -ex "p/x &isom_root_abstract_box_default" \
+            -ex "p/x sizeof(isom_root_abstract_box_default)" \
+            -ex "x/16gx &isom_root_abstract_box_default" \
+            -ex "disassemble /r lsmash_create_root" \
+            -ex "disassemble /r allocate_box_by_default" \
+            -ex "disassemble /r lsmash_memdup" \
+            -ex "info address isom_root_abstract_box_default" \
+            -ex "info address lsmash_create_root" \
+            -ex "info address allocate_box_by_default" \
+            -ex "info address lsmash_memdup" \
+            -ex "info symbol 0x7ff67fe27375" \
+            -ex "info symbol 0x7ff67fe361de" \
+            -ex "info symbol 0x7ff67fe360ef" \
+            -ex "info files" \
             -ex "info sharedlibrary" \
             -ex "info registers"
           exit 1
