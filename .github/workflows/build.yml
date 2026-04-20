@@ -416,6 +416,17 @@ jobs:
             echo "--- archive $sym ---"
             sed -n "/<$sym>/,/^$/p" lsmash_archive.objdump.txt || true
           done
+          echo '=== archive COMDAT sections ==='
+          ar p /usr/local/lib/liblsmash.a box.o > lsmash_box.o
+          ar p /usr/local/lib/liblsmash.a box_default.o > lsmash_box_default.o
+          for obj in lsmash_box.o lsmash_box_default.o; do
+            echo "--- $obj sections ---"
+            objdump -h "$obj" || true
+            echo "--- $obj headers ---"
+            objdump -x "$obj" | grep -E 'COMDAT|LINK_ONCE|\.refptr|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' || true
+            echo "--- $obj relocations ---"
+            objdump -r "$obj" | grep -E '\.refptr|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' || true
+          done
           echo '=== exe disassembly ==='
           objdump -drC ./lsmash_root_smoke.exe > lsmash_exe.objdump.txt
           grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_exe.objdump.txt || true
