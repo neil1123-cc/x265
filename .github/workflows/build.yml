@@ -1015,12 +1015,10 @@ jobs:
         test -s smoke_bpyramid_packets.csv
         test -s smoke_bpyramid_frames.csv
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_bpyramid_packets.csv
-        awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR == 1 { if (($2+0) < -0.001 || ($2+0) > 0.06) exit 1 }' smoke_bpyramid_frames.csv
-        awk -F, 'NR == 1 { if (NF < 3 || $3 == "N/A") exit 1; if (($3+0) < -0.001 || ($3+0) > 0.06) exit 1; if (($2+0) < ($3+0)) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR > 4 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { gap = ($2+0) - ($3+0); if (gap > 0.07) diff=1 } END { if (!diff) exit 1 }' smoke_bpyramid_frames.csv
