@@ -150,10 +150,8 @@ static bool validateParameterSetTriplet(const x265_nal* paramSetNal, const uint3
     return true;
 }
 
-static void freeTemporaryParameterState(uint8_t* paramSetBuffer[3], uint8_t* seiBuffer)
+static void freeTemporarySeiState(uint8_t* seiBuffer)
 {
-    for (uint32_t i = 0; i < 3; i++)
-        delete[] paramSetBuffer[i];
     delete[] seiBuffer;
 }
 
@@ -186,169 +184,13 @@ static bool validateHeaderSeiNal(const x265_nal& nal, const char* nonSeiMessage,
 
 struct SamplePreparation
 {
-    bool hasLeadingVcl;
-    bool hasRadl;
-    bool hasRecoveryPoint;
-    bool hasSublayerNonRef;
-    uint8_t sampleTemporalId;
-    bool sampleTemporalIdSet;
     bool keyframe;
-    int32_t recoveryPocCnt;
     int64_t pts;
     int64_t dts;
     int sampleSize;
     uint64_t sampleDts;
     uint64_t sampleCts;
 };
-
-static size_t convertNalToRbsp(const uint8_t* payload, size_t payloadSize, std::vector<uint8_t>& rbsp)
-{
-    rbsp.clear();
-    rbsp.reserve(payloadSize);
-    int zeroCount = 0;
-    for (size_t i = 0; i < payloadSize; i++)
-    {
-        uint8_t byte = payload[i];
-        if (zeroCount == 2 && byte == 0x03)
-        {
-            zeroCount = 0;
-            continue;
-        }
-        rbsp.push_back(byte);
-        if (!byte)
-            zeroCount++;
-        else
-            zeroCount = 0;
-    }
-    return rbsp.size();
-}
-
-class BitReader
-{
-public:
-    BitReader(const uint8_t* data, size_t sizeBytes)
-        : m_data(data), m_sizeBits(sizeBytes * 8), m_bitPos(0)
-    {
-    }
-
-    bool readBits(uint32_t numBits, uint32_t& value)
-    {
-        if (!numBits || numBits > 32 || m_bitPos + numBits > m_sizeBits)
-            return false;
-        value = 0;
-        for (uint32_t i = 0; i < numBits; i++)
-        {
-            size_t bytePos = (m_bitPos + i) >> 3;
-            uint32_t bitOffset = 7 - (uint32_t)((m_bitPos + i) & 7);
-            value = (value << 1) | ((m_data[bytePos] >> bitOffset) & 1);
-        }
-        m_bitPos += numBits;
-        return true;
-    }
-
-    bool readFlag(bool& value)
-    {
-        uint32_t bit = 0;
-        if (!readBits(1, bit))
-            return false;
-        value = bit != 0;
-        return true;
-    }
-
-    bool readUe(uint32_t& value)
-    {
-        uint32_t leadingZeroBits = 0;
-        while (true)
-        {
-            if (m_bitPos >= m_sizeBits)
-                return false;
-            uint32_t bit = 0;
-            if (!readBits(1, bit))
-                return false;
-            if (bit)
-                break;
-            leadingZeroBits++;
-            if (leadingZeroBits > 31)
-                return false;
-        }
-        if (!leadingZeroBits)
-        {
-            value = 0;
-            return true;
-        }
-        uint32_t suffix = 0;
-        if (!readBits(leadingZeroBits, suffix))
-            return false;
-        value = ((1u << leadingZeroBits) - 1) + suffix;
-        return true;
-    }
-
-    bool readSe(int32_t& value)
-    {
-        uint32_t codeNum = 0;
-        if (!readUe(codeNum))
-            return false;
-        if (codeNum & 1)
-            value = (int32_t)((codeNum + 1) >> 1);
-        else
-            value = -(int32_t)(codeNum >> 1);
-        return true;
-    }
-
-private:
-    const uint8_t* m_data;
-    size_t m_sizeBits;
-    size_t m_bitPos;
-};
-
-static bool parseRecoveryPointSeiPayload(const uint8_t* payload, size_t payloadSize, int32_t& recoveryPocCnt)
-{
-    std::vector<uint8_t> rbsp;
-    convertNalToRbsp(payload, payloadSize, rbsp);
-    if (rbsp.size() <= 2)
-        return false;
-
-    size_t offset = 2;
-    while (offset < rbsp.size())
-    {
-        uint32_t payloadType = 0;
-        while (offset < rbsp.size())
-        {
-            uint32_t byte = rbsp[offset++];
-            payloadType += byte;
-            if (byte != 0xff)
-                break;
-        }
-        if (offset >= rbsp.size())
-            return false;
-
-        uint32_t payloadSizeValue = 0;
-        while (offset < rbsp.size())
-        {
-            uint32_t byte = rbsp[offset++];
-            payloadSizeValue += byte;
-            if (byte != 0xff)
-                break;
-        }
-        if (offset > rbsp.size() || rbsp.size() - offset < payloadSizeValue)
-            return false;
-
-        if (payloadType == RECOVERY_POINT)
-        {
-            BitReader reader(rbsp.data() + offset, payloadSizeValue);
-            bool ignoredFlag = false;
-            if (!reader.readSe(recoveryPocCnt)
-                || !reader.readFlag(ignoredFlag)
-                || !reader.readFlag(ignoredFlag))
-                return false;
-            return true;
-        }
-
-        offset += payloadSizeValue;
-    }
-
-    return false;
-}
 
 MP4Muxer::MP4Muxer()
 {
@@ -357,7 +199,6 @@ MP4Muxer::MP4Muxer()
     m_summary = NULL;
     m_seiBuffer = NULL;
     m_brands.fill(static_cast<lsmash_brand_type>(0));
-    memset(m_paramSetBuffer, 0, sizeof(m_paramSetBuffer));
     resetRuntimeState();
 }
 
@@ -487,80 +328,6 @@ bool MP4Muxer::finalizeTimeline(int64_t largestPts, int64_t lastDelta)
     return true;
 }
 
-bool MP4Muxer::analyzeSampleNals(const ContainerSample& sample, bool& hasLeadingVcl, bool& hasRadl,
-                                 bool& hasRecoveryPoint, bool& hasSublayerNonRef, bool& sampleTemporalIdSet,
-                                 uint8_t& sampleTemporalId, bool& keyframe, int32_t& recoveryPocCnt)
-{
-    bool hasIRAP = false;
-    bool hasVcl = false;
-    hasLeadingVcl = false;
-    hasRadl = false;
-    hasRecoveryPoint = false;
-    hasSublayerNonRef = false;
-    sampleTemporalId = 0;
-    sampleTemporalIdSet = false;
-    recoveryPocCnt = 0;
-
-    for (uint32_t i = 0; i < sample.nalCount; i++)
-    {
-        uint32_t nalType = sample.nal[i].type;
-        MP4_FAIL_IF(nalType == NAL_UNIT_VPS || nalType == NAL_UNIT_SPS || nalType == NAL_UNIT_PPS,
-                    "MP4 frame sample must not contain VPS/SPS/PPS NAL units.\n");
-        MP4_FAIL_IF(nalType == NAL_UNIT_ACCESS_UNIT_DELIMITER,
-                    "MP4 frame sample must not contain AUD NAL units.\n");
-        MP4_FAIL_IF(nalType == NAL_UNIT_FILLER_DATA,
-                    "MP4 hvc1 samples must not contain filler data NAL units.\n");
-        MP4_FAIL_IF(nalType == NAL_UNIT_EOS || nalType == NAL_UNIT_EOB,
-                    "MP4 frame sample must not contain EOS or EOB NAL units.\n");
-        MP4_FAIL_IF(!sample.nal[i].payload, "missing NAL payload pointer in sample.\n");
-        MP4_FAIL_IF(sample.nal[i].sizeBytes <= NALU_LENGTH_SIZE, "invalid empty NAL in sample.\n");
-        MP4_FAIL_IF(getNalPayloadType(sample.nal[i]) != nalType,
-                    "NAL payload type does not match MP4 sample metadata.\n");
-        if (nalType <= NAL_UNIT_CODED_SLICE_CRA)
-        {
-            uint8_t nalTemporalId = getNalTemporalId(sample.nal[i]);
-            if (!sampleTemporalIdSet)
-            {
-                sampleTemporalId = nalTemporalId;
-                sampleTemporalIdSet = true;
-            }
-            else
-                MP4_FAIL_IF(sampleTemporalId != nalTemporalId,
-                            "inconsistent temporal id across VCL NAL units in MP4 sample.\n");
-            hasVcl = true;
-            hasSublayerNonRef |= (nalType <= NAL_UNIT_CODED_SLICE_RASL_R) && ((nalType & 1) == 0);
-            if (nalType == NAL_UNIT_CODED_SLICE_RADL_N || nalType == NAL_UNIT_CODED_SLICE_RADL_R)
-            {
-                hasLeadingVcl = true;
-                hasRadl = true;
-            }
-            else if (nalType == NAL_UNIT_CODED_SLICE_RASL_N || nalType == NAL_UNIT_CODED_SLICE_RASL_R)
-                hasLeadingVcl = true;
-            if (nalType >= NAL_UNIT_CODED_SLICE_BLA_W_LP)
-                hasIRAP = true;
-        }
-        else if (nalType == NAL_UNIT_PREFIX_SEI)
-        {
-            int32_t parsedRecoveryPocCnt = 0;
-            if (parseRecoveryPointSeiPayload(sample.nal[i].payload + NALU_LENGTH_SIZE,
-                                             sample.nal[i].sizeBytes - NALU_LENGTH_SIZE,
-                                             parsedRecoveryPocCnt))
-            {
-                hasRecoveryPoint = true;
-                recoveryPocCnt = parsedRecoveryPocCnt;
-            }
-        }
-    }
-
-    MP4_FAIL_IF(!hasVcl, "MP4 sample is missing a VCL NAL unit.\n");
-    MP4_FAIL_IF(isFirstSample() && hasLeadingVcl,
-                "first MP4 sample must not contain RADL or RASL pictures.\n");
-
-    keyframe = hasIRAP;
-    MP4_FAIL_IF(isFirstSample() && !keyframe, "first MP4 sample must be an IRAP access unit.\n");
-    return true;
-}
-
 bool MP4Muxer::fail()
 {
     m_fail = true;
@@ -634,16 +401,6 @@ bool MP4Muxer::scaleSampleTimestamps(int64_t pts, int64_t dts, uint64_t& sampleD
     return true;
 }
 
-void MP4Muxer::clearBufferedParameterSets()
-{
-    for (uint32_t i = 0; i < 3; i++)
-    {
-        delete[] m_paramSetBuffer[i];
-        m_paramSetBuffer[i] = NULL;
-        m_paramSetSize[i] = 0;
-    }
-}
-
 void MP4Muxer::clearBufferedSeiState()
 {
     delete[] m_seiBuffer;
@@ -672,7 +429,9 @@ void MP4Muxer::resetRuntimeState()
     m_lastPts = 0;
     m_secondLastPts = 0;
     m_seiSize = 0;
-    memset(m_paramSetSize, 0, sizeof(m_paramSetSize));
+    m_vpsData.clear();
+    m_spsData.clear();
+    m_ppsData.clear();
     m_numFrames = 0;
     m_oldTimescale = 0;
     m_fpsNum = 0;
@@ -785,7 +544,6 @@ void MP4Muxer::cleanupHandle()
         m_root = NULL;
     }
     clearBufferedSeiState();
-    clearBufferedParameterSets();
     resetRuntimeState();
 }
 
@@ -903,14 +661,6 @@ bool MP4Muxer::setParam(const x265_param* param)
         m_fail = true;
         return false;
     }
-    if (m_paramSetBuffer[0] || m_paramSetBuffer[1] || m_paramSetBuffer[2]
-        || m_paramSetSize[0] || m_paramSetSize[1] || m_paramSetSize[2])
-    {
-        MP4_LOG_ERROR("stale parameter set state detected before setting MP4 parameters.\n");
-        m_fail = true;
-        return false;
-    }
-
     MP4_FAIL_IF(param->rc.bStrictCbr,
                 "MP4 hvc1 output does not support strict-cbr because it may require filler data NAL units.\n");
 
@@ -1104,13 +854,6 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
         m_fail = true;
         return false;
     }
-    if (m_paramSetBuffer[0] || m_paramSetBuffer[1] || m_paramSetBuffer[2]
-        || m_paramSetSize[0] || m_paramSetSize[1] || m_paramSetSize[2])
-    {
-        MP4_LOG_ERROR("stale parameter set state detected before configuring MP4 headers.\n");
-        m_fail = true;
-        return false;
-    }
     uint32_t headerOffset = 0;
     if (!nal)
     {
@@ -1136,33 +879,23 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
         return false;
     }
 
-    uint8_t* vps = paramSetNal[0].payload + NALU_LENGTH_SIZE;
-    uint8_t* sps = paramSetNal[1].payload + NALU_LENGTH_SIZE;
-    uint8_t* pps = paramSetNal[2].payload + NALU_LENGTH_SIZE;
     uint32_t vpsSize = paramSetNal[0].sizeBytes - NALU_LENGTH_SIZE;
     uint32_t spsSize = paramSetNal[1].sizeBytes - NALU_LENGTH_SIZE;
     uint32_t ppsSize = paramSetNal[2].sizeBytes - NALU_LENGTH_SIZE;
+    m_vpsData.assign(paramSetNal[0].payload + NALU_LENGTH_SIZE,
+                     paramSetNal[0].payload + paramSetNal[0].sizeBytes);
+    m_spsData.assign(paramSetNal[1].payload + NALU_LENGTH_SIZE,
+                     paramSetNal[1].payload + paramSetNal[1].sizeBytes);
+    m_ppsData.assign(paramSetNal[2].payload + NALU_LENGTH_SIZE,
+                     paramSetNal[2].payload + paramSetNal[2].sizeBytes);
+    uint8_t* vps = m_vpsData.data();
+    uint8_t* sps = m_spsData.data();
+    uint8_t* pps = m_ppsData.data();
 
-    const uint32_t paramSetSize[3] = { vpsSize, spsSize, ppsSize };
-    uint8_t* const paramSetPayload[3] = { vps, sps, pps };
-    uint8_t* newParamSetBuffer[3] = { NULL, NULL, NULL };
     uint8_t* newSeiBuffer = NULL;
     uint32_t newSeiSize = 0;
-    for (uint32_t i = 0; i < 3; i++)
-    {
-        newParamSetBuffer[i] = new uint8_t[paramSetSize[i]];
-        if (!newParamSetBuffer[i])
-        {
-            newParamSetBuffer[i] = NULL;
-            freeTemporaryParameterState(newParamSetBuffer, NULL);
-            MP4_LOG_ERROR("failed to allocate parameter set state buffer.\n");
-            m_fail = true;
-            return false;
-        }
-        memcpy(newParamSetBuffer[i], paramSetPayload[i], paramSetSize[i]);
-    }
     const auto failSeiAssembly = [&](const char* message) {
-        freeTemporaryParameterState(newParamSetBuffer, newSeiBuffer);
+        freeTemporarySeiState(newSeiBuffer);
         if (message)
             MP4_LOG_ERROR("%s", message);
         m_fail = true;
@@ -1205,7 +938,7 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
     const auto failSampleEntry = [&](const char* message, lsmash_codec_specific_t* codecSpecific) {
         if (codecSpecific)
             lsmash_destroy_codec_specific_data(codecSpecific);
-        freeTemporaryParameterState(newParamSetBuffer, newSeiBuffer);
+        freeTemporarySeiState(newSeiBuffer);
         MP4_LOG_ERROR("%s", message);
         m_fail = true;
         return false;
@@ -1232,11 +965,6 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
         return failSampleEntry("failed to add sample entry for video.\n", NULL);
 
     m_sampleEntry = sampleEntry;
-    for (uint32_t i = 0; i < 3; i++)
-    {
-        m_paramSetBuffer[i] = newParamSetBuffer[i];
-        m_paramSetSize[i] = paramSetSize[i];
-    }
     m_seiBuffer = newSeiBuffer;
     m_seiSize = newSeiSize;
 
@@ -1275,104 +1003,19 @@ int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
         m_fail = true;
         return -1;
     }
-    if (!(m_paramSetBuffer[0] && m_paramSetBuffer[1] && m_paramSetBuffer[2]
-          && m_paramSetSize[0] && m_paramSetSize[1] && m_paramSetSize[2]))
-    {
-        MP4_LOG_ERROR("missing configured VPS/SPS/PPS state before beginning MP4 stream.\n");
-        m_fail = true;
-        return -1;
-    }
-    if (!nal)
-    {
-        MP4_LOG_ERROR("null NAL array for stream headers.\n");
-        m_fail = true;
-        return -1;
-    }
+    MP4_FAIL_IF(!nal, "null NAL array for stream headers.\n");
+    MP4_FAIL_IF(nalcount < 3, "header should contain 3+ nals\n");
+
     uint32_t headerOffset = 0;
-    if (!findHeaderParameterSetOffset(nal, nalcount, headerOffset))
-    {
-        MP4_LOG_ERROR("MP4 stream headers must contain optional AUD followed by VPS/SPS/PPS NAL units.\n");
-        m_fail = true;
-        return -1;
-    }
+    MP4_FAIL_IF(!findHeaderParameterSetOffset(nal, nalcount, headerOffset),
+                "MP4 headers must contain optional AUD followed by VPS/SPS/PPS NAL units.\n");
 
-    const x265_nal* paramSetNal = nal + headerOffset;
-    static const uint32_t expectedParamSetTypes[3] = { NAL_UNIT_VPS, NAL_UNIT_SPS, NAL_UNIT_PPS };
-    if (!validateParameterSetTriplet(paramSetNal, expectedParamSetTypes,
-                                     "missing VPS/SPS/PPS payload pointer in stream headers.\n",
-                                     "invalid VPS/SPS/PPS size in stream headers.\n",
-                                     "NAL payload type does not match MP4 stream header metadata.\n"))
-    {
-        m_fail = true;
-        return -1;
-    }
+    uint64_t headerBytes = (uint64_t)(nal[headerOffset].sizeBytes - NALU_LENGTH_SIZE)
+                         + (uint64_t)(nal[headerOffset + 1].sizeBytes - NALU_LENGTH_SIZE)
+                         + (uint64_t)(nal[headerOffset + 2].sizeBytes - NALU_LENGTH_SIZE);
+    MP4_FAIL_IF(headerBytes > INT_MAX, "parameter set payload too large for header byte count.\n");
 
-    for (uint32_t i = 0; i < 3; i++)
-    {
-        uint32_t payloadSize = paramSetNal[i].sizeBytes - NALU_LENGTH_SIZE;
-        if (payloadSize != m_paramSetSize[i])
-        {
-            MP4_LOG_ERROR("stream VPS/SPS/PPS payload size does not match configured MP4 header state.\n");
-            m_fail = true;
-            return -1;
-        }
-        if (memcmp(m_paramSetBuffer[i], paramSetNal[i].payload + NALU_LENGTH_SIZE, payloadSize))
-        {
-            MP4_LOG_ERROR("stream VPS/SPS/PPS payload does not match configured MP4 header state.\n");
-            m_fail = true;
-            return -1;
-        }
-    }
-
-    const uint32_t seiOffset = headerOffset + 3;
-    uint64_t totalBytes = 0;
-    uint64_t seiBytes = 0;
-    for (uint32_t i = 0; i < nalcount; i++)
-    {
-        MP4_FAIL_IF(i < headerOffset && nal[i].type != NAL_UNIT_ACCESS_UNIT_DELIMITER,
-                    "unexpected non-AUD NAL before MP4 stream header parameter sets.\n");
-        if (i >= seiOffset && !validateHeaderSeiNal(nal[i],
-                                                    "unexpected non-SEI NAL in MP4 stream headers.\n",
-                                                    "missing NAL payload pointer in stream headers.\n",
-                                                    "invalid empty NAL in stream headers.\n",
-                                                    "NAL payload type does not match MP4 stream header metadata.\n"))
-        {
-            m_fail = true;
-            return -1;
-        }
-        MP4_FAIL_IF(nal[i].type <= NAL_UNIT_CODED_SLICE_CRA,
-                    "MP4 stream headers must not contain VCL NAL units.\n");
-        if (i < seiOffset)
-        {
-            MP4_FAIL_IF(!nal[i].payload, "missing NAL payload pointer in stream headers.\n");
-            MP4_FAIL_IF(nal[i].sizeBytes <= NALU_LENGTH_SIZE, "invalid empty NAL in stream headers.\n");
-            MP4_FAIL_IF(getNalPayloadType(nal[i]) != nal[i].type,
-                        "NAL payload type does not match MP4 stream header metadata.\n");
-        }
-        MP4_FAIL_IF(UINT64_MAX - totalBytes < nal[i].sizeBytes,
-                    "header payload overflow while assembling MP4 stream headers.\n");
-        totalBytes += nal[i].sizeBytes;
-        if (i >= seiOffset)
-        {
-            MP4_FAIL_IF(UINT64_MAX - seiBytes < nal[i].sizeBytes,
-                        "SEI payload overflow while validating MP4 stream headers.\n");
-            MP4_FAIL_IF((m_seiBuffer || m_seiSize) && (seiBytes > m_seiSize || m_seiSize - seiBytes < nal[i].sizeBytes),
-                        "stream header SEI payload exceeds configured MP4 header state.\n");
-            if ((m_seiBuffer || m_seiSize) && memcmp(m_seiBuffer + seiBytes, nal[i].payload, nal[i].sizeBytes))
-            {
-                MP4_LOG_ERROR("stream header SEI payload does not match configured MP4 header state.\n");
-                m_fail = true;
-                return -1;
-            }
-            seiBytes += nal[i].sizeBytes;
-        }
-    }
-    MP4_FAIL_IF(seiBytes != m_seiSize,
-                "stream header SEI payload does not match configured MP4 header state.\n");
-    MP4_FAIL_IF(totalBytes > INT_MAX, "header payload too large for muxer buffer.\n");
-
-    clearBufferedParameterSets();
-    return (int)totalBytes;
+    return (int)headerBytes;
 }
 
 int MP4Muxer::writeSample(const ContainerSample& sample)
@@ -1413,19 +1056,10 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         m_fail = true;
         return -1;
     }
-    if ((m_paramSetBuffer[0] || m_paramSetBuffer[1] || m_paramSetBuffer[2]
-        || m_paramSetSize[0] || m_paramSetSize[1] || m_paramSetSize[2]))
-    {
-        MP4_LOG_ERROR("stale parameter set state remained after MP4 stream start.\n");
-        m_fail = true;
-        return -1;
-    }
     SamplePreparation prep = {};
     const bool prepared = [&]() {
-        if (!analyzeSampleNals(sample, prep.hasLeadingVcl, prep.hasRadl, prep.hasRecoveryPoint,
-                               prep.hasSublayerNonRef, prep.sampleTemporalIdSet, prep.sampleTemporalId,
-                               prep.keyframe, prep.recoveryPocCnt))
-            return false;
+        bool hasVcl = false;
+        prep.keyframe = sample.pic->sliceType == X265_TYPE_IDR;
         prep.pts = sample.pic->pts;
         MP4_FAIL_IF(!checkedSubInt64(sample.pic->dts, m_dtsDelayFrames, prep.dts),
                     "timestamp overflow while applying MP4 DTS delay.\n");
@@ -1433,12 +1067,27 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         uint64_t sampleSize64 = m_seiSize;
         for (uint32_t i = 0; i < sample.nalCount; i++)
         {
+            uint32_t nalType = sample.nal[i].type;
+            MP4_FAIL_IF(nalType == NAL_UNIT_VPS || nalType == NAL_UNIT_SPS || nalType == NAL_UNIT_PPS,
+                        "MP4 frame sample must not contain VPS/SPS/PPS NAL units.\n");
+            MP4_FAIL_IF(nalType == NAL_UNIT_ACCESS_UNIT_DELIMITER,
+                        "MP4 frame sample must not contain AUD NAL units.\n");
+            MP4_FAIL_IF(nalType == NAL_UNIT_FILLER_DATA,
+                        "MP4 hvc1 samples must not contain filler data NAL units.\n");
+            MP4_FAIL_IF(nalType == NAL_UNIT_EOS || nalType == NAL_UNIT_EOB,
+                        "MP4 frame sample must not contain EOS or EOB NAL units.\n");
             MP4_FAIL_IF(!sample.nal[i].payload, "missing NAL payload pointer in sample.\n");
             MP4_FAIL_IF(sample.nal[i].sizeBytes <= NALU_LENGTH_SIZE, "invalid empty NAL in sample.\n");
+            MP4_FAIL_IF(getNalPayloadType(sample.nal[i]) != nalType,
+                        "NAL payload type does not match MP4 sample metadata.\n");
+            if (nalType <= NAL_UNIT_CODED_SLICE_CRA)
+                hasVcl = true;
             MP4_FAIL_IF(UINT64_MAX - sampleSize64 < sample.nal[i].sizeBytes,
                         "sample payload overflow while assembling MP4 sample.\n");
             sampleSize64 += sample.nal[i].sizeBytes;
         }
+        MP4_FAIL_IF(!hasVcl, "MP4 sample is missing a VCL NAL unit.\n");
+        MP4_FAIL_IF(isFirstSample() && !prep.keyframe, "first MP4 sample must be an IDR access unit.\n");
         MP4_FAIL_IF(sampleSize64 > INT_MAX, "sample payload too large for muxer buffer.\n");
         prep.sampleSize = (int)sampleSize64;
         if (!scaleSampleTimestamps(prep.pts, prep.dts, prep.sampleDts, prep.sampleCts))
@@ -1634,12 +1283,13 @@ void MP4Muxer::finalize(int64_t largestPts, int64_t secondLargestPts)
 
     if (!m_fail)
     {
-        sign();
         if (lsmash_finish_movie(m_root, NULL))
         {
             MP4_LOG_ERROR("failed to finish movie.\n");
             m_fail = true;
         }
+        else
+            sign();
     }
 
     cleanupHandle();
@@ -1706,7 +1356,7 @@ int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
         return -1;
     }
 
-    general_log(NULL, "mp4", X265_LOG_DEBUG, "configuring MP4 parameter sets\n");
+    general_log(NULL, "mp4", X265_LOG_DEBUG, "writing MP4 headers\n");
     if (!m_muxer.configureParameterSets(nal, nalcount))
     {
         m_muxer.abort();
@@ -1714,16 +1364,15 @@ int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
         return -1;
     }
 
-    general_log(NULL, "mp4", X265_LOG_DEBUG, "beginning MP4 stream\n");
     int bytes = m_muxer.beginStream(nal, nalcount);
     if (bytes < 0)
     {
         m_muxer.abort();
         m_fail = true;
+        return -1;
     }
-    else
-        m_headersWritten = true;
 
+    m_headersWritten = true;
     return bytes;
 }
 

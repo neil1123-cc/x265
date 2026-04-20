@@ -18,6 +18,7 @@
 
 #include <array>
 #include <string>
+#include <vector>
 
 namespace X265_NS {
 
@@ -51,8 +52,9 @@ protected:
 
     uint32_t m_seiSize;
     uint8_t* m_seiBuffer;
-    uint32_t m_paramSetSize[3];
-    uint8_t* m_paramSetBuffer[3];
+    std::vector<uint8_t> m_vpsData;
+    std::vector<uint8_t> m_spsData;
+    std::vector<uint8_t> m_ppsData;
 
     int m_numFrames;
 
@@ -66,15 +68,11 @@ protected:
     bool validateParameterState(const char* partialMessage, const char* incompleteMessage) const;
     bool isFirstSample() const;
     bool finalizeTimeline(int64_t largestPts, int64_t lastDelta);
-    bool analyzeSampleNals(const ContainerSample& sample, bool& hasLeadingVcl, bool& hasRadl,
-                           bool& hasRecoveryPoint, bool& hasSublayerNonRef, bool& sampleTemporalIdSet,
-                           uint8_t& sampleTemporalId, bool& keyframe, int32_t& recoveryPocCnt);
     bool scaleTimestampWithOffset(int64_t ts, const char* prepareError, const char* scaleError,
                                   const char* invalidError, uint64_t& scaledTs) const;
     bool scaleSampleTimestamps(int64_t pts, int64_t dts, uint64_t& sampleDts, uint64_t& sampleCts);
     bool fail();
     int failWrite();
-    void clearBufferedParameterSets();
     void clearBufferedSeiState();
     void resetRuntimeState();
     void fixTimeScale(uint64_t& mediaTimescale, uint32_t fpsDenom);
