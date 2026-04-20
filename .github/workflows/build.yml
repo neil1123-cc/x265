@@ -131,6 +131,7 @@ jobs:
           mingw-w64-clang-x86_64-pkgconf
           mingw-w64-clang-x86_64-cmake
           mingw-w64-clang-x86_64-ninja
+          mingw-w64-clang-x86_64-gdb
           mingw-w64-clang-x86_64-ffmpeg
 
     - name: Compile FFmpeg (lavf input only)
@@ -204,8 +205,11 @@ jobs:
             return 0;
         }
         EOF
-        cc -O2 -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -llsmash -lobuparse -o lsmash_root_smoke.exe
-        ./lsmash_root_smoke.exe
+        cc -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -llsmash -lobuparse -o lsmash_root_smoke.exe
+        if ! ./lsmash_root_smoke.exe; then
+          gdb -batch -q ./lsmash_root_smoke.exe -ex run -ex bt -ex "info sharedlibrary" -ex "info registers"
+          exit 1
+        fi
 
     - name: Compile mimalloc
       if: matrix.use_mimalloc == 'ON'
