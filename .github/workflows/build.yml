@@ -205,8 +205,28 @@ jobs:
             return 0;
         }
         EOF
-        cc -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -llsmash -lobuparse -o lsmash_root_smoke.exe
+        cc -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -Wl,-Map,lsmash_root_smoke.map -llsmash -lobuparse -o lsmash_root_smoke.exe
         if ! ./lsmash_root_smoke.exe; then
+          echo '=== archive symbols ==='
+          nm -A /usr/local/lib/liblsmash.a | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
+          echo '=== exe symbols ==='
+          nm -n ./lsmash_root_smoke.exe | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
+          echo '=== link map ==='
+          grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' lsmash_root_smoke.map || true
+          echo '=== archive disassembly ==='
+          objdump -drC /usr/local/lib/liblsmash.a > lsmash_archive.objdump.txt
+          grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_archive.objdump.txt || true
+          for sym in lsmash_create_root allocate_box_by_default lsmash_memdup; do
+            echo "--- archive $sym ---"
+            sed -n "/<$sym>/,/^$/p" lsmash_archive.objdump.txt || true
+          done
+          echo '=== exe disassembly ==='
+          objdump -drC ./lsmash_root_smoke.exe > lsmash_exe.objdump.txt
+          grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_exe.objdump.txt || true
+          for sym in lsmash_create_root allocate_box_by_default lsmash_memdup; do
+            echo "--- exe $sym ---"
+            sed -n "/<$sym>/,/^$/p" lsmash_exe.objdump.txt || true
+          done
           gdb -batch -q ./lsmash_root_smoke.exe \
             -ex run \
             -ex "bt full" \
@@ -220,9 +240,6 @@ jobs:
             -ex "info address lsmash_create_root" \
             -ex "info address allocate_box_by_default" \
             -ex "info address lsmash_memdup" \
-            -ex "info symbol 0x7ff67fe27375" \
-            -ex "info symbol 0x7ff67fe361de" \
-            -ex "info symbol 0x7ff67fe360ef" \
             -ex "info files" \
             -ex "info sharedlibrary" \
             -ex "info registers"
