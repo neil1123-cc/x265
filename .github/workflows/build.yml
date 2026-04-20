@@ -427,6 +427,21 @@ jobs:
             echo "--- $obj relocations ---"
             objdump -r "$obj" | grep -E '\.refptr|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' || true
           done
+          echo '=== archive COFF associations ==='
+          for obj in lsmash_box.o lsmash_box_default.o; do
+            if command -v llvm-readobj >/dev/null 2>&1; then
+              echo "--- $obj llvm-readobj ---"
+              dump_file="${obj%.o}.llvm-readobj.txt"
+              llvm-readobj --file-headers --sections --symbols "$obj" > "$dump_file"
+              grep -E 'Name: \.rdata\$\.refptr|Name: \.refptr|Name: \.text|Symbol:|AuxSectionDef|AuxWeakExternal|Section:|SectionNumber:|Selection:|AssociativeSection:|IMAGE_SCN_LNK_COMDAT|IMAGE_SCN_MEM_(READ|WRITE|EXECUTE)|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' "$dump_file" || true
+            fi
+            if command -v llvm-objdump >/dev/null 2>&1; then
+              echo "--- $obj llvm-objdump headers ---"
+              dump_file="${obj%.o}.llvm-objdump.txt"
+              llvm-objdump --private-headers --section-headers "$obj" > "$dump_file"
+              grep -E '\.rdata\$\.refptr|\.refptr|COMDAT|IMAGE_SCN_LNK_COMDAT|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' "$dump_file" || true
+            fi
+          done
           echo '=== exe disassembly ==='
           objdump -drC ./lsmash_root_smoke.exe > lsmash_exe.objdump.txt
           grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_exe.objdump.txt || true
