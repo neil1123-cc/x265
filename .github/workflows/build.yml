@@ -192,13 +192,15 @@ jobs:
       if: matrix.target_cpu == 'x86-64' && matrix.use_mimalloc == 'OFF'
       working-directory: l-smash
       run: |
-        LSMASH_CFLAGS="-I/usr/local/include -O0 -g -fno-lto -fno-strict-aliasing"
-        LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
-        ./configure --prefix=/usr/local --cc=gcc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
-        make clean
-        make -j$(nproc)
-        install -v lsmash.h /usr/local/include
-        install -v liblsmash.a /usr/local/lib
+        env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
+          LSMASH_CFLAGS="-I/usr/local/include -O0 -g -fno-lto -fno-strict-aliasing"
+          LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
+          ./configure --prefix=/usr/local --cc=gcc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
+          make clean
+          make -j$(nproc)
+          install -v lsmash.h /usr/local/include
+          install -v liblsmash.a /usr/local/lib
+        '
 
     - name: Smoke test L-SMASH root creation
       run: |
