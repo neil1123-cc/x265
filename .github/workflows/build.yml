@@ -292,6 +292,45 @@ jobs:
         else
           echo 'clang+bfd link unavailable'
         fi
+        if [ -x /mingw64/bin/gcc ]; then
+          echo '=== gcc+lld control link attempt ==='
+          set +e
+          env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin" /usr/bin/bash -lc '
+            gcc -v -fuse-ld=lld -save-temps -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib \
+              -Wl,--verbose -Wl,-Map,lsmash_root_smoke_gcc_lld.map -llsmash -lobuparse \
+              -o lsmash_root_smoke_gcc_lld.exe
+          ' >gcc_lld_stdout.txt 2>gcc_lld_link.txt
+          gcc_lld_status=$?
+          set -e
+          echo "gcc+lld exit code: $gcc_lld_status"
+          if [ -s gcc_lld_stdout.txt ]; then
+            echo '=== gcc+lld stdout ==='
+            cat gcc_lld_stdout.txt
+          fi
+          if [ -s gcc_lld_link.txt ]; then
+            echo '=== gcc+lld stderr ==='
+            cat gcc_lld_link.txt
+            echo '=== gcc+lld stderr tail ==='
+            tail -n 80 gcc_lld_link.txt
+          fi
+          echo '=== gcc+lld temp files ==='
+          ls -1 lsmash_root_smoke_gcc_lld* 2>/dev/null || true
+          if [ -f ./lsmash_root_smoke_gcc_lld.exe ]; then
+            echo 'gcc+lld exe produced'
+          else
+            echo 'gcc+lld exe missing'
+          fi
+          if [ "$gcc_lld_status" -eq 0 ] && [ -f ./lsmash_root_smoke_gcc_lld.exe ]; then
+            echo 'gcc+lld link ok'
+            if ./lsmash_root_smoke_gcc_lld.exe; then
+              echo 'gcc+lld smoke ok'
+            else
+              echo 'gcc+lld smoke crashed'
+            fi
+          else
+            echo 'gcc+lld link unavailable'
+          fi
+        fi
         if ! ./lsmash_root_smoke.exe; then
           echo '=== archive symbols ==='
           nm -A /usr/local/lib/liblsmash.a | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
@@ -310,6 +349,12 @@ jobs:
             nm -n ./lsmash_root_smoke_clang_bfd.exe | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
             echo '=== clang+bfd link map ==='
             grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' lsmash_root_smoke_clang_bfd.map || true
+          fi
+          if [ -f ./lsmash_root_smoke_gcc_lld.exe ]; then
+            echo '=== gcc+lld exe symbols ==='
+            nm -n ./lsmash_root_smoke_gcc_lld.exe | grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' || true
+            echo '=== gcc+lld link map ==='
+            grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' lsmash_root_smoke_gcc_lld.map || true
           fi
           echo '=== archive disassembly ==='
           objdump -drC /usr/local/lib/liblsmash.a > lsmash_archive.objdump.txt
@@ -341,6 +386,15 @@ jobs:
             for sym in lsmash_create_root allocate_box_by_default lsmash_memdup; do
               echo "--- clang+bfd exe $sym ---"
               sed -n "/<$sym>/,/^$/p" lsmash_exe_clang_bfd.objdump.txt || true
+            done
+          fi
+          if [ -f ./lsmash_root_smoke_gcc_lld.exe ]; then
+            echo '=== gcc+lld exe disassembly ==='
+            objdump -drC ./lsmash_root_smoke_gcc_lld.exe > lsmash_exe_gcc_lld.objdump.txt
+            grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_exe_gcc_lld.objdump.txt || true
+            for sym in lsmash_create_root allocate_box_by_default lsmash_memdup; do
+              echo "--- gcc+lld exe $sym ---"
+              sed -n "/<$sym>/,/^$/p" lsmash_exe_gcc_lld.objdump.txt || true
             done
           fi
           gdb -batch -q ./lsmash_root_smoke.exe \
