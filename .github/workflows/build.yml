@@ -880,20 +880,15 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.02 || d > 0.08) exit 1 }' smoke_single_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.02 || d > 0.08) exit 1 }' smoke_single_timing.txt
 
-    - name: MP4 smoke (8bit CLI zero frame fails)
+    - name: MP4 smoke (8bit CLI frames=0 means encode available input)
       if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 1 -pix_fmt yuv420p smoke_zero.y4m
-        if build/8b/x265.exe --input smoke_zero.y4m --input-res 128x72 --fps 24 --frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4; then
-          echo "zero-frame MP4 encode unexpectedly succeeded"
-          exit 1
-        fi
-        if [ -f smoke_zero.mp4 ] && [ -s smoke_zero.mp4 ]; then
-          ffprobe -v error smoke_zero.mp4 >/dev/null 2>&1 && {
-            echo "zero-frame MP4 output should not be a valid playable file"
-            exit 1
-          }
-        fi
+        build/8b/x265.exe --input smoke_zero.y4m --input-res 128x72 --fps 24 --frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4
+        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_zero.mp4 > smoke_zero_format.txt
+        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_zero.mp4 > smoke_zero_count.txt
+        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_zero_format.txt
+        grep -q "nb_read_frames=1" smoke_zero_count.txt
 
     - name: MP4 smoke (8bit CLI single frame 24000/1001)
       if: matrix.target_cpu == 'x86-64'
