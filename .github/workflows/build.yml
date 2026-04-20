@@ -177,9 +177,13 @@ jobs:
     - name: Compile L-SMASH
       working-directory: l-smash
       run: |
-        ./configure --prefix=/usr/local --cc=cc --extra-cflags=-I/usr/local/include --extra-ldflags=-L/usr/local/lib
+        LSMASH_CFLAGS="-I/usr/local/include -O0 -g -fno-lto -fno-strict-aliasing"
+        LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
+        ./configure --prefix=/usr/local --cc=cc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
+        make clean
         make -j$(nproc)
-        make install
+        install -v lsmash.h /usr/local/include
+        install -v liblsmash.a /usr/local/lib
 
     - name: Smoke test L-SMASH root creation
       run: |
