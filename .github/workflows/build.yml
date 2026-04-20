@@ -180,6 +180,28 @@ jobs:
         make -j$(nproc)
         make install
 
+    - name: Smoke test L-SMASH root creation
+      run: |
+        cat > lsmash_root_smoke.c <<'EOF'
+        #include <stdio.h>
+        #include <lsmash.h>
+
+        int main(void)
+        {
+            lsmash_root_t* root = lsmash_create_root();
+            if (!root)
+            {
+                fprintf(stderr, "lsmash_create_root returned NULL\n");
+                return 1;
+            }
+            lsmash_destroy_root(root);
+            puts("lsmash root smoke ok");
+            return 0;
+        }
+        EOF
+        cc -O2 -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -llsmash -o lsmash_root_smoke.exe
+        ./lsmash_root_smoke.exe
+
     - name: Compile mimalloc
       if: matrix.use_mimalloc == 'ON'
       working-directory: mimalloc
