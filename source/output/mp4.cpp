@@ -114,6 +114,27 @@ static bool isSeiNalType(uint32_t nalType)
     return nalType == NAL_UNIT_PREFIX_SEI || nalType == NAL_UNIT_SUFFIX_SEI;
 }
 
+static bool isVclNalType(uint32_t nalType)
+{
+    return nalType <= NAL_UNIT_CODED_SLICE_CRA;
+}
+
+static bool isRandomAccessNalType(uint32_t nalType)
+{
+    return nalType >= NAL_UNIT_CODED_SLICE_BLA_W_LP && nalType <= NAL_UNIT_CODED_SLICE_CRA;
+}
+
+static bool shouldOmitNalFromHvc1Sample(uint32_t nalType)
+{
+    return nalType == NAL_UNIT_VPS
+        || nalType == NAL_UNIT_SPS
+        || nalType == NAL_UNIT_PPS
+        || nalType == NAL_UNIT_ACCESS_UNIT_DELIMITER
+        || nalType == NAL_UNIT_FILLER_DATA
+        || nalType == NAL_UNIT_EOS
+        || nalType == NAL_UNIT_EOB;
+}
+
 static bool findHeaderParameterSetOffset(const x265_nal* nal, uint32_t nalcount, uint32_t& offset)
 {
     offset = 0;
@@ -1076,7 +1097,8 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     SamplePreparation prep = {};
     const bool prepared = [&]() {
         bool hasVcl = false;
-        prep.keyframe = sample.pic->sliceType == X265_TYPE_IDR;
+        bool hasRandomAccessVcl = false;
+        prep.keyframe = sample.pic->sliceType == X265_TYPE_IDR || sample.pic->sliceType == X265_TYPE_I;
         prep.pts = sample.pic->pts;
         MP4_FAIL_IF(!checkedSubInt64(sample.pic->dts, m_dtsDelayFrames, prep.dts),
                     "timestamp overflow while applying MP4 DTS delay.\n");
@@ -1085,26 +1107,26 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         for (uint32_t i = 0; i < sample.nalCount; i++)
         {
             uint32_t nalType = sample.nal[i].type;
-            MP4_FAIL_IF(nalType == NAL_UNIT_VPS || nalType == NAL_UNIT_SPS || nalType == NAL_UNIT_PPS,
-                        "MP4 frame sample must not contain VPS/SPS/PPS NAL units.\n");
-            MP4_FAIL_IF(nalType == NAL_UNIT_ACCESS_UNIT_DELIMITER,
-                        "MP4 frame sample must not contain AUD NAL units.\n");
-            MP4_FAIL_IF(nalType == NAL_UNIT_FILLER_DATA,
-                        "MP4 hvc1 samples must not contain filler data NAL units.\n");
-            MP4_FAIL_IF(nalType == NAL_UNIT_EOS || nalType == NAL_UNIT_EOB,
-                        "MP4 frame sample must not contain EOS or EOB NAL units.\n");
             MP4_FAIL_IF(!sample.nal[i].payload, "missing NAL payload pointer in sample.\n");
             MP4_FAIL_IF(sample.nal[i].sizeBytes <= NALU_LENGTH_SIZE, "invalid empty NAL in sample.\n");
             MP4_FAIL_IF(getNalPayloadType(sample.nal[i]) != nalType,
                         "NAL payload type does not match MP4 sample metadata.\n");
-            if (nalType <= NAL_UNIT_CODED_SLICE_CRA)
+            if (shouldOmitNalFromHvc1Sample(nalType))
+                continue;
+            if (isVclNalType(nalType))
+            {
                 hasVcl = true;
+                if (isRandomAccessNalType(nalType))
+                    hasRandomAccessVcl = true;
+            }
             MP4_FAIL_IF(UINT64_MAX - sampleSize64 < sample.nal[i].sizeBytes,
                         "sample payload overflow while assembling MP4 sample.\n");
             sampleSize64 += sample.nal[i].sizeBytes;
         }
+        if (hasRandomAccessVcl)
+            prep.keyframe = true;
         MP4_FAIL_IF(!hasVcl, "MP4 sample is missing a VCL NAL unit.\n");
-        MP4_FAIL_IF(isFirstSample() && !prep.keyframe, "first MP4 sample must be an IDR access unit.\n");
+        MP4_FAIL_IF(isFirstSample() && !prep.keyframe, "first MP4 sample must be a random access access unit.\n");
         MP4_FAIL_IF(sampleSize64 > INT_MAX, "sample payload too large for muxer buffer.\n");
         prep.sampleSize = (int)sampleSize64;
         if (!scaleSampleTimestamps(prep.pts, prep.dts, prep.sampleDts, prep.sampleCts))
@@ -1151,6 +1173,8 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     }
     for (uint32_t i = 0; i < sample.nalCount; i++)
     {
+        if (shouldOmitNalFromHvc1Sample(sample.nal[i].type))
+            continue;
         memcpy(out, sample.nal[i].payload, sample.nal[i].sizeBytes);
         out += sample.nal[i].sizeBytes;
     }
