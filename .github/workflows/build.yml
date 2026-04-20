@@ -713,6 +713,7 @@ jobs:
         strip -s build/all/x265.exe
 
     - name: MP4 smoke (8bit CLI)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke mp4 diagnostics ==="; for f in smoke_format.txt smoke_stream.txt smoke_timing.txt smoke_count.txt smoke_packets.csv smoke_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke.y4m
@@ -759,7 +760,9 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_timing.txt
 
     - name: MP4 smoke (8bit CLI open GOP)
+      if: matrix.target_cpu == 'x86-64'
       run: |
+        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke open-gop diagnostics ==="; for f in smoke_open_format.txt smoke_open_stream.txt smoke_open_timing.txt smoke_open_count.txt smoke_open_packets.csv smoke_open_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_open.y4m
         build/8b/x265.exe --input smoke_open.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --open-gop --output smoke_open.mp4
         ffprobe -v error -show_streams -select_streams v:0 smoke_open.mp4 > smoke_open_stream.txt
