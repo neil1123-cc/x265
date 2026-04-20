@@ -379,6 +379,16 @@ jobs:
             echo '=== gcc+lld link map ==='
             grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default' lsmash_root_smoke_gcc_lld.map || true
           fi
+          echo '=== smoke PE imports ==='
+          for exe in ./lsmash_root_smoke.exe ./lsmash_root_smoke_gcc_bfd.exe ./lsmash_root_smoke_gcc_lld.exe; do
+            if [ -f "$exe" ]; then
+              base="${exe#./}"
+              dump_file="${base%.exe}.imports.txt"
+              echo "--- $base import table ---"
+              objdump -p "$exe" > "$dump_file"
+              grep -E 'DLL Name:|memmove|memcpy|memset|malloc|calloc|realloc|free' "$dump_file" || true
+            fi
+          done
           echo '=== archive disassembly ==='
           objdump -drC /usr/local/lib/liblsmash.a > lsmash_archive.objdump.txt
           grep -nE 'isom_root_abstract_box_default|<lsmash_create_root>|<allocate_box_by_default>|<lsmash_memdup>' lsmash_archive.objdump.txt || true
