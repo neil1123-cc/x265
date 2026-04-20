@@ -60,6 +60,7 @@ protected:
     uint32_t m_fpsNum;
     uint32_t m_fpsDenom;
     uint32_t m_fpsScale;
+    int m_dtsDelayFrames;
     std::string m_filename;
 
     bool validateParameterState(const char* partialMessage, const char* incompleteMessage) const;

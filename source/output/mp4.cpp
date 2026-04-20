@@ -678,6 +678,7 @@ void MP4Muxer::resetRuntimeState()
     m_fpsNum = 0;
     m_fpsDenom = 0;
     m_fpsScale = 0;
+    m_dtsDelayFrames = 0;
 }
 
 void MP4Muxer::fixTimeScale(uint64_t& mediaTimescale, uint32_t fpsDenom)
@@ -940,6 +941,7 @@ bool MP4Muxer::setParam(const x265_param* param)
                        : 0;
         m_fpsNum = fpsNum;
         m_fpsDenom = fpsDenom;
+        m_dtsDelayFrames = param->bframes ? (param->bBPyramid ? 2 : 1) : 0;
         return true;
     }
 
@@ -1056,6 +1058,7 @@ bool MP4Muxer::setParam(const x265_param* param)
     m_secondLastPts = 0;
     m_fpsNum = fpsNum;
     m_fpsDenom = fpsDenom;
+    m_dtsDelayFrames = param->bframes ? (param->bBPyramid ? 2 : 1) : 0;
 
     m_summary->width = param->sourceWidth;
     m_summary->height = param->sourceHeight;
@@ -1424,8 +1427,9 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
                                prep.keyframe, prep.recoveryPocCnt))
             return false;
         prep.pts = sample.pic->pts;
-        prep.dts = sample.pic->dts;
-        MP4_FAIL_IF(prep.pts < prep.dts, "picture PTS precedes encoder DTS for MP4 sample.\n");
+        MP4_FAIL_IF(!checkedSubInt64(sample.pic->dts, m_dtsDelayFrames, prep.dts),
+                    "timestamp overflow while applying MP4 DTS delay.\n");
+        MP4_FAIL_IF(prep.pts < prep.dts, "picture PTS precedes adjusted DTS for MP4 sample.\n");
         uint64_t sampleSize64 = m_seiSize;
         for (uint32_t i = 0; i < sample.nalCount; i++)
         {
