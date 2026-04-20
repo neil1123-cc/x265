@@ -395,12 +395,18 @@ jobs:
               base="${exe#./}"
               header_file="${base%.exe}.headers.txt"
               section_file="${base%.exe}.sections.txt"
+              syms_file="${base%.exe}.syms.txt"
               echo "--- $base PE header ---"
               objdump -x "$exe" > "$header_file"
-              grep -E 'ImageBase|SectionAlignment|FileAlignment|SizeOfImage|SizeOfHeaders|AddressOfEntryPoint|Subsystem|DllCharacteristics' "$header_file" || true
+              perl -ne 'print if /AddressOfEntryPoint|ImageBase|SectionAlignment|FileAlignment|SizeOfImage|SizeOfHeaders|Subsystem|DllCharacteristics/' "$header_file" || true
               echo "--- $base sections ---"
               objdump -h "$exe" > "$section_file"
               cat "$section_file"
+              echo "--- $base symbols ---"
+              nm -n "$exe" > "$syms_file"
+              grep -E 'lsmash_create_root|allocate_box_by_default|lsmash_memdup|isom_root_abstract_box_default|\.refptr' "$syms_file" || true
+              echo "--- $base refptr relocations ---"
+              objdump -r "$exe" | grep -E 'isom_root_abstract_box_default|\.refptr' || true
             fi
           done
           echo '=== archive disassembly ==='
