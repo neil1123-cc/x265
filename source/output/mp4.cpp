@@ -395,6 +395,32 @@ bool MP4Muxer::finalizeTimeline(int64_t largestPts, int64_t lastDelta)
         return false;
     }
 
+    int64_t flushDelta = lastDelta ? lastDelta : 1;
+    int64_t flushInput = 0;
+    if (!checkedMulInt64(flushDelta, (int64_t)m_timeInc, flushInput))
+    {
+        MP4_LOG_ERROR("timestamp overflow while preparing last sample delta during finalize.\n");
+        return false;
+    }
+
+    int64_t scaledLastDelta = getTimeScaled(flushInput);
+    if (scaledLastDelta <= 0)
+    {
+        MP4_LOG_ERROR("invalid sample delta during finalize.\n");
+        return false;
+    }
+    if ((uint64_t)scaledLastDelta > UINT32_MAX)
+    {
+        MP4_LOG_ERROR("sample delta overflow during finalize.\n");
+        return false;
+    }
+
+    if (lsmash_flush_pooled_samples(m_root, m_track, (uint32_t)scaledLastDelta))
+    {
+        MP4_LOG_ERROR("failed to flush pooled samples.\n");
+        return false;
+    }
+
     int64_t endPts = 0;
     if (!checkedAddInt64(largestPts, lastDelta, endPts))
     {
@@ -402,59 +428,24 @@ bool MP4Muxer::finalizeTimeline(int64_t largestPts, int64_t lastDelta)
         return false;
     }
 
-    uint64_t scaledEndU = 0;
-    if (!scaleTimestampWithOffset(endPts, "timestamp overflow while preparing end timestamp during finalize.\n",
-                                  "timestamp overflow while scaling end timestamp during finalize.\n",
-                                  "invalid scaled end timestamp during finalize.\n", scaledEndU))
-        return false;
-    if (scaledEndU < m_firstCts)
+    int64_t movieDurationInput = 0;
+    if (!checkedMulInt64(endPts, (int64_t)m_timeInc, movieDurationInput))
     {
-        MP4_LOG_ERROR("edit end timestamp precedes first CTS during finalize.\n");
+        MP4_LOG_ERROR("timestamp overflow while preparing movie duration during finalize.\n");
         return false;
     }
 
-    uint64_t scaledLastCts = 0;
-    if (!scaleTimestampWithOffset(m_lastPts, "timestamp overflow while preparing last CTS during finalize.\n",
-                                  "timestamp overflow while scaling last CTS during finalize.\n",
-                                  "invalid scaled last CTS during finalize.\n", scaledLastCts))
-        return false;
-    if (scaledEndU <= scaledLastCts)
+    int64_t scaledMovieDuration = getTimeScaled(movieDurationInput);
+    if (scaledMovieDuration < 0)
     {
-        MP4_LOG_ERROR("invalid sample delta during finalize.\n");
-        return false;
-    }
-
-    uint64_t scaledLastDelta = scaledEndU - scaledLastCts;
-    uint64_t mediaDuration = scaledEndU - m_firstCts;
-    if (scaledLastDelta > UINT32_MAX)
-    {
-        MP4_LOG_ERROR("sample delta overflow during finalize.\n");
-        return false;
-    }
-
-    uint32_t sampleDelta = (uint32_t)scaledLastDelta;
-
-    if (lsmash_flush_pooled_samples(m_root, m_track, sampleDelta))
-    {
-        MP4_LOG_ERROR("failed to flush pooled samples.\n");
-        return false;
-    }
-
-    uint64_t flushedMediaDuration = lsmash_get_media_duration(m_root, m_track);
-    if (!flushedMediaDuration)
-    {
-        MP4_LOG_ERROR("media duration is broken after flushing MP4 samples.\n");
-        return false;
-    }
-    if (flushedMediaDuration != mediaDuration)
-    {
-        MP4_LOG_ERROR("flushed media duration does not match finalized MP4 media duration.\n");
+        MP4_LOG_ERROR("invalid movie duration during finalize.\n");
         return false;
     }
 
     uint64_t actualDuration = 0;
-    uint64_t q = flushedMediaDuration / m_videoTimescale;
-    uint64_t r = flushedMediaDuration % m_videoTimescale;
+    uint64_t scaledMovieDurationU = (uint64_t)scaledMovieDuration;
+    uint64_t q = scaledMovieDurationU / m_videoTimescale;
+    uint64_t r = scaledMovieDurationU % m_videoTimescale;
     if (q > UINT64_MAX / m_movieTimescale)
     {
         MP4_LOG_ERROR("duration overflow during finalize.\n");
@@ -475,7 +466,7 @@ bool MP4Muxer::finalizeTimeline(int64_t largestPts, int64_t lastDelta)
         return false;
     }
     actualDuration += truncatedFraction;
-    if (flushedMediaDuration && !actualDuration)
+    if (scaledMovieDurationU && !actualDuration)
         actualDuration = 1;
 
     lsmash_edit_t edit = {};
@@ -485,6 +476,11 @@ bool MP4Muxer::finalizeTimeline(int64_t largestPts, int64_t lastDelta)
     if (lsmash_create_explicit_timeline_map(m_root, m_track, edit))
     {
         MP4_LOG_ERROR("failed to create explicit timeline map for video.\n");
+        return false;
+    }
+    if (lsmash_modify_explicit_timeline_map(m_root, m_track, 1, edit))
+    {
+        MP4_LOG_ERROR("failed to update explicit timeline map for video.\n");
         return false;
     }
 
@@ -615,6 +611,10 @@ bool MP4Muxer::scaleSampleTimestamps(int64_t pts, int64_t dts, uint64_t& sampleD
             return false;
         }
         m_startOffset = -dts;
+        if (!scaleTimestampWithOffset(0, "timestamp overflow while preparing first CTS.\n",
+                                      "timestamp overflow while scaling first CTS.\n",
+                                      "negative first CTS after scaling.\n", m_firstCts))
+            return false;
     }
 
     if (!scaleTimestampWithOffset(dts, "timestamp overflow while preparing DTS.\n",
@@ -1506,8 +1506,6 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         return -1;
     }
 
-    if (isFirstSample() || prep.sampleCts < m_firstCts)
-        m_firstCts = prep.sampleCts;
     m_prevDts = prep.sampleDts;
     if (isFirstSample())
     {
