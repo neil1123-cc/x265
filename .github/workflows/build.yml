@@ -419,6 +419,23 @@ jobs:
               echo "--- gcc+lld exe $sym ---"
               sed -n "/<$sym>/,/^$/p" lsmash_exe_gcc_lld.objdump.txt || true
             done
+            echo '=== gcc+lld gdb ==='
+            gdb -batch -q ./lsmash_root_smoke_gcc_lld.exe \
+              -ex run \
+              -ex "bt full" \
+              -ex "p/x &isom_root_abstract_box_default" \
+              -ex "p/x sizeof(isom_root_abstract_box_default)" \
+              -ex "x/16gx &isom_root_abstract_box_default" \
+              -ex "disassemble /r lsmash_create_root" \
+              -ex "disassemble /r allocate_box_by_default" \
+              -ex "disassemble /r lsmash_memdup" \
+              -ex "info address isom_root_abstract_box_default" \
+              -ex "info address lsmash_create_root" \
+              -ex "info address allocate_box_by_default" \
+              -ex "info address lsmash_memdup" \
+              -ex "info files" \
+              -ex "info sharedlibrary" \
+              -ex "info registers" || true
           fi
           gdb -batch -q ./lsmash_root_smoke.exe \
             -ex run \
