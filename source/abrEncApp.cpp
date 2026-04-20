@@ -73,7 +73,10 @@ namespace X265_NS {
 
         /* start passEncoder worker threads */
         for (uint8_t pass = 0; pass < m_numEncodes; pass++)
-            m_passEnc[pass]->startThreads();
+        {
+            if (!m_passEnc[pass]->m_ret)
+                m_passEnc[pass]->startThreads();
+        }
     }
 
     bool AbrEncoder::allocBuffers()
@@ -276,6 +279,11 @@ namespace X265_NS {
         general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp init calling output->setParam on %s\n", m_cliopt.output->getName());
         m_cliopt.output->setParam(m_param);
         general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp init output->setParam returned fail=%d\n", m_cliopt.output->isFail() ? 1 : 0);
+        if (m_cliopt.output->isFail())
+        {
+            m_ret = 3;
+            return -1;
+        }
         /* note: we could try to acquire a different libx265 API here based on
         * the profile found during option parsing, but it must be done before
         * opening an encoder */
@@ -606,6 +614,15 @@ ret:
             general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp thread calling output->setParam on %s\n", m_cliopt.output->getName());
             m_cliopt.output->setParam(m_param);
             general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp thread output->setParam returned fail=%d\n", m_cliopt.output->isFail() ? 1 : 0);
+            if (m_cliopt.output->isFail())
+            {
+                m_ret = 3;
+                m_cliopt.output->closeFile(0, 0);
+                m_cliopt.api->param_free(m_param);
+                m_threadActive = false;
+                m_parent->m_numActiveEncodes.decr();
+                return;
+            }
             const x265_api* api = m_cliopt.api;
             /* This allows muxers to modify bitstream format */
             ReconPlay* reconPlay = NULL;
