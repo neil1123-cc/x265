@@ -207,7 +207,26 @@ jobs:
         EOF
         cc -O0 -g -I/usr/local/include lsmash_root_smoke.c -L/usr/local/lib -llsmash -lobuparse -o lsmash_root_smoke.exe
         if ! ./lsmash_root_smoke.exe; then
-          gdb -batch -q ./lsmash_root_smoke.exe -ex run -ex bt -ex "info sharedlibrary" -ex "info registers"
+          gdb -batch -q ./lsmash_root_smoke.exe \
+            -ex run \
+            -ex "bt full" \
+            -ex "frame 1" \
+            -ex "info args" \
+            -ex "info locals" \
+            -ex "p/x ptr" \
+            -ex "p/x size" \
+            -ex "frame 2" \
+            -ex "info args" \
+            -ex "info locals" \
+            -ex "p/x nonexist_ptr" \
+            -ex "p/x data_type_size" \
+            -ex "x/16gx nonexist_ptr" \
+            -ex "frame 3" \
+            -ex "info args" \
+            -ex "info locals" \
+            -ex "p/x &isom_root_abstract_box_default" \
+            -ex "info sharedlibrary" \
+            -ex "info registers"
           exit 1
         fi
 
