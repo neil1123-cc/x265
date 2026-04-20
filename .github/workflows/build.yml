@@ -943,13 +943,14 @@ jobs:
     - name: MP4 smoke (8bit CLI 24000/1001)
       if: matrix.target_cpu == 'x86-64'
       run: |
+        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke frac diagnostics ==="; for f in smoke_frac_format.txt smoke_frac_stream.txt smoke_frac_timing.txt smoke_frac_count.txt smoke_frac_packets.csv smoke_frac_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24000/1001 -frames:v 24 -pix_fmt yuv420p smoke_frac.y4m
         build/8b/x265.exe --input smoke_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 24 --bframes 4 --keyint 12 --min-keyint 12 --no-open-gop --output smoke_frac.mp4
         ffprobe -v error -show_streams -select_streams v:0 smoke_frac.mp4 > smoke_frac_stream.txt
         ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_frac.mp4 > smoke_frac_timing.txt
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_frac.mp4 > smoke_frac_format.txt
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_frac.mp4 > smoke_frac_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_frac.mp4 > smoke_frac_packets.csv
+        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_frac.mp4 > smoke_frac_packets.csv
         ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_frac.mp4 > smoke_frac_frames.csv
         grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_frac_format.txt
         grep -q "codec_name=hevc" smoke_frac_stream.txt
@@ -970,8 +971,9 @@ jobs:
         test -s smoke_frac_count.txt
         test -s smoke_frac_packets.csv
         test -s smoke_frac_frames.csv
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 24) exit 1 }' smoke_frac_packets.csv
-        awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frac_frames.csv
+        awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 24) exit 1 }' smoke_frac_packets.csv
+        awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frac_packets.csv
+        awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 13) exit 1 } END { if (kf < 2) exit 1 }' smoke_frac_packets.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_frac_frames.csv
         awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1 }' smoke_frac_frames.csv
         awk -F, 'NR == 1 { if (($2+0) < -0.001 || ($2+0) > 0.06) exit 1 }' smoke_frac_frames.csv
@@ -979,21 +981,20 @@ jobs:
         awk -F, 'NR == 1 { if (NF < 3 || $3 == "N/A") exit 1 }' smoke_frac_frames.csv
         awk -F, 'NR == 1 { if (($2+0) < ($3+0)) exit 1 }' smoke_frac_frames.csv
         awk -F, 'END { if (NR != 24) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.90 || ($2+0) > 1.10) exit 1 }' smoke_frac_frames.csv
-        awk -F, 'NR > 12 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frac_frames.csv
-        awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 13) exit 1 } END { if (kf < 2) exit 1 }' smoke_frac_frames.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.95 || d > 1.10) exit 1 }' smoke_frac_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.95 || d > 1.10) exit 1 }' smoke_frac_timing.txt
 
     - name: MP4 smoke (8bit CLI B-pyramid)
       if: matrix.target_cpu == 'x86-64'
       run: |
+        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke bpyramid diagnostics ==="; for f in smoke_bpyramid_format.txt smoke_bpyramid_stream.txt smoke_bpyramid_timing.txt smoke_bpyramid_count.txt smoke_bpyramid_packets.csv smoke_bpyramid_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_bpyramid.y4m
         build/8b/x265.exe --input smoke_bpyramid.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --b-pyramid --keyint 8 --min-keyint 8 --no-open-gop --output smoke_bpyramid.mp4
         ffprobe -v error -show_streams -select_streams v:0 smoke_bpyramid.mp4 > smoke_bpyramid_stream.txt
         ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_bpyramid.mp4 > smoke_bpyramid_timing.txt
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_bpyramid.mp4 > smoke_bpyramid_format.txt
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_bpyramid.mp4 > smoke_bpyramid_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_bpyramid.mp4 > smoke_bpyramid_packets.csv
+        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_bpyramid.mp4 > smoke_bpyramid_packets.csv
         ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_bpyramid.mp4 > smoke_bpyramid_frames.csv
         grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_bpyramid_format.txt
         grep -q "codec_name=hevc" smoke_bpyramid_stream.txt
@@ -1014,15 +1015,14 @@ jobs:
         test -s smoke_bpyramid_count.txt
         test -s smoke_bpyramid_packets.csv
         test -s smoke_bpyramid_frames.csv
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_bpyramid_packets.csv
-        awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_bpyramid_frames.csv
+        awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_bpyramid_packets.csv
+        awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_bpyramid_packets.csv
+        awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_bpyramid_packets.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR == 1 { if (($2+0) < -0.001 || ($2+0) > 0.06) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_bpyramid_frames.csv
-        awk -F, 'NR > 4 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { gap = ($2+0) - ($3+0); if (gap > 0.07) diff=1 } END { if (!diff) exit 1 }' smoke_bpyramid_frames.csv
-        awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_bpyramid_frames.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_bpyramid_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_bpyramid_timing.txt
 

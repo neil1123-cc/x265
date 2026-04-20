@@ -18,7 +18,6 @@ using namespace X265_NS;
 
 #define NALU_LENGTH_SIZE 4
 #define MP4_LOG_ERROR(...) general_log(NULL, "mp4", X265_LOG_ERROR, __VA_ARGS__)
-#define MP4_LOG_INFO(...) general_log(NULL, "mp4", X265_LOG_INFO, __VA_ARGS__)
 
 #define MP4_FAIL_IF(cond, ...) \
 if (cond) \
@@ -598,15 +597,12 @@ void MP4Muxer::sign()
 
 bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
 {
-    MP4_LOG_INFO("init begin. file=%s timebase=%d/%d\n",
-                 fname ? fname : "(null)", info.timebaseNum, info.timebaseDenom);
     MP4_FAIL_IF(!fname || !fname[0], "invalid output filename for MP4 muxer.\n");
     m_timebaseNum = info.timebaseNum;
     m_timebaseDenom = info.timebaseDenom;
 
     m_filename = fname;
 
-    MP4_LOG_INFO("init probing writable output file.\n");
     FILE* fh = x265_fopen(fname, "wb");
     if (!fh)
     {
@@ -616,7 +612,6 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
     }
     fclose(fh);
 
-    MP4_LOG_INFO("init creating L-SMASH root.\n");
     m_root = lsmash_create_root();
     if (!m_root)
     {
@@ -626,7 +621,6 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
         return false;
     }
 
-    MP4_LOG_INFO("init opening file in L-SMASH.\n");
     if (lsmash_open_file(fname, 0, &m_fileParam) < 0)
     {
         MP4_LOG_ERROR("failed to open output file in L-SMASH.\n");
@@ -637,7 +631,6 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
     }
     m_fileOpen = true;
 
-    MP4_LOG_INFO("init creating video summary.\n");
     m_summary = (lsmash_video_summary_t*)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
     if (!m_summary)
     {
@@ -648,14 +641,12 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
         return false;
     }
     m_summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
-    MP4_LOG_INFO("init ready. root=%p summary=%p fileOpen=%d\n", m_root, m_summary, m_fileOpen ? 1 : 0);
 
     return true;
 }
 
 bool MP4Muxer::setParam(const x265_param* param)
 {
-    MP4_LOG_INFO("setParam begin.\n");
     if (!(m_root && m_summary))
     {
         MP4_LOG_ERROR("MP4 muxer is not initialized before setting parameters.\n");
@@ -849,14 +840,11 @@ bool MP4Muxer::setParam(const x265_param* param)
     m_summary->color.matrix_index = matrixIndex;
     m_summary->color.full_range = fullRange;
 
-    MP4_LOG_INFO("setParam ready. track=%u movieTimescale=%u videoTimescale=%u timeInc=%" PRIu64 "\n",
-                 m_track, m_movieTimescale, m_videoTimescale, m_timeInc);
     return true;
 }
 
 bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
 {
-    MP4_LOG_INFO("configureParameterSets begin. nalcount=%u\n", nalcount);
     if (!((m_root && m_summary) && (m_track != 0)))
     {
         MP4_LOG_ERROR("MP4 muxer is not initialized before configuring headers.\n");
@@ -1001,13 +989,11 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
     m_seiBuffer = newSeiBuffer;
     m_seiSize = newSeiSize;
 
-    MP4_LOG_INFO("configureParameterSets ready. sampleEntry=%u seiSize=%u\n", m_sampleEntry, m_seiSize);
     return true;
 }
 
 int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
 {
-    MP4_LOG_INFO("beginStream begin. nalcount=%u\n", nalcount);
     if (!((m_root && m_summary) && (m_track != 0)))
     {
         MP4_LOG_ERROR("MP4 muxer is not initialized before beginning stream.\n");
@@ -1050,14 +1036,11 @@ int MP4Muxer::beginStream(const x265_nal* nal, uint32_t nalcount)
                          + (uint64_t)(nal[headerOffset + 2].sizeBytes - NALU_LENGTH_SIZE);
     MP4_FAIL_IF(headerBytes > INT_MAX, "parameter set payload too large for header byte count.\n");
 
-    MP4_LOG_INFO("beginStream ready. headerBytes=%" PRIu64 "\n", headerBytes);
     return (int)headerBytes;
 }
 
 int MP4Muxer::writeSample(const ContainerSample& sample)
 {
-    MP4_LOG_INFO("writeSample begin. nalCount=%u pts=%" PRId64 " dts=%" PRId64 " first=%d\n",
-                 sample.nalCount, sample.pic ? sample.pic->pts : -1, sample.pic ? sample.pic->dts : -1, isFirstSample() ? 1 : 0);
     if (!((m_root && m_summary) && (m_track != 0)))
     {
         MP4_LOG_ERROR("MP4 muxer is not initialized before writing sample.\n");
@@ -1147,8 +1130,6 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     if (!prepared)
         return -1;
 
-    general_log(NULL, "mp4", X265_LOG_DEBUG, "creating MP4 sample size=%d scaledDts=%" PRIu64 " scaledCts=%" PRIu64 "\n",
-                prep.sampleSize, prep.sampleDts, prep.sampleCts);
     lsmash_sample_t* outSample = lsmash_create_sample((uint32_t)prep.sampleSize);
     if (!outSample)
     {
@@ -1186,8 +1167,6 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
                              ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC
                              : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
 
-    general_log(NULL, "mp4", X265_LOG_DEBUG, "appending MP4 sample track=%u entry=%u\n",
-                m_track, m_sampleEntry);
     if (lsmash_append_sample(m_root, m_track, outSample))
     {
         lsmash_delete_sample(outSample);
@@ -1211,15 +1190,11 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
         m_secondLastPts = prep.pts;
     m_numFrames++;
 
-    MP4_LOG_INFO("writeSample appended. sampleSize=%d dts=%" PRIu64 " cts=%" PRIu64 " frames=%d\n",
-                 prep.sampleSize, prep.sampleDts, prep.sampleCts, m_numFrames);
     return prep.sampleSize;
 }
 
 void MP4Muxer::finalize(int64_t largestPts, int64_t secondLargestPts)
 {
-    MP4_LOG_INFO("finalize begin. largestPts=%" PRId64 " secondLargestPts=%" PRId64 " frames=%d fail=%d\n",
-                 largestPts, secondLargestPts, m_numFrames, m_fail ? 1 : 0);
     if (!m_root)
     {
         MP4_LOG_ERROR("MP4 muxer lost root state before finalize.\n");
@@ -1361,18 +1336,12 @@ MP4Output::MP4Output(const char* fname, InputFileInfo& inputInfo)
     m_headersWritten = false;
     m_closed = false;
 
-    MP4_LOG_INFO("MP4Output ctor begin. file=%s timebase=%d/%d\n",
-                 fname ? fname : "(null)", inputInfo.timebaseNum, inputInfo.timebaseDenom);
     if (!m_muxer.init(fname, inputInfo))
         m_fail = true;
-    MP4_LOG_INFO("MP4Output ctor ready. fail=%d\n", m_fail ? 1 : 0);
 }
 
 void MP4Output::setParam(x265_param* param)
 {
-    MP4_LOG_INFO("MP4Output::setParam begin. param=%p closed=%d fail=%d muxerFail=%d headers=%d configured=%d\n",
-                 param, m_closed ? 1 : 0, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
-                 m_headersWritten ? 1 : 0, m_paramSet ? 1 : 0);
     if (!param || m_closed)
     {
         m_fail = true;
@@ -1397,26 +1366,16 @@ void MP4Output::setParam(x265_param* param)
     }
     else
         m_paramSet = true;
-    MP4_LOG_INFO("MP4Output::setParam end. fail=%d muxerFail=%d configured=%d annexB=%d repeatHeaders=%d aud=%d eos=%d eob=%d\n",
-                 m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0, m_paramSet ? 1 : 0,
-                 param->bAnnexB ? 1 : 0, param->bRepeatHeaders ? 1 : 0,
-                 param->bEnableAccessUnitDelimiters ? 1 : 0,
-                 param->bEnableEndOfSequence ? 1 : 0,
-                 param->bEnableEndOfBitstream ? 1 : 0);
 }
 
 int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
 {
-    MP4_LOG_INFO("MP4Output::writeHeaders begin. nalcount=%u fail=%d muxerFail=%d configured=%d headers=%d closed=%d\n",
-                 nalcount, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
-                 m_paramSet ? 1 : 0, m_headersWritten ? 1 : 0, m_closed ? 1 : 0);
     if ((m_fail || m_muxer.isFail()) || !m_paramSet || m_headersWritten || m_closed)
     {
         m_fail = true;
         return -1;
     }
 
-    general_log(NULL, "mp4", X265_LOG_DEBUG, "writing MP4 headers\n");
     if (!m_muxer.configureParameterSets(nal, nalcount))
     {
         m_muxer.abort();
@@ -1433,16 +1392,11 @@ int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
     }
 
     m_headersWritten = true;
-    MP4_LOG_INFO("MP4Output::writeHeaders end. bytes=%d headers=%d fail=%d muxerFail=%d\n",
-                 bytes, m_headersWritten ? 1 : 0, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0);
     return bytes;
 }
 
 int MP4Output::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture& pic)
 {
-    MP4_LOG_INFO("MP4Output::writeFrame begin. nalcount=%u pts=%" PRId64 " dts=%" PRId64 " fail=%d muxerFail=%d configured=%d headers=%d closed=%d\n",
-                 nalcount, pic.pts, pic.dts, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
-                 m_paramSet ? 1 : 0, m_headersWritten ? 1 : 0, m_closed ? 1 : 0);
     if ((m_fail || m_muxer.isFail()) || !m_paramSet || !m_headersWritten || m_closed)
     {
         m_fail = true;
@@ -1454,8 +1408,6 @@ int MP4Output::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture& 
     sample.nalCount = nalcount;
     sample.pic = &pic;
 
-    general_log(NULL, "mp4", X265_LOG_DEBUG, "writing MP4 sample pts=%" PRId64 " dts=%" PRId64 " nal=%u\n",
-                pic.pts, pic.dts, nalcount);
     int bytes = m_muxer.writeSample(sample);
     if (bytes < 0)
     {
@@ -1463,16 +1415,11 @@ int MP4Output::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture& 
         m_fail = true;
     }
 
-    MP4_LOG_INFO("MP4Output::writeFrame end. bytes=%d fail=%d muxerFail=%d\n",
-                 bytes, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0);
     return bytes;
 }
 
 void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
 {
-    MP4_LOG_INFO("MP4Output::closeFile begin. largestPts=%" PRId64 " secondLargestPts=%" PRId64 " fail=%d muxerFail=%d configured=%d headers=%d closed=%d\n",
-                 largest_pts, second_largest_pts, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
-                 m_paramSet ? 1 : 0, m_headersWritten ? 1 : 0, m_closed ? 1 : 0);
     if (m_closed)
     {
         m_fail = true;
@@ -1506,6 +1453,4 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
     {
         m_fail = true;
     }
-    MP4_LOG_INFO("MP4Output::closeFile end. fail=%d muxerFail=%d\n",
-                 m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0);
 }

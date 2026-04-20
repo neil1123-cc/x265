@@ -278,9 +278,7 @@ namespace X265_NS {
                 return -1;
             }
         }
-        general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp init calling output->setParam on %s\n", m_cliopt.output->getName());
         m_cliopt.output->setParam(m_param);
-        general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp init output->setParam returned fail=%d\n", m_cliopt.output->isFail() ? 1 : 0);
         if (m_cliopt.output->isFail())
         {
             m_ret = 3;
@@ -613,9 +611,7 @@ ret:
 #endif
             memcpy(&m_parent->m_param[m_id], m_param, sizeof(x265_param));
             /* This allows muxers to modify bitstream format */
-            general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp thread calling output->setParam on %s\n", m_cliopt.output->getName());
             m_cliopt.output->setParam(m_param);
-            general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp thread output->setParam returned fail=%d\n", m_cliopt.output->isFail() ? 1 : 0);
             if (m_cliopt.output->isFail())
             {
                 m_ret = 3;

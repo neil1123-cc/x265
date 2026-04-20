@@ -57,10 +57,7 @@ OutputFile* OutputFile::open(const char *fname, InputFileInfo& inputInfo)
 #endif
 #ifdef ENABLE_LSMASH
     if (s && !strcmp(s, ".mp4"))
-    {
-        general_log(NULL, "mp4", X265_LOG_INFO, "OutputFile::open selecting MP4 output for `%s'.\n", fname);
         return new MP4Output(fname, inputInfo);
-    }
 #endif
     if (s && !strcmp(s, ".gop"))
         return new GOPOutput(fname, inputInfo);
