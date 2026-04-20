@@ -296,10 +296,7 @@ jobs:
           echo '=== gcc+lld control link attempt ==='
           rm -rf gcc_lld_bin
           mkdir -p gcc_lld_bin
-          cat > gcc_lld_bin/ld <<'EOF'
-          #!/usr/bin/env bash
-          exec /clang64/bin/ld.lld "$@"
-          EOF
+          printf '%s\n' '#!/usr/bin/env bash' 'exec /clang64/bin/ld.lld "$@"' > gcc_lld_bin/ld
           chmod +x gcc_lld_bin/ld
           set +e
           env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="$PWD/gcc_lld_bin:/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
