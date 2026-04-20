@@ -189,7 +189,6 @@ jobs:
         install -v liblsmash.a /usr/local/lib
 
     - name: Override L-SMASH with GCC build
-      if: matrix.target_cpu == 'x86-64' && matrix.use_mimalloc == 'OFF'
       working-directory: l-smash
       run: |
         env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
