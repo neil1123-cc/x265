@@ -273,7 +273,9 @@ namespace X265_NS {
                 return -1;
             }
         }
+        general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp init calling output->setParam on %s\n", m_cliopt.output->getName());
         m_cliopt.output->setParam(m_param);
+        general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp init output->setParam returned fail=%d\n", m_cliopt.output->isFail() ? 1 : 0);
         /* note: we could try to acquire a different libx265 API here based on
         * the profile found during option parsing, but it must be done before
         * opening an encoder */
@@ -601,7 +603,9 @@ ret:
 #endif
             memcpy(&m_parent->m_param[m_id], m_param, sizeof(x265_param));
             /* This allows muxers to modify bitstream format */
+            general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp thread calling output->setParam on %s\n", m_cliopt.output->getName());
             m_cliopt.output->setParam(m_param);
+            general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp thread output->setParam returned fail=%d\n", m_cliopt.output->isFail() ? 1 : 0);
             const x265_api* api = m_cliopt.api;
             /* This allows muxers to modify bitstream format */
             ReconPlay* reconPlay = NULL;
@@ -646,6 +650,7 @@ ret:
                 }
                 else
                 {
+                    general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp calling output->writeHeaders on %s nal=%u\n", m_cliopt.output->getName(), nal);
                     m_cliopt.output->setPS(m_encoder);
                     int headerBytes = m_cliopt.output->writeHeaders(p_nal, nal);
                     if (headerBytes < 0)
@@ -865,6 +870,8 @@ ret:
                     }
                     if (nal)
                     {
+                        general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp calling output->writeFrame on %s nal=%u pts=%" PRId64 " dts=%" PRId64 "\n",
+                                    m_cliopt.output->getName(), nal, pic_out[0].pts, pic_out[0].dts);
                         int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
                         if (frameBytes < 0)
                         {
@@ -909,6 +916,8 @@ ret:
                 }
                 if (nal)
                 {
+                    general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp flush calling output->writeFrame on %s nal=%u pts=%" PRId64 " dts=%" PRId64 "\n",
+                                m_cliopt.output->getName(), nal, pic_out[0].pts, pic_out[0].dts);
                     int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
                     if (frameBytes < 0)
                     {

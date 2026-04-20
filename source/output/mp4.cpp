@@ -1330,12 +1330,18 @@ MP4Output::MP4Output(const char* fname, InputFileInfo& inputInfo)
     m_headersWritten = false;
     m_closed = false;
 
+    MP4_LOG_INFO("MP4Output ctor begin. file=%s timebase=%d/%d\n",
+                 fname ? fname : "(null)", inputInfo.timebaseNum, inputInfo.timebaseDenom);
     if (!m_muxer.init(fname, inputInfo))
         m_fail = true;
+    MP4_LOG_INFO("MP4Output ctor ready. fail=%d\n", m_fail ? 1 : 0);
 }
 
 void MP4Output::setParam(x265_param* param)
 {
+    MP4_LOG_INFO("MP4Output::setParam begin. param=%p closed=%d fail=%d muxerFail=%d headers=%d configured=%d\n",
+                 param, m_closed ? 1 : 0, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
+                 m_headersWritten ? 1 : 0, m_paramSet ? 1 : 0);
     if (!param || m_closed)
     {
         m_fail = true;
@@ -1360,10 +1366,19 @@ void MP4Output::setParam(x265_param* param)
     }
     else
         m_paramSet = true;
+    MP4_LOG_INFO("MP4Output::setParam end. fail=%d muxerFail=%d configured=%d annexB=%d repeatHeaders=%d aud=%d eos=%d eob=%d\n",
+                 m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0, m_paramSet ? 1 : 0,
+                 param->bAnnexB ? 1 : 0, param->bRepeatHeaders ? 1 : 0,
+                 param->bEnableAccessUnitDelimiters ? 1 : 0,
+                 param->bEnableEndOfSequence ? 1 : 0,
+                 param->bEnableEndOfBitstream ? 1 : 0);
 }
 
 int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
 {
+    MP4_LOG_INFO("MP4Output::writeHeaders begin. nalcount=%u fail=%d muxerFail=%d configured=%d headers=%d closed=%d\n",
+                 nalcount, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
+                 m_paramSet ? 1 : 0, m_headersWritten ? 1 : 0, m_closed ? 1 : 0);
     if ((m_fail || m_muxer.isFail()) || !m_paramSet || m_headersWritten || m_closed)
     {
         m_fail = true;
@@ -1387,11 +1402,16 @@ int MP4Output::writeHeaders(const x265_nal* nal, uint32_t nalcount)
     }
 
     m_headersWritten = true;
+    MP4_LOG_INFO("MP4Output::writeHeaders end. bytes=%d headers=%d fail=%d muxerFail=%d\n",
+                 bytes, m_headersWritten ? 1 : 0, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0);
     return bytes;
 }
 
 int MP4Output::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture& pic)
 {
+    MP4_LOG_INFO("MP4Output::writeFrame begin. nalcount=%u pts=%" PRId64 " dts=%" PRId64 " fail=%d muxerFail=%d configured=%d headers=%d closed=%d\n",
+                 nalcount, pic.pts, pic.dts, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
+                 m_paramSet ? 1 : 0, m_headersWritten ? 1 : 0, m_closed ? 1 : 0);
     if ((m_fail || m_muxer.isFail()) || !m_paramSet || !m_headersWritten || m_closed)
     {
         m_fail = true;
@@ -1412,11 +1432,16 @@ int MP4Output::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture& 
         m_fail = true;
     }
 
+    MP4_LOG_INFO("MP4Output::writeFrame end. bytes=%d fail=%d muxerFail=%d\n",
+                 bytes, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0);
     return bytes;
 }
 
 void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
 {
+    MP4_LOG_INFO("MP4Output::closeFile begin. largestPts=%" PRId64 " secondLargestPts=%" PRId64 " fail=%d muxerFail=%d configured=%d headers=%d closed=%d\n",
+                 largest_pts, second_largest_pts, m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0,
+                 m_paramSet ? 1 : 0, m_headersWritten ? 1 : 0, m_closed ? 1 : 0);
     if (m_closed)
     {
         m_fail = true;
@@ -1450,4 +1475,6 @@ void MP4Output::closeFile(int64_t largest_pts, int64_t second_largest_pts)
     {
         m_fail = true;
     }
+    MP4_LOG_INFO("MP4Output::closeFile end. fail=%d muxerFail=%d\n",
+                 m_fail ? 1 : 0, m_muxer.isFail() ? 1 : 0);
 }
