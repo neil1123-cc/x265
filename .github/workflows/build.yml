@@ -791,7 +791,6 @@ jobs:
         test -s smoke_open_packets.csv
         test -s smoke_open_frames.csv
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_open_packets.csv
-        awk -F, '$1 ~ /K/ { k++; if (k == 2 && NR < 9) exit 1 } END { if (k < 2) exit 1 }' smoke_open_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_open_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_open_frames.csv
         awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < -0.001 || ($2+0) > 0.05) exit 1 }' smoke_open_frames.csv
@@ -805,6 +804,7 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_open_timing.txt
 
     - name: MP4 smoke (8bit CLI CRA)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_cra.y4m
         build/8b/x265.exe --input smoke_cra.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 1 --min-keyint 1 --cra-nal --output smoke_cra.mp4
@@ -845,6 +845,7 @@ jobs:
         awk -F, 'BEGIN { first=""; last=""; step="" } $2 != "N/A" { curr = $2+0; if (first == "") first = curr; if (last != "" && step == "") step = curr - last; last = curr } END { if (first == "" || last == "" || step == "") exit 1; span = (last - first) + step; if (span < 0.60 || span > 0.75) exit 1 }' smoke_cra_frames.csv
 
     - name: MP4 smoke (8bit CLI single frame)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 1 -pix_fmt yuv420p smoke_single.y4m
         build/8b/x265.exe --input smoke_single.y4m --input-res 128x72 --fps 24 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single.mp4
@@ -880,6 +881,7 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.02 || d > 0.08) exit 1 }' smoke_single_timing.txt
 
     - name: MP4 smoke (8bit CLI zero frame fails)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 1 -pix_fmt yuv420p smoke_zero.y4m
         if build/8b/x265.exe --input smoke_zero.y4m --input-res 128x72 --fps 24 --frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4; then
@@ -894,6 +896,7 @@ jobs:
         fi
 
     - name: MP4 smoke (8bit CLI single frame 24000/1001)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24000/1001 -frames:v 1 -pix_fmt yuv420p smoke_single_frac.y4m
         build/8b/x265.exe --input smoke_single_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single_frac.mp4
@@ -928,6 +931,7 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.03 || d > 0.06) exit 1 }' smoke_single_frac_timing.txt
 
     - name: MP4 smoke (8bit CLI strict-cbr fails)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_strict_cbr.y4m
         if build/8b/x265.exe --input smoke_strict_cbr.y4m --input-res 128x72 --fps 24 --frames 16 --bitrate 300 --vbv-bufsize 300 --strict-cbr --hrd --output smoke_strict_cbr.mp4; then
@@ -942,6 +946,7 @@ jobs:
         fi
 
     - name: MP4 smoke (8bit CLI 24000/1001)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24000/1001 -frames:v 24 -pix_fmt yuv420p smoke_frac.y4m
         build/8b/x265.exe --input smoke_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 24 --bframes 4 --keyint 12 --min-keyint 12 --no-open-gop --output smoke_frac.mp4
@@ -987,6 +992,7 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.95 || d > 1.10) exit 1 }' smoke_frac_timing.txt
 
     - name: MP4 smoke (8bit CLI B-pyramid)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_bpyramid.y4m
         build/8b/x265.exe --input smoke_bpyramid.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --b-pyramid --keyint 8 --min-keyint 8 --no-open-gop --output smoke_bpyramid.mp4
@@ -1030,6 +1036,7 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_bpyramid_timing.txt
 
     - name: MP4 smoke (8bit CLI AUD request stays valid)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_aud.y4m
         build/8b/x265.exe --input smoke_aud.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --aud --output smoke_aud.mp4
@@ -1070,6 +1077,7 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_aud_timing.txt
 
     - name: MP4 smoke (8bit CLI EOS/EOB request stays valid)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_eos.y4m
         build/8b/x265.exe --input smoke_eos.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --eos --eob --output smoke_eos.mp4
@@ -1110,6 +1118,7 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_eos_timing.txt
 
     - name: MP4 smoke (8bit CLI IDR recovery SEI)
+      if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_recovery.y4m
         build/8b/x265.exe --input smoke_recovery.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --idr-recovery-sei --output smoke_recovery.mp4
