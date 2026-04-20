@@ -353,6 +353,66 @@ jobs:
           else
             echo 'gcc+lld link unavailable'
           fi
+          echo '=== gcc-built l-smash control ==='
+          workspace="$PWD"
+          rm -rf lsmash-gcc-smoke lsmash-gcc-install lsmash_box_gcc.o lsmash_box_default_gcc.o
+          set +e
+          env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
+            set -e
+            workspace="$1"
+            cp -a "$workspace/l-smash" "$workspace/lsmash-gcc-smoke"
+            cd "$workspace/lsmash-gcc-smoke"
+            LSMASH_CFLAGS="-I/usr/local/include -O0 -g -fno-lto -fno-strict-aliasing"
+            LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
+            ./configure --prefix="$workspace/lsmash-gcc-install" --cc=gcc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
+            make clean
+            make -j$(nproc)
+            make install
+            cd "$workspace"
+            cc -### -O0 -g -I"$workspace/lsmash-gcc-install/include" lsmash_root_smoke.c -L"$workspace/lsmash-gcc-install/lib" -L/usr/local/lib -Wl,-Map,lsmash_root_smoke_lsmash_gcc.map -llsmash -lobuparse -o lsmash_root_smoke_lsmash_gcc.exe 2>&1 || true
+            cc -O0 -g -I"$workspace/lsmash-gcc-install/include" lsmash_root_smoke.c -L"$workspace/lsmash-gcc-install/lib" -L/usr/local/lib -Wl,-Map,lsmash_root_smoke_lsmash_gcc.map -llsmash -lobuparse -o lsmash_root_smoke_lsmash_gcc.exe
+            ar p "$workspace/lsmash-gcc-install/lib/liblsmash.a" box.o > "$workspace/lsmash_box_gcc.o"
+            ar p "$workspace/lsmash-gcc-install/lib/liblsmash.a" box_default.o > "$workspace/lsmash_box_default_gcc.o"
+          ' _ "$workspace" >gcc_lsmash_stdout.txt 2>gcc_lsmash_stderr.txt
+          gcc_lsmash_status=$?
+          set -e
+          echo "gcc-built l-smash exit code: $gcc_lsmash_status"
+          if [ -s gcc_lsmash_stdout.txt ]; then
+            echo '=== gcc-built l-smash stdout ==='
+            cat gcc_lsmash_stdout.txt
+          fi
+          if [ -s gcc_lsmash_stderr.txt ]; then
+            echo '=== gcc-built l-smash stderr ==='
+            cat gcc_lsmash_stderr.txt
+            echo '=== gcc-built l-smash stderr tail ==='
+            tail -n 80 gcc_lsmash_stderr.txt
+          fi
+          echo '=== gcc-built l-smash temp files ==='
+          ls -1 lsmash_root_smoke_lsmash_gcc* lsmash_box_gcc.o lsmash_box_default_gcc.o 2>/dev/null || true
+          if [ -f ./lsmash_root_smoke_lsmash_gcc.exe ]; then
+            echo 'gcc-built l-smash exe produced'
+            if ./lsmash_root_smoke_lsmash_gcc.exe; then
+              echo 'gcc-built l-smash smoke ok'
+            else
+              echo 'gcc-built l-smash smoke crashed'
+            fi
+          else
+            echo 'gcc-built l-smash exe missing'
+          fi
+          for obj in lsmash_box_gcc.o lsmash_box_default_gcc.o; do
+            if [ -f "$obj" ]; then
+              echo "--- $obj sections ---"
+              objdump -h "$obj" || true
+              echo "--- $obj headers ---"
+              objdump -x "$obj" | grep -E 'COMDAT|LINK_ONCE|\.refptr|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' || true
+              if command -v llvm-readobj >/dev/null 2>&1; then
+                echo "--- $obj llvm-readobj ---"
+                dump_file="${obj%.o}.llvm-readobj.txt"
+                llvm-readobj --file-headers --sections --symbols "$obj" > "$dump_file"
+                grep -E 'Name: \.rdata\$\.refptr|Name: \.refptr|Name: \.text|Symbol:|AuxSectionDef|AuxWeakExternal|Section:|SectionNumber:|Selection:|AssociativeSection:|IMAGE_SCN_LNK_COMDAT|IMAGE_SCN_MEM_(READ|WRITE|EXECUTE)|isom_root_abstract_box_default|ISOM_BOX_TYPE_(FTYP|MOOV|TRAK|UUID|HDLR)' "$dump_file" || true
+              fi
+            fi
+          done
         fi
         if ! ./lsmash_root_smoke.exe; then
           echo '=== archive symbols ==='
