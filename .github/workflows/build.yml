@@ -34,6 +34,13 @@ jobs:
           - znver3
           - znver4
           - znver5
+        use_mimalloc:
+          - 'ON'
+        include:
+          - target_cpu: x86-64
+            use_mimalloc: 'OFF'
+            artifact_suffix: -nomimalloc
+            run_release: false
 
     steps:
     - name: Checkout x265
@@ -81,6 +88,7 @@ jobs:
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
 
     - name: Checkout mimalloc
+      if: matrix.use_mimalloc == 'ON'
       uses: actions/checkout@v4
       with:
         path: mimalloc
@@ -173,6 +181,7 @@ jobs:
         make install
 
     - name: Compile mimalloc
+      if: matrix.use_mimalloc == 'ON'
       working-directory: mimalloc
       run: |
         mkdir build
@@ -215,7 +224,7 @@ jobs:
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DUSE_MIMALLOC=${{ matrix.use_mimalloc || 'ON' }} -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
@@ -227,7 +236,7 @@ jobs:
           -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DUSE_MIMALLOC=${{ matrix.use_mimalloc || 'ON' }} -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
@@ -239,7 +248,7 @@ jobs:
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DUSE_MIMALLOC=${{ matrix.use_mimalloc || 'ON' }} -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
@@ -252,7 +261,7 @@ jobs:
           -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DUSE_MIMALLOC=${{ matrix.use_mimalloc || 'ON' }} -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
@@ -265,7 +274,7 @@ jobs:
           -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DUSE_MIMALLOC=${{ matrix.use_mimalloc || 'ON' }} -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
@@ -285,7 +294,7 @@ jobs:
           -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
           -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
           -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
+          -DUSE_MIMALLOC=${{ matrix.use_mimalloc || 'ON' }} -DENABLE_UNITY_BUILD=ON \
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
@@ -787,22 +796,22 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: x265-win64-${{matrix.target_cpu}}-clang
+        name: x265-win64-${{matrix.target_cpu}}-clang${{ matrix.artifact_suffix || '' }}
         path: dist/*
 
     - name: Compress for release
-      if: github.event_name == 'workflow_dispatch'
+      if: github.event_name == 'workflow_dispatch' && (matrix.run_release != false)
       run: |
         cd dist
-        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z \
+        7za a -t7z -mx=7 ../x265-win64-${{matrix.target_cpu}}-clang${{ matrix.artifact_suffix || '' }}.${{ steps.tag.outputs.version }}.7z \
           x265-8bit.exe x265-10bit.exe x265-12bit.exe x265.exe
 
     - name: Release
       uses: softprops/action-gh-release@v2
-      if: github.event_name == 'workflow_dispatch'
+      if: github.event_name == 'workflow_dispatch' && (matrix.run_release != false)
       with:
         tag_name: ${{ steps.tag.outputs.version }}
-        files: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z
+        files: x265-win64-${{matrix.target_cpu}}-clang${{ matrix.artifact_suffix || '' }}.${{ steps.tag.outputs.version }}.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true
