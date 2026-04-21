@@ -769,7 +769,7 @@ jobs:
         ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_open.mp4 > smoke_open_timing.txt
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_open.mp4 > smoke_open_format.txt
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_open.mp4 > smoke_open_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_open.mp4 > smoke_open_packets.csv
+        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_open.mp4 > smoke_open_packets.csv
         ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_open.mp4 > smoke_open_frames.csv
         grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_open_format.txt
         grep -q "codec_name=hevc" smoke_open_stream.txt
@@ -790,16 +790,15 @@ jobs:
         test -s smoke_open_count.txt
         test -s smoke_open_packets.csv
         test -s smoke_open_frames.csv
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_open_packets.csv
+        awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_open_packets.csv
+        awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_open_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_open_frames.csv
-        awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_open_frames.csv
         awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < -0.001 || ($2+0) > 0.05) exit 1 }' smoke_open_frames.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_open_frames.csv
         awk -F, 'NR == 1 { if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($3+0) < -0.09 || ($3+0) > 0.01) exit 1; if (($2+0) < ($3+0)) exit 1 }' smoke_open_frames.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_open_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_open_frames.csv
-        awk -F, 'NR > 8 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_open_frames.csv
-        awk -F, '$1 == 1 { kf++; if (kf == 2 && NR < 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_open_frames.csv
+        awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR < 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_open_packets.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_open_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_open_timing.txt
 
@@ -1035,7 +1034,7 @@ jobs:
         ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_aud.mp4 > smoke_aud_timing.txt
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_aud.mp4 > smoke_aud_format.txt
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_aud.mp4 > smoke_aud_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_aud.mp4 > smoke_aud_packets.csv
+        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_aud.mp4 > smoke_aud_packets.csv
         ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_aud.mp4 > smoke_aud_frames.csv
         grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_aud_format.txt
         grep -q "codec_name=hevc" smoke_aud_stream.txt
@@ -1056,14 +1055,13 @@ jobs:
         test -s smoke_aud_count.txt
         test -s smoke_aud_packets.csv
         test -s smoke_aud_frames.csv
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_aud_packets.csv
+        awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_aud_packets.csv
+        awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_aud_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_aud_frames.csv
-        awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_aud_frames.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_aud_frames.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_aud_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_aud_frames.csv
-        awk -F, 'NR > 8 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_aud_frames.csv
-        awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_aud_frames.csv
+        awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_aud_packets.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_aud_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_aud_timing.txt
 
@@ -1076,7 +1074,7 @@ jobs:
         ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_eos.mp4 > smoke_eos_timing.txt
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_eos.mp4 > smoke_eos_format.txt
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_eos.mp4 > smoke_eos_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_eos.mp4 > smoke_eos_packets.csv
+        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_eos.mp4 > smoke_eos_packets.csv
         ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_eos.mp4 > smoke_eos_frames.csv
         grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_eos_format.txt
         grep -q "codec_name=hevc" smoke_eos_stream.txt
@@ -1097,14 +1095,13 @@ jobs:
         test -s smoke_eos_count.txt
         test -s smoke_eos_packets.csv
         test -s smoke_eos_frames.csv
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_eos_packets.csv
+        awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_eos_packets.csv
+        awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_eos_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_eos_frames.csv
-        awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_eos_frames.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_eos_frames.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_eos_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_eos_frames.csv
-        awk -F, 'NR > 8 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_eos_frames.csv
-        awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_eos_frames.csv
+        awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_eos_packets.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_eos_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_eos_timing.txt
 
@@ -1117,7 +1114,7 @@ jobs:
         ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_recovery.mp4 > smoke_recovery_timing.txt
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_recovery.mp4 > smoke_recovery_format.txt
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_recovery.mp4 > smoke_recovery_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_recovery.mp4 > smoke_recovery_packets.csv
+        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_recovery.mp4 > smoke_recovery_packets.csv
         ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_recovery.mp4 > smoke_recovery_frames.csv
         grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_recovery_format.txt
         grep -q "codec_name=hevc" smoke_recovery_stream.txt
@@ -1138,11 +1135,11 @@ jobs:
         test -s smoke_recovery_count.txt
         test -s smoke_recovery_packets.csv
         test -s smoke_recovery_frames.csv
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_recovery_packets.csv
+        awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_recovery_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_recovery_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) != ($3+0)) exit 1 } END { if (NR != 16) exit 1 }' smoke_recovery_frames.csv
         awk -F, 'NR == 1 { if (NF < 3 || $1 != 1 || $2 == "N/A" || $3 == "N/A") exit 1; if (($2+0) < -0.001 || ($3+0) < -0.001) exit 1; if (($2+0) > 0.05 || ($3+0) > 0.05) exit 1 }' smoke_recovery_frames.csv
-        awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_recovery_frames.csv
+        awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_recovery_packets.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_recovery_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.60 || ($2+0) > 0.75) exit 1 }' smoke_recovery_frames.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_recovery_format.txt
