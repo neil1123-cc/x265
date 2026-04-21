@@ -665,7 +665,6 @@ ret:
                 }
                 else
                 {
-                    general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp calling output->writeHeaders on %s nal=%u\n", m_cliopt.output->getName(), nal);
                     m_cliopt.output->setPS(m_encoder);
                     int headerBytes = m_cliopt.output->writeHeaders(p_nal, nal);
                     if (headerBytes < 0)
@@ -885,8 +884,6 @@ ret:
                     }
                     if (nal)
                     {
-                        general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp calling output->writeFrame on %s nal=%u pts=%" PRId64 " dts=%" PRId64 "\n",
-                                    m_cliopt.output->getName(), nal, pic_out[0].pts, pic_out[0].dts);
                         int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
                         if (frameBytes < 0)
                         {
@@ -931,8 +928,6 @@ ret:
                 }
                 if (nal)
                 {
-                    general_log(m_param, NULL, X265_LOG_INFO, "abrEncApp flush calling output->writeFrame on %s nal=%u pts=%" PRId64 " dts=%" PRId64 "\n",
-                                m_cliopt.output->getName(), nal, pic_out[0].pts, pic_out[0].dts);
                     int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
                     if (frameBytes < 0)
                     {
