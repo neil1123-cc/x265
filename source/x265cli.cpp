@@ -481,6 +481,9 @@ namespace X265_NS {
         if (output)
             output->release();
         output = NULL;
+        for (size_t i = 0; i < filters.size(); i++)
+            filters[i]->release();
+        filters.clear();
         if (param && api)
         {
             api->param_free(param);
@@ -783,6 +786,7 @@ namespace X265_NS {
                 OPT("input") strncpy(inputfn[0] , optarg, 1024);
                 OPT("recon") reconfn[0] = optarg;
                 OPT("input-depth") inputBitDepth = (uint32_t)x265_atoi(optarg, bError);
+                OPT("vf") this->vf = optarg;
                 OPT("dither") this->bDither = true;
                 OPT("recon-depth") reconFileBitDepth = (uint32_t)x265_atoi(optarg, bError);
                 OPT("y4m") this->bForceY4m = true;
@@ -882,6 +886,13 @@ namespace X265_NS {
             showHelp(param);
         }
 
+        if (this->vf)
+        {
+            bool bFail = Filter::parseFilterString(this->vf, &this->filters);
+            if (bFail)
+                return true;
+        }
+
 #if ENABLE_MULTIVIEW
         if (this->multiViewConfig)
         {
@@ -938,6 +949,7 @@ namespace X265_NS {
             info[i].sarWidth = param->vui.sarWidth;
             info[i].sarHeight = param->vui.sarHeight;
             info[i].skipFrames = seek;
+            info[i].encodeToFrame = this->framesToBeEncoded;
             info[i].frameCount = 0;
             getParamAspectRatio(param, info[i].sarWidth, info[i].sarHeight);
 
