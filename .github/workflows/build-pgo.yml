@@ -1,0 +1,390 @@
+name: Generate Baseline PGO Profdata (x86-64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile_target:
+        description: Target build consumer that will use this x86-64 baseline profdata
+        required: false
+        default: all
+        type: choice
+        options:
+          - 8b-lib
+          - 12b-lib
+          - all
+
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-x86-64-${{ inputs.profile_target || 'all' }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: Checkout x265
+      uses: actions/checkout@v6
+      with:
+        path: x265
+        fetch-depth: 0
+
+    - name: Setup shared dependencies
+      uses: ./x265/.github/actions/setup-windows-deps
+      with:
+        ffmpeg-configure: |
+          PGO_OPT="--enable-avdevice --enable-avfilter --enable-ffmpeg --enable-indev=lavfi"
+          for f in testsrc testsrc2 smptebars smptehdbars nullsrc mandelbrot life cellauto haldclutsrc; do
+            PGO_OPT="$PGO_OPT --enable-filter=$f"
+          done
+          for f in geq gradients format scale noise zoompan hue fps setpts drawbox overlay crop rotate transpose hflip vflip concat select; do
+            PGO_OPT="$PGO_OPT --enable-filter=$f"
+          done
+          ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
+            --disable-runtime-cpudetect --disable-all --disable-autodetect \
+            --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
+            --disable-everything --disable-network $PGO_OPT \
+            --enable-demuxer=mpegts,mov,matroska,h264,hevc,rawvideo,yuv4mpegpipe \
+            --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
+            --enable-encoder=rawvideo,aac,ac3,mp2,pcm_s16le,pcm_s24le,pcm_s32le \
+            --enable-muxer=yuv4mpegpipe \
+            --enable-protocol=file,pipe \
+            --cc=cc --cxx=c++ --cpu=x86-64
+        use-mimalloc: 'true'
+        extra-msys2-packages: >-
+          mingw-w64-x86_64-gcc
+
+    - name: Checkout L-SMASH
+      uses: actions/checkout@v6
+      with:
+        path: l-smash
+        repository: vimeo/l-smash
+        ref: master
+
+    - name: Override L-SMASH with GCC build
+      working-directory: l-smash
+      run: |
+        env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
+          set -euo pipefail
+          export PATH="/mingw64/bin:/usr/bin:/clang64/bin"
+          hash -r
+          command -v gcc >/dev/null
+          command -v ar >/dev/null
+          command -v ranlib >/dev/null
+          gcc --version
+          LSMASH_CFLAGS="-I/usr/local/include -O3 -DNDEBUG -fno-lto"
+          LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
+          ./configure --prefix=/usr/local --cc=gcc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
+          make clean
+          make lib -j$(nproc)
+          make install-lib
+        '
+
+    - name: Build profiling binaries
+      uses: ./x265/.github/actions/build-x265-profiling
+      with:
+        target-cpu: x86-64
+        profile-class: ${{ inputs.profile_target || 'all' }}
+        output-name: x265-profiling-win64-x86-64-${{ inputs.profile_target || 'all' }}.exe
+        use-mimalloc: 'ON'
+        enable-lsmash: 'ON'
+
+    - name: Generate test videos for PGO
+      working-directory: build
+      run: |
+        mkdir -p test-videos
+
+        echo "=== Generating representative test videos for PGO ==="
+
+        ffmpeg -f lavfi -i "mandelbrot=size=3840x2160:rate=30" -t 5 -c:v rawvideo -pix_fmt yuv420p test-videos/4k_mandelbrot.y4m
+        ffmpeg -f lavfi -i "testsrc=duration=5:size=3840x2160:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/4k_30fps.y4m
+        ffmpeg -f lavfi -i "testsrc=duration=6:size=1920x1080:rate=30,zoompan=z='min(zoom+0.0015,1.5)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_motion.y4m
+        ffmpeg -f lavfi -i "testsrc=duration=5:size=1920x1080:rate=30" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_30fps.y4m
+        ffmpeg -f lavfi -i "testsrc2=duration=4:size=1920x1080:rate=24,noise=alls=18:allf=t,hue=s=0.85" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_grain_24fps.y4m
+        ffmpeg -f lavfi -i "nullsrc=s=1920x1080:r=24,drawbox=x=0:y=0:w=1920:h=1080:color=0x9fc0ff:t=fill,drawbox=x=0:y=760:w=1920:h=320:color=0x38598c:t=fill,drawbox=x=220:y=180:w=420:h=720:color=0xffd7c2:t=fill,drawbox=x=900:y=220:w=200:h=200:color=0xffffff:t=fill,drawbox=x=940:y=280:w=28:h=28:color=0x202020:t=fill,drawbox=x=1025:y=280:w=28:h=28:color=0x202020:t=fill,drawbox=x=860:y=620:w=360:h=18:color=0xd51f2a:t=fill" -t 4 -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_anime_24fps.y4m
+        ffmpeg -f lavfi -i "testsrc2=duration=4:size=1920x1080:rate=60,zoompan=z='min(zoom+0.0020,1.6)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=60" -c:v rawvideo -pix_fmt yuv420p test-videos/1080p_tracking_60fps.y4m
+        ffmpeg -f lavfi -i "nullsrc=s=1280x720:r=24,drawbox=x=0:y=0:w=1280:h=720:color=0x06090f:t=fill,drawbox=x=120:y=80:w=320:h=240:color=0x101722:t=fill,drawbox=x=620:y=140:w=220:h=420:color=0x141012:t=fill,drawbox=x=980:y=100:w=180:h=300:color=0x181820:t=fill,noise=alls=5:allf=t" -t 4 -c:v rawvideo -pix_fmt yuv420p test-videos/720p_dark_24fps.y4m
+        ffmpeg -f lavfi -i "testsrc=duration=4:size=1280x720:rate=24,noise=alls=15:allf=t" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_film.y4m
+        ffmpeg -f lavfi -i "testsrc=duration=4:size=1280x720:rate=24" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_24fps.y4m
+        ffmpeg -f lavfi -i "testsrc=duration=4:size=1280x720:rate=30,hue=s=1:h='t*20'" -c:v rawvideo -pix_fmt yuv420p test-videos/720p_color.y4m
+        ffmpeg -f lavfi -i "nullsrc=s=1280x720:r=30,geq=random(1)*255:random(1)*255:random(1)*255" -t 4 -c:v rawvideo -pix_fmt yuv420p test-videos/noise_color.y4m
+        ffmpeg -f lavfi -i "life=s=1280x720:r=30:mold=10:ratio=0.4" -t 4 -c:v rawvideo -pix_fmt yuv420p test-videos/life_pattern.y4m
+
+        echo "=== Test videos generated ==="
+        ls -la test-videos/
+
+    - name: Run PGO profiling workload
+      run: |
+        profile_target="${{ github.event.inputs.profile_target || 'all' }}"
+        case "$profile_target" in
+          8b-lib)
+            profile_build_dir="build/8b"
+            profile_depth=8
+            ;;
+          12b-lib)
+            profile_build_dir="build/12b"
+            profile_depth=12
+            ;;
+          all)
+            profile_build_dir="build/10b"
+            profile_depth=10
+            ;;
+          *)
+            echo "Unsupported profile_target: $profile_target" >&2
+            exit 1
+            ;;
+        esac
+
+        profile_exe="x265-profiling-win64-x86-64-${{ inputs.profile_target || 'all' }}.exe"
+        cd "$profile_build_dir"
+
+        create_opts() {
+          local depth="$1"
+          OPT_ULTRAFAST="--output-depth $depth --crf 28 --preset ultrafast"
+          OPT_FASTER="--output-depth $depth --crf 26 --preset faster"
+          OPT_FAST="--output-depth $depth --crf 24 --preset fast"
+          OPT_MEDIUM="--output-depth $depth --crf 22 --preset medium"
+          OPT_MEDIUM_MT="--output-depth $depth --crf 22 --preset medium --frame-threads 2 --lookahead-threads 2"
+          OPT_MEDIUM_AQ="--output-depth $depth --crf 24 --preset medium --aq-mode 2"
+          OPT_MEDIUM_AQ3="--output-depth $depth --crf 22 --preset medium --aq-mode 3"
+          OPT_SLOW="--output-depth $depth --crf 20 --preset slow"
+          OPT_SLOW_MT="--output-depth $depth --crf 20 --preset slow --frame-threads 2 --lookahead-threads 2"
+          OPT_SLOWER="--output-depth $depth --crf 22 --preset slower"
+          OPT_VERYSLOW="--output-depth $depth --crf 20 --preset veryslow"
+          OPT_PSY="--output-depth $depth --crf 22 --preset medium --psy-rd 1.0 --psy-rdoq 0.15 --aq-mode 3"
+          OPT_PSY_STRONG="--output-depth $depth --crf 20 --preset slow --psy-rd 1.5 --psy-rdoq 0.2 --aq-mode 3"
+          OPT_BFRAME="--output-depth $depth --crf 22 --preset medium --bframes 8 --b-adapt 2"
+          OPT_LOOKAHEAD="--output-depth $depth --crf 22 --preset medium --rc-lookahead 40 --bframes 8 --b-adapt 2"
+          OPT_THREAD_HEAVY="--output-depth $depth --crf 22 --preset medium --frame-threads 3 --wpp --lookahead-threads 3"
+          OPT_ANALYSIS="--output-depth $depth --crf 22 --preset slow --aq-mode 3 --limit-modes --rect --amp"
+          OPT_SCENECUT_HIST="--output-depth $depth --crf 22 --preset medium --hist-scenecut --rc-lookahead 60 --lookahead-slices 4 --lookahead-threads 2 --bframes 8 --b-adapt 2 --radl 2"
+          OPT_HME_LIMITS="--output-depth $depth --crf 22 --preset slow --hme --hme-search umh,umh,umh --hme-range 24,32,48 --limit-refs 3 --limit-modes --rect --amp --subme 5 --merange 44"
+          OPT_AVX2_QG8="--output-depth $depth --crf 24 --preset medium --asm AVX2 --aq-mode 3 --qg-size 8"
+          OPT_SCENECUT_DEEP="--output-depth $depth --crf 22 --preset slow --hist-scenecut --scenecut 60 --scenecut-bias 10 --rc-lookahead 80 --lookahead-slices 0 --lookahead-threads 3 --bframes 8 --b-adapt 2 --radl 2"
+        }
+
+        profile_run_id=0
+        format_duration() {
+          local total_seconds="$1"
+          local hours=$((total_seconds / 3600))
+          local minutes=$(((total_seconds % 3600) / 60))
+          local seconds=$((total_seconds % 60))
+          printf '%02dh:%02dm:%02ds\n' "$hours" "$minutes" "$seconds"
+        }
+
+        run_profile() {
+          local label="$1"
+          local opt="$2"
+          local input="$3"
+          local safe_label="${label//[^A-Za-z0-9_.-]/_}"
+          profile_run_id=$((profile_run_id + 1))
+          local profraw="${profile_run_id}_${safe_label}.profraw"
+          echo ">>> [$label] ./$profile_exe $opt $input -o /dev/null"
+          LLVM_PROFILE_FILE="$profraw" ./$profile_exe $opt "$input" -o /dev/null
+        }
+
+        run_workload_suite() {
+          local suite="$1"
+          local depth="$2"
+          local section_start section_elapsed
+          create_opts "$depth"
+
+          echo "=== $suite: 4K Tests (Primary x265 use case) ==="
+          section_start=$(date +%s)
+          run_profile "$suite-4k_mandelbrot" "$OPT_MEDIUM" ../test-videos/4k_mandelbrot.y4m
+          run_profile "$suite-4k_30fps" "$OPT_FAST" ../test-videos/4k_30fps.y4m
+          section_elapsed=$(( $(date +%s) - section_start ))
+          echo "=== Section timing: $suite 4K $(format_duration "$section_elapsed")"
+
+          echo "=== $suite: 1080p Tests (Most common resolution) ==="
+          section_start=$(date +%s)
+          for opt in "$OPT_MEDIUM" "$OPT_MEDIUM_AQ" "$OPT_PSY" "$OPT_BFRAME" "$OPT_LOOKAHEAD"; do
+            run_profile "$suite-1080p_motion" "$opt" ../test-videos/1080p_motion.y4m
+          done
+          run_profile "$suite-1080p_grain" "$OPT_PSY_STRONG" ../test-videos/1080p_grain_24fps.y4m
+          run_profile "$suite-1080p_anime" "$OPT_MEDIUM_AQ3" ../test-videos/1080p_anime_24fps.y4m
+          run_profile "$suite-1080p_tracking" "$OPT_THREAD_HEAVY" ../test-videos/1080p_tracking_60fps.y4m
+          section_elapsed=$(( $(date +%s) - section_start ))
+          echo "=== Section timing: $suite 1080p $(format_duration "$section_elapsed")"
+
+          echo "=== $suite: 720p Tests ==="
+          section_start=$(date +%s)
+          run_profile "$suite-720p_film" "$OPT_MEDIUM" ../test-videos/720p_film.y4m
+          run_profile "$suite-720p_dark" "$OPT_MEDIUM_AQ" ../test-videos/720p_dark_24fps.y4m
+          section_elapsed=$(( $(date +%s) - section_start ))
+          echo "=== Section timing: $suite 720p $(format_duration "$section_elapsed")"
+
+          echo "=== $suite: Stress Tests ==="
+          section_start=$(date +%s)
+          for opt in "$OPT_ANALYSIS" "$OPT_HME_LIMITS"; do
+            run_profile "$suite-noise_color" "$opt" ../test-videos/noise_color.y4m
+          done
+          run_profile "$suite-life_pattern" "$OPT_SCENECUT_HIST" ../test-videos/life_pattern.y4m
+          section_elapsed=$(( $(date +%s) - section_start ))
+          echo "=== Section timing: $suite stress $(format_duration "$section_elapsed")"
+
+          echo "=== $suite: Primitive and CPU Dispatch Tests ==="
+          section_start=$(date +%s)
+          run_profile "$suite-720p_color_dispatch" "$OPT_AVX2_QG8" ../test-videos/720p_color.y4m
+          section_elapsed=$(( $(date +%s) - section_start ))
+          echo "=== Section timing: $suite dispatch $(format_duration "$section_elapsed")"
+
+          echo "=== $suite: Preset Coverage Tests ==="
+          section_start=$(date +%s)
+          for opt in "$OPT_ULTRAFAST" "$OPT_FAST"; do
+            run_profile "$suite-preset_1080p_30fps" "$opt" ../test-videos/1080p_30fps.y4m
+          done
+          run_profile "$suite-preset_720p_24fps" "$OPT_SLOWER" ../test-videos/720p_24fps.y4m
+          section_elapsed=$(( $(date +%s) - section_start ))
+          echo "=== Section timing: $suite presets $(format_duration "$section_elapsed")"
+
+          echo "=== $suite: Multi-threading Tests ==="
+          section_start=$(date +%s)
+          run_profile "$suite-mt_1080p_motion" "$OPT_SLOW_MT" ../test-videos/1080p_motion.y4m
+          run_profile "$suite-mt_720p_24fps" "$OPT_THREAD_HEAVY" ../test-videos/720p_24fps.y4m
+          section_elapsed=$(( $(date +%s) - section_start ))
+          echo "=== Section timing: $suite multithread $(format_duration "$section_elapsed")"
+        }
+
+        run_mixed_workloads() {
+          run_workload_suite "linked8bit" 8
+          run_workload_suite "linked10bit" 10
+          run_workload_suite "linked12bit" 12
+        }
+
+        run_target_workloads() {
+          local profile_target="$1"
+
+          case "$profile_target" in
+            8b-lib)
+              echo "=== target workload: 8b-lib ==="
+              run_workload_suite "linked8bit" 8
+              ;;
+            12b-lib)
+              echo "=== target workload: 12b-lib ==="
+              run_workload_suite "linked12bit" 12
+              ;;
+            all)
+              echo "=== target workload: all ==="
+              run_mixed_workloads
+              ;;
+            *)
+              echo "Unsupported profile_target: $profile_target" >&2
+              exit 1
+              ;;
+          esac
+        }
+
+        shopt -s nullglob
+        rm -f ./*.profraw ../x265.profdata
+
+        run_target_workloads "${{ github.event.inputs.profile_target || 'all' }}"
+
+        profraw_files=(./*.profraw)
+        echo "Generated total profraw files: ${#profraw_files[@]}"
+        test "${#profraw_files[@]}" -gt 0
+
+        llvm-profdata merge -output=../x265.profdata "${profraw_files[@]}"
+        echo "=== Profile data generated ==="
+        ls -la ../x265.profdata
+        llvm-profdata show --summary ../x265.profdata || llvm-profdata show --detailed-summary ../x265.profdata
+
+    - name: Push baseline profdata to branch
+      run: |
+        set -euo pipefail
+
+        profile_target="${{ github.event.inputs.profile_target || 'all' }}"
+        profdata_branch="profdata-x86-64-${profile_target}"
+        profdata_push_dir=$(mktemp -d)
+        remote_url="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+        trap 'rm -rf "$profdata_push_dir"' EXIT
+
+        echo "Publishing profdata for target: $profile_target"
+        echo "Destination branch: $profdata_branch"
+        echo "Destination path: x265.profdata + profiles/*.profdata"
+
+        git init "$profdata_push_dir"
+        git -C "$profdata_push_dir" config user.name "github-actions[bot]"
+        git -C "$profdata_push_dir" config user.email "github-actions[bot]@users.noreply.github.com"
+        git -C "$profdata_push_dir" remote add origin "$remote_url"
+
+        branch_exists=false
+        if git -C "$profdata_push_dir" fetch origin "$profdata_branch" --depth=1; then
+          branch_exists=true
+          git -C "$profdata_push_dir" checkout -B "$profdata_branch" FETCH_HEAD
+        else
+          echo "Branch not found: $profdata_branch; creating it"
+          git -C "$profdata_push_dir" checkout --orphan "$profdata_branch"
+        fi
+
+        scratch_dir="$profdata_push_dir/.window"
+        profiles_dir="$scratch_dir/profiles"
+        mkdir -p "$profiles_dir"
+
+        copy_if_exists() {
+          local source_path="$1"
+          local destination_path="$2"
+          if [ -f "$profdata_push_dir/$source_path" ]; then
+            mkdir -p "$(dirname "$destination_path")"
+            cp "$profdata_push_dir/$source_path" "$destination_path"
+          fi
+        }
+
+        fresh_profdata="$GITHUB_WORKSPACE/build/x265.profdata"
+        test -f "$fresh_profdata"
+
+        copy_if_exists "profiles/0.profdata" "$profiles_dir/1.profdata"
+        copy_if_exists "profiles/1.profdata" "$profiles_dir/2.profdata"
+        copy_if_exists "profiles/2.profdata" "$profiles_dir/3.profdata"
+        cp "$fresh_profdata" "$profiles_dir/0.profdata"
+
+        (
+          cd "$scratch_dir"
+          merge_args=()
+          for slot in 0 1 2 3; do
+            if [ -f "profiles/${slot}.profdata" ]; then
+              merge_args+=("--weighted-input=$((4 - slot)),profiles/${slot}.profdata")
+            fi
+          done
+
+          test "${#merge_args[@]}" -gt 0
+          llvm-profdata merge -o x265.profdata "${merge_args[@]}"
+          llvm-profdata show x265.profdata >/dev/null
+        )
+
+        if [ "$branch_exists" = true ]; then
+          git -C "$profdata_push_dir" checkout --orphan "$profdata_branch-tmp"
+        fi
+
+        find "$profdata_push_dir" -mindepth 1 -maxdepth 1 ! -name .git ! -name .window -exec rm -rf {} +
+        git -C "$profdata_push_dir" rm -rf . >/dev/null 2>&1 || true
+
+        mkdir -p "$profdata_push_dir/profiles"
+        cp "$scratch_dir/x265.profdata" "$profdata_push_dir/x265.profdata"
+        for slot in 0 1 2 3; do
+          if [ -f "$profiles_dir/${slot}.profdata" ]; then
+            cp "$profiles_dir/${slot}.profdata" "$profdata_push_dir/profiles/${slot}.profdata"
+          fi
+        done
+
+        rm -rf "$scratch_dir"
+        if [ "$branch_exists" = true ]; then
+          git -C "$profdata_push_dir" branch -D "$profdata_branch" || true
+          git -C "$profdata_push_dir" branch -m "$profdata_branch"
+        fi
+
+        add_paths=(x265.profdata profiles)
+        git -C "$profdata_push_dir" add "${add_paths[@]}"
+
+        if git -C "$profdata_push_dir" diff --cached --quiet; then
+          echo "No profdata changes to publish for $profile_target"
+          exit 0
+        fi
+
+        git -C "$profdata_push_dir" commit -m "Update PGO profdata ($profile_target) - $(date +%Y%m%d-%H%M)"
+        git -C "$profdata_push_dir" push -f origin HEAD:"$profdata_branch"
