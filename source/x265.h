@@ -119,7 +119,7 @@ typedef struct x265_lookahead_data
 typedef struct x265_analysis_validate
 {
     int     maxNumReferences;
-    int     analysisReuseLevel;
+    int     analysisSaveReuseLevel;
     int     sourceWidth;
     int     sourceHeight;
     int     keyframeMax;
@@ -1186,9 +1186,6 @@ typedef struct x265_param
 
     /*== Logging Features ==*/
 
-    /* Enable analysis and logging distribution of CUs. Now deprecated */
-    int       bLogCuStats;
-
     /* Enable the measurement and reporting of PSNR. Default is enabled */
     int       bEnablePsnr;
 
@@ -1198,6 +1195,18 @@ typedef struct x265_param
     /* The level of logging detail emitted by the encoder. X265_LOG_NONE to
      * X265_LOG_FULL, default is X265_LOG_INFO */
     int       logLevel;
+
+    /* Optional general log filename. Messages are appended to this file when
+     * their level is less than or equal to logfLevel */
+    char*     logfn;
+
+    /* The verbosity threshold for the general log file. Uses X265_LOG_NONE to
+     * X265_LOG_FULL, default is X265_LOG_INFO */
+    int       logfLevel;
+
+    /* Optional progress report filename. The CLI rewrites this file with the
+     * latest periodic JSON progress status */
+    char*     pgfn;
 
     /* Level of csv logging. 0 is summary, 1 is frame level logging,
      * 2 is frame level logging with performance statistics */
@@ -1209,16 +1218,7 @@ typedef struct x265_param
      * x265_encoder_log is called (presumably at the end of the encode) */
     char      csvfn[X265_MAX_STRING_SIZE];
 
-    /* filename of plain text log file */
-    char*     logfn;
-
-    /* logging level for log file sink. X265_LOG_NONE to X265_LOG_FULL */
-    int       logfLevel;
-
-    /* filename of progress file */
-    char*     pgfn;
-
-    /* enable x264-style compact progress output */
+    /* Enable x264-style compact progress indicator in the CLI. Default disabled */
     int       bStylish;
 
     /*== Internal Picture Specification ==*/
@@ -1683,12 +1683,6 @@ typedef struct x265_param
      * Default disabled */
     int       bEnableRdRefine;
 
-    /* If save, write per-frame analysis information into analysis buffers.
-     * If load, read analysis information into analysis buffer and use this
-     * analysis information to reduce the amount of work the encoder must perform.
-     * Default disabled. Now deprecated*/
-    int       analysisReuseMode;
-
     /* Filename for multi-pass-opt-analysis/distortion. Default name is "x265_analysis.dat" */
     char      analysisReuseFileName[X265_MAX_STRING_SIZE];
 
@@ -2058,20 +2052,6 @@ typedef struct x265_param
 
     /* Increase RD at points where bitrate drops due to vbv. Default 0 */
     double    dynamicRd;
-
-    /* Enables the emitting of HDR SEI packets which contains HDR-specific params.
-     * Auto-enabled when max-cll, max-fall, or mastering display info is specified.
-     * Default is disabled. Now deprecated.*/
-    int       bEmitHDRSEI;
-
-    /* Enable luma and chroma offsets for HDR/WCG content.
-     * Default is disabled. Now deprecated.*/
-    int       bHDROpt;
-
-    /* A value between 1 and 10 (both inclusive) determines the level of
-    * information stored/reused in analysis save/load. Higher the refine
-    * level higher the information stored/reused. Default is 5. Now deprecated. */
-    int       analysisReuseLevel;
 
      /* Limit Sample Adaptive Offset filter computation by early terminating SAO
      * process based on inter prediction mode, CTU spatial-domain correlations,
