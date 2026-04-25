@@ -153,6 +153,10 @@ void x265_param_default(x265_param* param)
     param->logLevel = X265_LOG_INFO;
     param->csvLogLevel = 0;
     param->csvfn[0] = 0;
+    param->logfn = NULL;
+    param->logfLevel = X265_LOG_NONE;
+    param->pgfn = NULL;
+    param->bStylish = 0;
     param->rc.lambdaFileName[0] = 0;
     param->bLogCuStats = 0;
     param->decodedPictureHashSEI = 0;
@@ -1111,6 +1115,15 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
             p->logLevel = parseName(value, logLevelNames, bError) - 1;
         }
     }
+    OPT("log-file-level")
+    {
+        p->logfLevel = atoi(value);
+        if (bError)
+        {
+            bError = false;
+            p->logfLevel = parseName(value, logLevelNames, bError) - 1;
+        }
+    }
     OPT("cu-stats") p->bLogCuStats = atobool(value);
     OPT("total-frames") p->totalFrames = atoi(value);
     OPT("annexb") p->bAnnexB = atobool(value);
@@ -1419,6 +1432,9 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
     {
         if (0) ;
         OPT("csv") snprintf(p->csvfn, X265_MAX_STRING_SIZE, "%s", value);
+        OPT("log-file") p->logfn = (char*)value;
+        OPT("progress-file") p->pgfn = (char*)value;
+        OPT("stylish") p->bStylish = atobool(value);
         OPT("csv-log-level") p->csvLogLevel = atoi(value);
         OPT("qpmin") p->rc.qpMin = atoi(value);
         OPT("analyze-src-pics") p->bSourceReferenceEstimation = atobool(value);
@@ -2407,6 +2423,12 @@ char *x265_param2string(x265_param* p, int padx, int pady)
     BOOL(p->bEnablePsnr, "psnr");
     BOOL(p->bEnableSsim, "ssim");
     s += snprintf(s, bufSize - (s - buf), " log-level=%d", p->logLevel);
+    s += snprintf(s, bufSize - (s - buf), " log-file-level=%d", p->logfLevel);
+    if (p->logfn)
+        s += snprintf(s, bufSize - (s - buf), " log-file=%s", p->logfn);
+    if (p->pgfn)
+        s += snprintf(s, bufSize - (s - buf), " progress-file=%s", p->pgfn);
+    BOOL(p->bStylish, "stylish");
     if (strlen(p->csvfn))
         s += snprintf(s, bufSize - (s - buf), " csv csv-log-level=%d", p->csvLogLevel);
     s += snprintf(s, bufSize - (s - buf), " bitdepth=%d", p->internalBitDepth);
@@ -2896,6 +2918,10 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     dst->bEnablePsnr = src->bEnablePsnr;
     dst->bEnableSsim = src->bEnableSsim;
     dst->logLevel = src->logLevel;
+    dst->logfLevel = src->logfLevel;
+    dst->logfn = src->logfn;
+    dst->pgfn = src->pgfn;
+    dst->bStylish = src->bStylish;
     dst->csvLogLevel = src->csvLogLevel;
     if (strlen(src->csvfn)) snprintf(dst->csvfn, X265_MAX_STRING_SIZE, "%s", src->csvfn);
     else dst->csvfn[0] = 0;

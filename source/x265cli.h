@@ -73,11 +73,15 @@ static const struct option long_options[] =
     { "allow-non-conformance",no_argument, NULL, 0 },
     { "no-allow-non-conformance",no_argument, NULL, 0 },
     { "csv",            required_argument, NULL, 0 },
+    { "log-file",       required_argument, NULL, 0 },
+    { "log-file-level", required_argument, NULL, 0 },
+    { "progress-file",  required_argument, NULL, 0 },
     { "csv-log-level",  required_argument, NULL, 0 },
     { "no-cu-stats",          no_argument, NULL, 0 },
     { "cu-stats",             no_argument, NULL, 0 },
     { "y4m",                  no_argument, NULL, 0 },
     { "no-progress",          no_argument, NULL, 0 },
+    { "stylish",              no_argument, NULL, 0 },
     { "output",         required_argument, NULL, 'o' },
     { "output-depth",   required_argument, NULL, 'D' },
     { "input",          required_argument, NULL, 0 },
@@ -444,6 +448,7 @@ static const struct option long_options[] =
         uint64_t totalbytes;
         int64_t startTime;
         int64_t prevUpdateTime;
+        int64_t prevUpdateTimeFile;
 
         int argCnt;
         char** orgArgv;
@@ -466,6 +471,7 @@ static const struct option long_options[] =
 
         /* in microseconds */
         static const int UPDATE_INTERVAL = 250000;
+        static const int UPDATE_INTERVAL_FILE = 1000000;
         CLIOptions()
         {
             for (int i = 0; i < MAX_VIEWS; i++)
@@ -492,6 +498,7 @@ static const struct option long_options[] =
             bForceY4m = false;
             startTime = x265_mdate();
             prevUpdateTime = 0;
+            prevUpdateTimeFile = 0;
             bDither = false;
             isAbrLadderConfig = false;
             enableScaler = false;

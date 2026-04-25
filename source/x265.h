@@ -1209,6 +1209,18 @@ typedef struct x265_param
      * x265_encoder_log is called (presumably at the end of the encode) */
     char      csvfn[X265_MAX_STRING_SIZE];
 
+    /* filename of plain text log file */
+    char*     logfn;
+
+    /* logging level for log file sink. X265_LOG_NONE to X265_LOG_FULL */
+    int       logfLevel;
+
+    /* filename of progress file */
+    char*     pgfn;
+
+    /* enable x264-style compact progress output */
+    int       bStylish;
+
     /*== Internal Picture Specification ==*/
 
     /* Internal encoder bit depth. If x265 was compiled to use 8bit pixels
