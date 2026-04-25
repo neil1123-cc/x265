@@ -111,6 +111,8 @@ namespace X265_NS {
         H0("-p/--preset <string>             Trade off performance for compression efficiency. Default medium\n");
         H0("                                 ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, or placebo\n");
         H0("-t/--tune <string>               Tune the settings for a particular type of source or situation:\n");
+        H0("             (mid bitrate anime) littlepox/lp, (slower) littlepox++/lp++,\n");
+        H0("  (high bitrate anime BD / film) vcb-s/vcbs,   (slower) vcb-s++/vcbs++,\n");
         H0("                                 psnr, ssim, grain, zerolatency, fastdecode\n");
         H0("\nQuad-Tree size and depth:\n");
         H0("-s/--ctu <64|32|16>              Maximum CU size (WxH). Default %d\n", param->maxCUSize);
@@ -128,6 +130,9 @@ namespace X265_NS {
            "                                  - 2:levels & coding groups.\n"
            "                                 Default %d\n", param->rdoqLevel);
         H0("   --[no-]psy-rdoq <0..50.0>     Strength of psycho-visual optimization in RDO quantization, 0 to disable. Default %.1f\n", param->psyRdoq);
+        H0("   --psy-bscale <0..300>         Scaling of psycho-visual optimization in RDO quantization for B-slice. Default %d\n", param->psyScaleB);
+        H0("   --psy-pscale <0..300>         Scaling of psycho-visual optimization in RDO quantization for P-slice. Default %d\n", param->psyScaleP);
+        H0("   --psy-iscale <0..300>         Scaling of psycho-visual optimization in RDO quantization for I-slice. Default %d\n", param->psyScaleI);
         H0("   --dynamic-rd <0..4.0>         Strength of dynamic RD, 0 to disable. Default %.2f\n", param->dynamicRd);
         H0("   --[no-]ssim-rd                Enable ssim rate-distortion optimization, 0 to disable. Default %s\n", OPT(param->bSsimRd));
         H0("   --[no-]rd-refine              Enable QP-based RD refinement for rd levels 5 and 6. Default %s\n", OPT(param->bEnableRdRefine));
@@ -273,19 +278,27 @@ namespace X265_NS {
            "                                   - 1:uniform AQ\n"
            "                                   - 2:auto variance\n"
            "                                   - 3:auto variance with bias to dark scenes\n"
-           "                                   - 4:auto variance with edge information.\n"
+           "                                   - 4:auto variance with edge information\n"
+           "                                   - 5:auto variance with edge information and bias to dark scenes\n"
            "                                 Default %d\n", param->rc.aqMode);
         H0("   --[no-]hevc-aq                Mode for HEVC Adaptive Quantization. Default %s\n", OPT(param->rc.hevcAq));
+        H0("   --[no-]limit-aq1              Use QP offset determined by aq-mode 1 as hard upper limit on QP offset allowed in aq-mode 2-5. Default is %s\n", OPT(param->rc.limitAq1));
         H0("   --aq-strength <float>         Reduces blocking and blurring in flat and textured areas (0 to 3.0). Default %.2f\n", param->rc.aqStrength);
+        H0("   --aq-bias-strength <float>    Sets the bias to dark strength in AQ modes 3 and 5. Default %.2f\n", param->rc.aqBiasStrength);
+        H0("   --limit-aq1-strength <float>  Sets the aq-strength aq-mode 1 when limit-aq1 is enabled (0 to 3.0). Default %.2f\n", param->rc.limitAq1Strength);
         H0("   --qp-adaptation-range <float> Delta QP range by QP adaptation based on a psycho-visual model (1.0 to 6.0). Default %.2f\n", param->rc.qpAdaptationRange);
         H0("   --[no-]aq-motion              Block level QP adaptation based on the relative motion between the block and the frame. Default %s\n", OPT(param->bAQMotion));
         H1("   --[no-]sbrc                   Enables the segment based rate control. Default %s\n", OPT(param->bEnableSBRC));
         H0("   --qg-size <int>               Specifies the size of the quantization group (64, 32, 16, 8). Default %d\n", param->rc.qgSize);
         H0("   --[no-]cutree                 Enable cutree for Adaptive Quantization. Default %s\n", OPT(param->rc.cuTree));
+        H1("   --cutree-strength <float>     Overrides the strength of cutree Adaptive Quantization. Default %.2f\n", param->rc.cuTreeStrength);
+        H1("   --cutree-minqpoffs <float>    Sets a hard lower limit on cutree QP offset. Default %.2f\n", param->rc.cuTreeMinQpOffset);
+        H1("   --cutree-maxqpoffs <float>    Sets a hard upper limit on cutree QP offset. Default %.2f\n", param->rc.cuTreeMaxQpOffset);
         H0("   --[no-]rc-grain               Enable rate-control mode to handle grains specifically. Turned on with tune grain. Default %s\n", OPT(param->rc.bEnableGrain));
         H1("   --ipratio <float>             QP factor between I and P. Default %.2f\n", param->rc.ipFactor);
         H1("   --pbratio <float>             QP factor between P and B. Default %.2f\n", param->rc.pbFactor);
         H1("   --qcomp <float>               Weight given to predicted complexity. Default %.2f\n", param->rc.qCompress);
+        H1("   --qscale-mode <integer>       Overrides how ratecontrol estimates qScale. Default %d\n", param->rc.qScaleMode);
         H1("   --qpstep <integer>            The maximum single adjustment in QP allowed to rate control. Default %d\n", param->rc.qpStep);
         H1("   --qpmin <integer>             sets a hard lower limit on QP allowed to ratecontrol. Default %d\n", param->rc.qpMin);
         H1("   --qpmax <integer>             sets a hard upper limit on QP allowed to ratecontrol. Default %d\n", param->rc.qpMax);
