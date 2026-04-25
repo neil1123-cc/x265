@@ -609,6 +609,7 @@ typedef enum
 #define X265_AQ_AUTO_VARIANCE        2
 #define X265_AQ_AUTO_VARIANCE_BIASED 3
 #define X265_AQ_EDGE                 4
+#define X265_AQ_EDGE_BIASED          5
 #define x265_ADAPT_RD_STRENGTH   4
 #define X265_REFINE_INTER_LEVELS 3
 /* NOTE! For this release only X265_CSP_I420 and X265_CSP_I444 are supported */
@@ -1654,9 +1655,15 @@ typedef struct x265_param
     double    psyRd;
 
     /* Strength of psycho-visual optimizations in quantization. Only has an
-     * effect when RDOQ is enabled (presets slow, slower and veryslow). The 
+     * effect when RDOQ is enabled (presets slow, slower and veryslow). The
      * value must be between 0 and 50, 1.0 is typical. Default 0 */
     double    psyRdoq;
+
+    /* Strength of psycho-visual optimization in RDO quantization for B/P/I slices.
+     * The value must be between 0 and 300. */
+    int       psyScaleB;
+    int       psyScaleP;
+    int       psyScaleI;
 
     /* Perform quantisation parameter based RD refinement. RD cost is calculated
      * on the best CU partitions, chosen after the CU analysis, for a range of QPs
@@ -1752,6 +1759,9 @@ typedef struct x265_param
          * AQ is enabled. Default value: 1.0. Acceptable values between 0.0 and 3.0 */
         double    aqStrength;
 
+        /* Sets the AQ bias strength in AQ modes 3 and 5. Default value: 1.0. */
+        double    aqBiasStrength;
+
         /* Delta QP range by QP adaptation based on a psycho-visual model.
          * Acceptable values between 1.0 to 6.0 */
         double    qpAdaptationRange;
@@ -1772,6 +1782,20 @@ typedef struct x265_param
          * across frames and assigns more bits to these CUs. Improves encode efficiency.
          * Default: enabled */
         int       cuTree;
+
+        /* Override the strength and QP offset bounds of cuTree. */
+        double    cuTreeStrength;
+        double    cuTreeMinQpOffset;
+        double    cuTreeMaxQpOffset;
+
+        /* Override the qScale estimation mode used by rate control. */
+        int       qScaleMode;
+
+        /* Use AQ mode 1 as the upper QP offset bound for AQ modes 2-5. */
+        int       limitAq1;
+
+        /* Sets the aq-strength for AQ mode 1 when limit-aq1 is enabled. */
+        double    limitAq1Strength;
 
         /* In CRF mode, maximum CRF as caused by VBV. 0 implies no limit */
         double    rfConstantMax;
@@ -2456,7 +2480,7 @@ static const char * const x265_preset_names[] = { "ultrafast", "superfast", "ver
  *      100 times faster than placebo!
  *
  *      Currently available tunings are: */
-static const char * const x265_tune_names[] = { "psnr", "ssim", "grain", "zerolatency", "fastdecode", "animation", 0 };
+static const char * const x265_tune_names[] = { "psnr", "ssim", "grain", "zerolatency", "fastdecode", "animation", "littlepox", "vcb-s", 0 };
 
 /*      returns 0 on success, negative on failure (e.g. invalid preset/tune name). */
 int x265_param_default_preset(x265_param *, const char *preset, const char *tune);
