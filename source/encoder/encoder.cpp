@@ -4202,7 +4202,7 @@ void Encoder::configure(x265_param *p)
     }
     if (p->scaleFactor && !p->interRefine && !p->bDynamicRefine && p->analysisLoadReuseLevel == 10)
     {
-        x265_log(p, X265_LOG_WARNING, "Inter refinement 0 is not supported with scaling and analysis-reuse-level=10. Enabling refine-inter 1.\n");
+        x265_log(p, X265_LOG_WARNING, "Inter refinement 0 is not supported with scaling and analysis-load-reuse-level=10. Enabling refine-inter 1.\n");
         p->interRefine = 1;
     }
 
@@ -4636,9 +4636,6 @@ void Encoder::configure(x265_param *p)
         m_conformanceWindow.bEnabled = true;
         m_conformanceWindow.bottomOffset = padsize;
     }
-
-    if (p->bLogCuStats)
-        x265_log(p, X265_LOG_WARNING, "--cu-stats option is now deprecated\n");
 
     if (p->log2MaxPocLsb < 4)
     {
@@ -5573,7 +5570,7 @@ int Encoder::validateAnalysisData(x265_analysis_validate* saveParam, int writeFl
     int sourceHeight, sourceWidth;
     if (writeFlag)
     {
-        X265_PARAM_VALIDATE(saveParam->analysisReuseLevel, sizeof(int), 1, &m_param->analysisSaveReuseLevel, analysis - save - reuse - level);
+        X265_PARAM_VALIDATE(saveParam->analysisSaveReuseLevel, sizeof(int), 1, &m_param->analysisSaveReuseLevel, analysis - save - reuse - level);
         X265_PARAM_VALIDATE(saveParam->cuTree, sizeof(int), 1, &m_param->rc.cuTree, cutree-offset);
         sourceHeight = m_param->sourceHeight - m_conformanceWindow.bottomOffset;
         sourceWidth = m_param->sourceWidth - m_conformanceWindow.rightOffset;
@@ -5589,7 +5586,7 @@ int Encoder::validateAnalysisData(x265_analysis_validate* saveParam, int writeFl
         bool isIncompatibleReuseLevel = false;
         int loadLevel = m_param->analysisLoadReuseLevel;
 
-        X265_FREAD(&saveLevel, sizeof(int), 1, m_analysisFileIn, &(saveParam->analysisReuseLevel));
+        X265_FREAD(&saveLevel, sizeof(int), 1, m_analysisFileIn, &(saveParam->analysisSaveReuseLevel));
         
         if (loadLevel == 10 && saveLevel != 10)
             isIncompatibleReuseLevel = true;
