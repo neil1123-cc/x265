@@ -62,6 +62,8 @@ namespace X265_NS {
                 ret = 4;
             }
             m_passEnc[i]->init(ret);
+            if (m_passEnc[i]->m_ret)
+                m_numActiveEncodes.decr();
         }
 
         m_numInputViews = (m_passEnc[0]->m_param->numViews > 1) ? m_passEnc[0]->m_param->numViews - !!m_passEnc[0]->m_param->format : 0;
@@ -73,7 +75,10 @@ namespace X265_NS {
 
         /* start passEncoder worker threads */
         for (uint8_t pass = 0; pass < m_numEncodes; pass++)
-            m_passEnc[pass]->startThreads();
+        {
+            if (!m_passEnc[pass]->m_ret)
+                m_passEnc[pass]->startThreads();
+        }
     }
 
     bool AbrEncoder::allocBuffers()
@@ -265,6 +270,21 @@ namespace X265_NS {
             }
         }
 
+        for (auto &&i : m_cliopt.filters)
+        {
+            i->setParam(m_param);
+            if (i->isFail())
+            {
+                m_ret = 4;
+                return -1;
+            }
+        }
+        m_cliopt.output->setParam(m_param);
+        if (m_cliopt.output->isFail())
+        {
+            m_ret = 3;
+            return -1;
+        }
         /* note: we could try to acquire a different libx265 API here based on
         * the profile found during option parsing, but it must be done before
         * opening an encoder */
@@ -593,7 +613,16 @@ ret:
             memcpy(&m_parent->m_param[m_id], m_param, sizeof(x265_param));
             /* This allows muxers to modify bitstream format */
             m_cliopt.output->setParam(m_param);
+            if (m_cliopt.output->isFail())
+            {
+                m_ret = 3;
+                m_cliopt.output->closeFile(0, 0);
+                m_threadActive = false;
+                m_parent->m_numActiveEncodes.decr();
+                return;
+            }
             const x265_api* api = m_cliopt.api;
+            /* This allows muxers to modify bitstream format */
             ReconPlay* reconPlay = NULL;
             if (m_cliopt.reconPlayCmd)
                 reconPlay = new ReconPlay(m_cliopt.reconPlayCmd, *m_param);
@@ -635,7 +664,16 @@ ret:
                     goto fail;
                 }
                 else
-                    m_cliopt.totalbytes += m_cliopt.output->writeHeaders(p_nal, nal);
+                {
+                    m_cliopt.output->setPS(m_encoder);
+                    int headerBytes = m_cliopt.output->writeHeaders(p_nal, nal);
+                    if (headerBytes < 0)
+                    {
+                        m_ret = 3;
+                        goto fail;
+                    }
+                    m_cliopt.totalbytes += headerBytes;
+                }
             }
 
             for (int view = 0; view < m_param->numViews - !!m_param->format; view++)
@@ -837,7 +875,13 @@ ret:
                     }
                     if (nal)
                     {
-                        m_cliopt.totalbytes += m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                        int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                        if (frameBytes < 0)
+                        {
+                            m_ret = 3;
+                            goto fail;
+                        }
+                        m_cliopt.totalbytes += frameBytes;
                         if (pts_queue)
                         {
                             pts_queue->push(-pic_out[0].pts);
@@ -875,7 +919,13 @@ ret:
                 }
                 if (nal)
                 {
-                    m_cliopt.totalbytes += m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                    int frameBytes = m_cliopt.output->writeFrame(p_nal, nal, pic_out[0]);
+                    if (frameBytes < 0)
+                    {
+                        m_ret = 3;
+                        goto fail;
+                    }
+                    m_cliopt.totalbytes += frameBytes;
                     if (pts_queue)
                     {
                         pts_queue->push(-pic_out[0].pts);
@@ -918,20 +968,32 @@ ret:
 
             int64_t second_largest_pts = 0;
             int64_t largest_pts = 0;
-            if (pts_queue && pts_queue->size() >= 2)
+            if (pts_queue)
             {
-                second_largest_pts = -pts_queue->top();
-                pts_queue->pop();
-                largest_pts = -pts_queue->top();
-                pts_queue->pop();
+                if (!pts_queue->empty())
+                {
+                    largest_pts = -pts_queue->top();
+                    pts_queue->pop();
+                    second_largest_pts = largest_pts;
+                    if (!pts_queue->empty())
+                    {
+                        second_largest_pts = largest_pts;
+                        largest_pts = -pts_queue->top();
+                        pts_queue->pop();
+                    }
+                }
                 delete pts_queue;
                 pts_queue = NULL;
             }
             m_cliopt.output->closeFile(largest_pts, second_largest_pts);
+            if (m_cliopt.output->isFail() && !m_ret)
+                m_ret = 3;
 
             if (b_ctrl_c)
+            {
                 general_log(m_param, NULL, X265_LOG_INFO, "aborted at input frame %d, output frame %d in %s\n",
                     m_cliopt.seek + inFrameCount, stats.encodedPictureCount, profileName);
+            }
 
             X265_FREE(errorBuf);
             X265_FREE(rpuPayload);
