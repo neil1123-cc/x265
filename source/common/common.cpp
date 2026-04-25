@@ -35,6 +35,10 @@
 #include <sys/time.h>
 #endif
 
+#ifdef USE_MIMALLOC
+#include <mimalloc.h>
+#endif
+
 namespace X265_NS {
 
 #if CHECKED_BUILD || _DEBUG
@@ -56,7 +60,18 @@ int64_t x265_mdate(void)
 
 #define X265_ALIGNBYTES 64
 
-#if _WIN32
+#ifdef USE_MIMALLOC
+void *x265_malloc(size_t size)
+{
+    return mi_malloc_aligned(size, X265_ALIGNBYTES);
+}
+
+void x265_free(void *ptr)
+{
+    mi_free(ptr);
+}
+
+#elif _WIN32
 #if defined(__MINGW32__) && !defined(__MINGW64_VERSION_MAJOR)
 #define _aligned_malloc __mingw_aligned_malloc
 #define _aligned_free   __mingw_aligned_free
@@ -104,7 +119,8 @@ int x265_exp2fix8(double x)
 
 void general_log(const x265_param* param, const char* caller, int level, const char* fmt, ...)
 {
-    if (param && level > param->logLevel)
+    if (level == X265_LOG_ERROR) numErrorsDuringEncoding++;
+    if (param && level > param->logLevel && level > param->logfLevel)
         return;
     const int bufferSize = 4096;
     char buffer[bufferSize];
@@ -138,7 +154,15 @@ void general_log(const x265_param* param, const char* caller, int level, const c
     va_start(arg, fmt);
     vsnprintf(buffer + p, bufferSize - p, fmt, arg);
     va_end(arg);
-    fputs(buffer, stderr);
+    if (!(param && level > param->logLevel))
+        fputs(buffer, stderr);
+    if (param && param->logfn && level <= param->logfLevel) {
+        FILE* fp = fopen(param->logfn, "ab");
+        if (fp) {
+            fputs(buffer, fp);
+            fclose(fp);
+        }
+    }
 }
 
 #if _WIN32
@@ -146,6 +170,7 @@ void general_log(const x265_param* param, const char* caller, int level, const c
  * For other OS we do not make any changes. */
 void general_log_file(const x265_param* param, const char* caller, int level, const char* fmt, ...)
 {
+    if (level == X265_LOG_ERROR) numErrorsDuringEncoding++;
     if (param && level > param->logLevel)
         return;
     const int bufferSize = 4096;

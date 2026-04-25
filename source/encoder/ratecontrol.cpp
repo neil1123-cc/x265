@@ -95,19 +95,6 @@ inline int calcLength(uint32_t x)
     return z + lut[x];
 }
 
-inline char *strcatFilename(const char *input, const char *suffix)
-{
-    char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
-    if (!output)
-    {
-        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory for filename\n");
-        return NULL;
-    }
-    strcpy(output, input);
-    strcat(output, suffix);
-    return output;
-}
-
 typedef struct CUTreeSharedDataItem
 {
     uint8_t  *type;
@@ -189,6 +176,22 @@ RateControl::RateControl(x265_param& p, Encoder *top)
     int lowresCuHeight = ((m_param->sourceHeight / 2) + X265_LOWRES_CU_SIZE - 1) >> X265_LOWRES_CU_BITS;
     m_ncu = lowresCuWidth * lowresCuHeight;
 
+    /* Kyouko mod note: m_qCompress vs m_param->rc.qCompress
+     *
+     * m_qCompress (member variable):
+     *   - Used for rateFactorConstant, cplxrSum, lastQScaleFor initialization
+     *   - When cuTree is enabled without hevcAq, forced to 1 (effectively disabling
+     *     qCompress effect in these calculations, letting cuTree handle complexity)
+     *
+     * m_param->rc.qCompress (original parameter):
+     *   - Used in getQScale() for qScale calculation
+     *   - Used for mbtree_offset calculation
+     *   - Always preserves user's qcomp value (default 0.6)
+     *
+     * Rationale: cuTree uses frame duration for qScale estimation, so m_qCompress=1
+     * disables the complexity-based curve compression that would otherwise interfere.
+     * However, qCompress still affects the mbtree_offset and other calculations.
+     */
     m_qCompress = (m_param->rc.cuTree && !m_param->rc.hevcAq) ? 1 : m_param->rc.qCompress;
 
     // validate for param->rc, maybe it is need to add a function like x265_parameters_valiate()
@@ -514,7 +517,7 @@ bool RateControl::init(const SPS& sps)
                     return false;
                 if (m_param->rc.cuTree)
                 {
-                    char *tmpFile = strcatFilename(fileName, ".cutree");
+                    char *tmpFile = x265_strcatFilename(fileName, ".cutree");
                     if (!tmpFile)
                         return false;
                     m_cutreeStatFileIn = x265_fopen(tmpFile, "rb");
@@ -593,7 +596,12 @@ bool RateControl::init(const SPS& sps)
                     CMP_OPT_FIRST_PASS("bframes", m_param->bframes);
                     CMP_OPT_FIRST_PASS("b-pyramid", m_param->bBPyramid);
                     CMP_OPT_FIRST_PASS("open-gop", m_param->bOpenGOP);
-                    CMP_OPT_FIRST_PASS(" keyint", m_param->keyframeMax);
+                    if (strstr(opts, "max-keyint")) {
+                        CMP_OPT_FIRST_PASS("max-keyint", m_param->keyframeMax);
+                    }
+                    else {
+                        CMP_OPT_FIRST_PASS(" keyint", m_param->keyframeMax);
+                    }
                     CMP_OPT_FIRST_PASS("scenecut", m_param->scenecutThreshold);
                     CMP_OPT_FIRST_PASS("intra-refresh", m_param->bIntraRefresh);
                     CMP_OPT_FIRST_PASS("frame-dup", m_param->bEnableFrameDuplication);
@@ -762,7 +770,7 @@ bool RateControl::init(const SPS& sps)
         if (m_param->rc.bStatWrite)
         {
             char *p, *statFileTmpname;
-            statFileTmpname = strcatFilename(fileName, ".temp");
+            statFileTmpname = x265_strcatFilename(fileName, ".temp");
             if (!statFileTmpname)
                 return false;
             m_statFileOut = x265_fopen(statFileTmpname, "wb");
@@ -780,7 +788,7 @@ bool RateControl::init(const SPS& sps)
             {
                 if (X265_SHARE_MODE_FILE == m_param->rc.dataShareMode)
                 {
-                    statFileTmpname = strcatFilename(fileName, ".cutree.temp");
+                    statFileTmpname = x265_strcatFilename(fileName, ".cutree.temp");
                     if (!statFileTmpname)
                         return false;
                     m_cutreeStatFileOut = x265_fopen(statFileTmpname, "wb");
@@ -3022,9 +3030,51 @@ int RateControl::rowVbvRateControl(Frame* curFrame, uint32_t row, RateControlEnt
 /* modify the bitrate curve from pass1 for one frame */
 double RateControl::getQScale(RateControlEntry *rce, double rateFactor)
 {
+    /* Kyouko mod: qScaleMode explanation
+     *
+     * qScaleMode controls how rate control estimates the quantizer scale (qScale):
+     *
+     * Mode 0 (default): Respects cuTree and hevcAq interaction
+     *   - cuTree=1 && hevcAq=0: Use frame duration (official cuTree behavior)
+     *   - Otherwise: Use frame complexity
+     *
+     * Mode 1: Force frame duration estimation
+     *   - Always uses frame duration regardless of cuTree/hevcAq
+     *   - Same as official cuTree behavior but explicit
+     *
+     * Mode 2: Force complexity estimation
+     *   - Always uses frame complexity regardless of cuTree/hevcAq
+     *   - WARNING: Overrides cuTree's default behavior!
+     *
+     * Mode 3: min(duration, complexity)
+     *   - Takes the more conservative (lower qScale = higher quality) approach
+     *
+     * Mode 4: max(duration, complexity)
+     *   - Takes the more aggressive (higher qScale = lower quality) approach
+     *
+     * Frame duration estimation:
+     *   q = (base_duration / frame_duration) ^ (1 - qCompress)
+     *   - Better for VBR with variable frame rates
+     *   - Default for cuTree
+     *
+     * Frame complexity estimation:
+     *   q = blurredComplexity ^ (1 - qCompress)
+     *   - Better for consistent quality across content complexity
+     *   - Default for hevcAq and non-cuTree modes
+     */
     double q;
-
-    if (m_param->rc.cuTree && !m_param->rc.hevcAq)
+    if (m_param->rc.qScaleMode == 3 || m_param->rc.qScaleMode == 4)
+    {
+        // Scale and units are obtained from rateNum and rateDenom for videos with fixed frame rates.
+        double timescale = (double)m_param->fpsDenom / (2 * m_param->fpsNum);
+        double q1 = pow(BASE_FRAME_DURATION / CLIP_DURATION(2 * timescale), 1 - m_param->rc.qCompress);
+        double q2 = pow(rce->blurredComplexity, 1 - m_param->rc.qCompress);
+        if (m_param->rc.qScaleMode == 3)
+            q = X265_MIN(q1, q2);
+        else
+            q = X265_MAX(q1, q2);
+    }
+    else if (m_param->rc.qScaleMode == 1 || (m_param->rc.cuTree && !m_param->rc.hevcAq && m_param->rc.qScaleMode == 0))
     {
         // Scale and units are obtained from rateNum and rateDenom for videos with fixed frame rates.
         double timescale = (double)m_param->fpsDenom / (2 * m_param->fpsNum);
@@ -3420,7 +3470,7 @@ void RateControl::destroy()
     if (m_statFileOut)
     {
         fclose(m_statFileOut);
-        char *tmpFileName = strcatFilename(fileName, ".temp");
+        char *tmpFileName = x265_strcatFilename(fileName, ".temp");
         int bError = 1;
         if (tmpFileName)
         {
@@ -3437,8 +3487,8 @@ void RateControl::destroy()
     if (m_cutreeStatFileOut)
     {
         fclose(m_cutreeStatFileOut);
-        char *tmpFileName = strcatFilename(fileName, ".cutree.temp");
-        char *newFileName = strcatFilename(fileName, ".cutree");
+        char *tmpFileName = x265_strcatFilename(fileName, ".cutree.temp");
+        char *newFileName = x265_strcatFilename(fileName, ".cutree");
         int bError = 1;
         if (tmpFileName && newFileName)
         {

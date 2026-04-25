@@ -173,19 +173,6 @@ Encoder::Encoder()
     m_zoneIndex = 0;
 }
 
-inline char *strcatFilename(const char *input, const char *suffix)
-{
-    char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
-    if (!output)
-    {
-        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory for filename\n");
-        return NULL;
-    }
-    strcpy(output, input);
-    strcat(output, suffix);
-    return output;
-}
-
 void Encoder::create()
 {
     if (!primitives.pu[0].sad)
@@ -476,7 +463,7 @@ void Encoder::create()
     initRefIdx();
     if (strlen(m_param->analysisSave) && m_param->bUseAnalysisFile)
     {
-        char* temp = strcatFilename(m_param->analysisSave, ".temp");
+        char* temp = x265_strcatFilename(m_param->analysisSave, ".temp");
         if (!temp)
             m_aborted = true;
         else
@@ -498,7 +485,7 @@ void Encoder::create()
             name = defaultAnalysisFileName;
         if (m_param->rc.bStatWrite)
         {
-            char* temp = strcatFilename(name, ".temp");
+            char* temp = x265_strcatFilename(name, ".temp");
             if (!temp)
                 m_aborted = true;
             else
@@ -952,7 +939,7 @@ void Encoder::destroy()
         const char* name = strlen(m_param->analysisSave) ? m_param->analysisSave : m_param->analysisReuseFileName;
         if (!strlen(name))
             name = defaultAnalysisFileName;
-        char* temp = strcatFilename(name, ".temp");
+        char* temp = x265_strcatFilename(name, ".temp");
         if (temp)
         {
             x265_unlink(name);
@@ -2498,6 +2485,7 @@ int Encoder::reconfigureParam(x265_param* encParam, x265_param* param)
         encParam->rc.bitrate = param->rc.bitrate;
         m_reconfigureRc |= encParam->rc.rfConstant != param->rc.rfConstant;
         encParam->rc.rfConstant = param->rc.rfConstant;
+        encParam->rc.qScaleMode = param->rc.qScaleMode;
         m_reconfigureRc |= encParam->rc.qp != param->rc.qp;
         encParam->rc.qp = param->rc.qp;
 
@@ -2528,6 +2516,10 @@ int Encoder::reconfigureParam(x265_param* encParam, x265_param* param)
 
         encParam->rc.aqMode = param->rc.aqMode;
         encParam->rc.aqStrength = param->rc.aqStrength;
+        encParam->rc.limitAq1 = param->rc.limitAq1;
+        encParam->rc.aqStrength = param->rc.aqStrength;
+        encParam->rc.aqBiasStrength = param->rc.aqBiasStrength;
+        encParam->rc.limitAq1Strength = param->rc.limitAq1Strength;
         encParam->noiseReductionInter = param->noiseReductionInter;
         encParam->noiseReductionIntra = param->noiseReductionIntra;
 
@@ -2756,6 +2748,19 @@ void Encoder::printSummary()
                 (float)100.0 * m_numChromaWPBiFrames / m_analyzeB[layer].m_numPics);
         }
 
+        int pWithB = 0;
+        for (int i = 0; i <= m_param->bframes; i++)
+            pWithB += m_lookahead->m_histogram[i];
+
+        if (pWithB)
+        {
+            int p = 0;
+            for (int i = 0; i <= m_param->bframes; i++)
+                p += snprintf(buffer + p, sizeof(buffer) - p, "%.1f%% ", 100. * m_lookahead->m_histogram[i] / pWithB);
+
+            x265_log(m_param, X265_LOG_INFO, "consecutive B-frames: %s\n", buffer);
+        }
+
         if (m_param->bLossless)
         {
             float frameSize = (float)(m_param->sourceWidth - m_sps.conformanceWindow.rightOffset) *
@@ -2772,6 +2777,8 @@ void Encoder::printSummary()
                 (float)100.0 * (m_rateControl->m_numEntries - m_rpsInSpsCount) / m_rateControl->m_numEntries);
         }
 
+        if (m_param->totalFrames && (uint32_t)m_param->totalFrames > m_analyzeAll[layer].m_numPics)
+            x265_log(m_param, X265_LOG_ERROR, "not all %d frames encoded.\n", m_param->totalFrames);
         if (m_analyzeAll[layer].m_numPics)
         {
             int p = 0;
@@ -3370,11 +3377,19 @@ void Encoder::getStreamHeaders(NALList& list, Entropy& sbacCoder, Bitstream& bs)
                 strlen(PFX(build_info_str)) + 200);
             if (buffer)
             {
-                snprintf(buffer, strlen(opts) + strlen(PFX(version_str)) + strlen(PFX(build_info_str)) + 200,
-                    "x265 (build %d) - %s:%s - H.265/HEVC codec - "
-                    "Copyright 2013-2018 (c) Multicoreware, Inc - "
-                    "http://x265.org - options: %s",
-                    X265_BUILD, PFX(version_str), PFX(build_info_str), opts);
+                if ((m_param->opts & 1) == 0)
+                    snprintf(buffer, strlen(opts) + strlen(PFX(version_str)) + strlen(PFX(build_info_str)) + 200,
+                        "x265 - - H.265/HEVC codec - "
+                        "Copyright 2013-2018 (c) Multicoreware, Inc - "
+                        "http://x265.org - options: %s",
+                        opts);
+
+                else
+                    snprintf(buffer, strlen(opts) + strlen(PFX(version_str)) + strlen(PFX(build_info_str)) + 200,
+                        "x265 (build %d) - %s:%s - H.265/HEVC codec - "
+                        "Copyright 2013-2018 (c) Multicoreware, Inc - "
+                        "http://x265.org - options: %s",
+                        X265_BUILD, PFX(version_str), PFX(build_info_str), opts);
 
                 SEIuserDataUnregistered idsei;
                 idsei.m_userData = (uint8_t*)buffer;
@@ -3699,7 +3714,10 @@ void Encoder::configureZone(x265_param *p, x265_param *zone)
             snprintf(p->scalingLists, X265_MAX_STRING_SIZE, "%s", zone->scalingLists);
 
         p->rc.aqMode = zone->rc.aqMode;
+        p->rc.limitAq1 = zone->rc.limitAq1;
         p->rc.aqStrength = zone->rc.aqStrength;
+        p->rc.aqBiasStrength = zone->rc.aqBiasStrength;
+        p->rc.limitAq1Strength = zone->rc.limitAq1Strength;
         p->noiseReductionInter = zone->noiseReductionInter;
         p->noiseReductionIntra = zone->noiseReductionIntra;
 
@@ -4563,7 +4581,7 @@ void Encoder::configure(x265_param *p)
 
     if (strlen(m_param->toneMapFile) || p->bHDR10Opt || p->bEmitHDR10SEI)
     {
-        if (!p->bRepeatHeaders)
+        if (!p->bRepeatHeaders && p->bAnnexB)
         {
             p->bRepeatHeaders = 1;
             x265_log(p, X265_LOG_WARNING, "Turning on repeat-headers for HDR compatibility\n");

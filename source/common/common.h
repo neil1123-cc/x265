@@ -462,6 +462,20 @@ void*    x265_malloc(size_t size);
 void     x265_free(void *ptr);
 char*    x265_slurp_file(const char *filename);
 
+/* Helper function to concatenate filename with suffix */
+static inline char* x265_strcatFilename(const char* input, const char* suffix)
+{
+    char* output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
+    if (!output)
+    {
+        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory for filename\n");
+        return NULL;
+    }
+    strcpy(output, input);
+    strcat(output, suffix);
+    return output;
+}
+
 /* located in primitives.cpp */
 void     x265_setup_primitives(x265_param* param);
 void     x265_report_simd(x265_param* param);
