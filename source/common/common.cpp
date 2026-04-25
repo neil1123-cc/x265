@@ -104,7 +104,7 @@ int x265_exp2fix8(double x)
 
 void general_log(const x265_param* param, const char* caller, int level, const char* fmt, ...)
 {
-    if (param && level > param->logLevel)
+    if (param && level > param->logLevel && level > param->logfLevel)
         return;
     const int bufferSize = 4096;
     char buffer[bufferSize];
@@ -138,7 +138,17 @@ void general_log(const x265_param* param, const char* caller, int level, const c
     va_start(arg, fmt);
     vsnprintf(buffer + p, bufferSize - p, fmt, arg);
     va_end(arg);
-    fputs(buffer, stderr);
+    if (!(param && level > param->logLevel))
+        fputs(buffer, stderr);
+    if (param && param->logfn && level <= param->logfLevel)
+    {
+        FILE* fp = x265_fopen(param->logfn, "ab");
+        if (fp)
+        {
+            fputs(buffer, fp);
+            fclose(fp);
+        }
+    }
 }
 
 #if _WIN32
@@ -146,7 +156,7 @@ void general_log(const x265_param* param, const char* caller, int level, const c
  * For other OS we do not make any changes. */
 void general_log_file(const x265_param* param, const char* caller, int level, const char* fmt, ...)
 {
-    if (param && level > param->logLevel)
+    if (param && level > param->logLevel && level > param->logfLevel)
         return;
     const int bufferSize = 4096;
     char buffer[bufferSize];
@@ -181,17 +191,29 @@ void general_log_file(const x265_param* param, const char* caller, int level, co
     vsnprintf(buffer + p, bufferSize - p, fmt, arg);
     va_end(arg);
 
-    HANDLE console = GetStdHandle(STD_ERROR_HANDLE);
-    DWORD mode;
-    if (GetConsoleMode(console, &mode))
+    if (!(param && level > param->logLevel))
     {
-        wchar_t buf_utf16[bufferSize];
-        int length_utf16 = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, buf_utf16, sizeof(buf_utf16)/sizeof(wchar_t)) - 1;
-        if (length_utf16 > 0)
-            WriteConsoleW(console, buf_utf16, length_utf16, &mode, NULL);
+        HANDLE console = GetStdHandle(STD_ERROR_HANDLE);
+        DWORD mode;
+        if (GetConsoleMode(console, &mode))
+        {
+            wchar_t buf_utf16[bufferSize];
+            int length_utf16 = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, buf_utf16, sizeof(buf_utf16) / sizeof(wchar_t)) - 1;
+            if (length_utf16 > 0)
+                WriteConsoleW(console, buf_utf16, length_utf16, &mode, NULL);
+        }
+        else
+            fputs(buffer, stderr);
     }
-    else
-        fputs(buffer, stderr);
+    if (param && param->logfn && level <= param->logfLevel)
+    {
+        FILE* fp = x265_fopen(param->logfn, "ab");
+        if (fp)
+        {
+            fputs(buffer, fp);
+            fclose(fp);
+        }
+    }
 }
 
 FILE* x265_fopen(const char* fileName, const char* mode)
