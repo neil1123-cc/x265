@@ -1,7 +1,7 @@
 /*****************************************************************************
- * Copyright (C) 2013-2020 MulticoreWare, Inc
+ * Copyright (C) 2013 x265 project
  *
- * Authors: Steve Borho <steve@borho.org>
+ * Authors: Selvakumar Nithiyaruban <selvakumar@multicorewareinc.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,53 +21,29 @@
  * For more information, contact us at license @ x265.com.
  *****************************************************************************/
 
-#ifndef X265_OUTPUT_Y4M_H
-#define X265_OUTPUT_Y4M_H
+#ifndef X265_FILTERS_H
+#define X265_FILTERS_H
+ 
+#include "x265.h"
+#include "common.h"
+#include "cstring"
+#include "cstdio"
+#include <vector>
 
-#include "output.h"
-#include <fstream>
-
+using namespace std;
+ 
 namespace X265_NS {
-// private x265 namespace
-
-class Y4MOutput : public ReconFile
+class Filter
 {
-protected:
-
-    int width;
-
-    int height;
-
-    uint32_t bitDepth;
-
-    int colorSpace;
-
-    uint32_t frameSize;
-
-    int inputDepth;
-
-    std::ofstream ofs;
-
-    std::ofstream::pos_type header;
-
-    char *buf;
-
-    void writeHeader();
-
 public:
-
-    Y4MOutput(const char *filename, int width, int height, uint32_t bitdepth, uint32_t fpsNum, uint32_t fpsDenom, int csp, int inputDepth);
-
-    virtual ~Y4MOutput();
-
-    const char *getName() const                   { return "y4m"; }
-
-    bool isFail() const                           { return ofs.fail(); }
-
-    void release()                                { delete this; }
-
-    bool writePicture(const x265_picture& pic);
+    virtual ~Filter() {};
+    static bool parseFilterString(char* paramString, vector<Filter *>* filters);
+    Filter() {}
+    virtual void setParam(x265_param*) = 0;
+    virtual bool isFail() const = 0;
+    virtual void release() = 0;
+    virtual void processFrame(x265_picture&) = 0;
 };
 }
 
-#endif // ifndef X265_OUTPUT_Y4M_H
+#endif //X265_FILTERS_H

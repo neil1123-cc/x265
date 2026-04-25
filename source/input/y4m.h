@@ -21,8 +21,8 @@
  * For more information, contact us at license @ x265.com.
  *****************************************************************************/
 
-#ifndef X265_Y4M_H
-#define X265_Y4M_H
+#ifndef X265_INPUT_Y4M_H
+#define X265_INPUT_Y4M_H
 
 #include "input.h"
 #include "threading.h"
@@ -55,6 +55,8 @@ protected:
 
     int colorSpace;
 
+    int frameCount;
+
     bool alphaAvailable;
 
     bool threadActive;
@@ -85,7 +87,10 @@ public:
     int getWidth() const                          { return width; }
 
     int getHeight() const                         { return height; }
+
+    template <typename T>
+    int readNumber(T &out);
 };
 }
 
-#endif // ifndef X265_Y4M_H
+#endif // ifndef X265_INPUT_Y4M_H
