@@ -227,6 +227,19 @@ typedef int16_t  coeff_t;      // transform coefficient
 
 #define X265_MALLOC(type, count)    (type*)x265_malloc(sizeof(type) * (count))
 #define X265_FREE(ptr)              x265_free(ptr)
+
+static inline char *strcatFilename(const char *input, const char *suffix)
+{
+    char *output = (char*)malloc(strlen(input) + strlen(suffix) + 1);
+    if (!output)
+    {
+        fprintf(stderr, "x265: unable to allocate memory for filename\n");
+        return NULL;
+    }
+    strcpy(output, input);
+    strcat(output, suffix);
+    return output;
+}
 #define X265_FREE_ZERO(ptr)         { x265_free(ptr); (ptr) = NULL; }
 #define CHECKED_MALLOC(var, type, count) \
     { \
