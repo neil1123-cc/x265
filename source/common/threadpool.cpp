@@ -293,7 +293,6 @@ static void distributeThreadsForTme(
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 || HAVE_LIBNUMA
     if (bNumaSupport && numNumaNodes > 1)
     {
-        int tmeNumaNodes = 0;
         int leftover = 0;
 
         // First thread pool belongs to ThreadedME
@@ -312,8 +311,6 @@ static void distributeThreadsForTme(
             {
                 threads[poolIndex] += toTake;
                 nodeMasks[poolIndex] |= nodeMaskPerPool[i];
-                tmeNumaNodes++;
-
                 if (threads[0] == targetTME)
                     poolIndex++;
 
@@ -634,7 +631,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
 
 ThreadPool::ThreadPool()
 {
-    memset(this, 0, sizeof(*this));
+    memset((void*)this, 0, sizeof(*this));
 }
 
 bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
