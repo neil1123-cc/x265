@@ -570,7 +570,7 @@ void MP4Muxer::sign()
     if (!freeBox)
         return;
 
-    if (lsmash_add_box_ex(lsmash_root_as_box(m_root), &freeBox) < 0)
+    if (lsmash_add_box(lsmash_root_as_box(m_root), freeBox) < 0)
     {
         lsmash_destroy_box(freeBox);
         return;
