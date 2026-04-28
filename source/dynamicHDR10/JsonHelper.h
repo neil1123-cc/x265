@@ -29,9 +29,8 @@
 #include "json11/json11.h"
 
 using std::string;
-using namespace json11;
-typedef Json::object JsonObject;
-typedef Json::array JsonArray;
+typedef json11::Json::object JsonObject;
+typedef json11::Json::array JsonArray;
 
 class JsonHelper
 {

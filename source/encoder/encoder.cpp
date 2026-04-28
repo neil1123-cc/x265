@@ -175,19 +175,6 @@ Encoder::Encoder()
     m_zoneIndex = 0;
 }
 
-inline char *strcatFilename(const char *input, const char *suffix)
-{
-    char *output = X265_MALLOC(char, strlen(input) + strlen(suffix) + 1);
-    if (!output)
-    {
-        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory for filename\n");
-        return NULL;
-    }
-    strcpy(output, input);
-    strcat(output, suffix);
-    return output;
-}
-
 void Encoder::create()
 {
     if (!primitives.pu[0].sad)
