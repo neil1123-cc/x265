@@ -98,6 +98,12 @@ else()
     set(TARGET_CPU generic CACHE STRING "The target CPU")
 endif()
 
+if(TARGET_CPU STREQUAL "generic" OR TARGET_CPU STREQUAL "x86-64")
+    set(X265_CPU_OPT "")
+else()
+    set(X265_CPU_OPT "[cpu-opt=${TARGET_CPU}]")
+endif()
+
 # X265_BUILD must be incremented each time the public API is changed
 set(X265_BUILD 216)
 configure_file("${PROJECT_SOURCE_DIR}/x265.def.in"

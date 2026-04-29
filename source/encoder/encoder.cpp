@@ -3467,15 +3467,11 @@ void Encoder::getStreamHeaders(NALList& list, Entropy& sbacCoder, Bitstream& bs)
         char *opts = x265_param2string(m_param, m_sps.conformanceWindow.rightOffset, m_sps.conformanceWindow.bottomOffset);
         if (opts)
         {
-            char *buffer = X265_MALLOC(char, strlen(opts) + strlen(PFX(version_str)) +
-                strlen(PFX(build_info_str)) + 200);
+            size_t bufferSize = strlen(opts) + strlen(PFX(version_str)) + strlen(PFX(build_info_str)) + strlen("x265   - options: ") + 1;
+            char *buffer = X265_MALLOC(char, bufferSize);
             if (buffer)
             {
-                snprintf(buffer, strlen(opts) + strlen(PFX(version_str)) + strlen(PFX(build_info_str)) + 200,
-                    "x265 (build %d) - %s:%s - H.265/HEVC codec - "
-                    "Copyright 2013-2018 (c) Multicoreware, Inc - "
-                    "http://x265.org - options: %s",
-                    X265_BUILD, PFX(version_str), PFX(build_info_str), opts);
+                snprintf(buffer, bufferSize, "x265 %s %s - options: %s", PFX(version_str), PFX(build_info_str), opts);
 
                 SEIuserDataUnregistered idsei;
                 idsei.m_userData = (uint8_t*)buffer;
