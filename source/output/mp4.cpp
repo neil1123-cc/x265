@@ -11,10 +11,17 @@
 
 #include <inttypes.h>
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #include <vector>
 
 using namespace X265_NS;
+
+#if defined(_LP64) || defined(_WIN64)
+#define X265_OUTPUT_BITS "64bit"
+#else
+#define X265_OUTPUT_BITS "32bit"
+#endif
 
 #define NALU_LENGTH_SIZE 4
 #define MP4_LOG_ERROR(...) general_log(NULL, "mp4", X265_LOG_ERROR, __VA_ARGS__)
@@ -590,7 +597,8 @@ void MP4Muxer::sign()
     if (!m_root)
         return;
 
-    const char* text = "Multiplexed by L-SMASH";
+    char text[128];
+    snprintf(text, sizeof(text), "x265 %s %s using L-SMASH from vimeo/l-smash", x265_version_str, X265_OUTPUT_BITS);
     int length = (int)strlen(text);
     lsmash_box_type_t type = lsmash_form_iso_box_type(LSMASH_4CC('f', 'r', 'e', 'e'));
     lsmash_box_t* freeBox = lsmash_create_box(type, (uint8_t*)text, length, LSMASH_BOX_PRECEDENCE_N);
