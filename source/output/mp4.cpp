@@ -107,6 +107,28 @@ static bool isRandomAccessNalType(uint32_t nalType)
     return nalType >= NAL_UNIT_CODED_SLICE_BLA_W_LP && nalType <= NAL_UNIT_CODED_SLICE_CRA;
 }
 
+static bool isIdrNalType(uint32_t nalType)
+{
+    return nalType == NAL_UNIT_CODED_SLICE_IDR_W_RADL
+        || nalType == NAL_UNIT_CODED_SLICE_IDR_N_LP;
+}
+
+static bool isBlaNalType(uint32_t nalType)
+{
+    return nalType >= NAL_UNIT_CODED_SLICE_BLA_W_LP && nalType <= NAL_UNIT_CODED_SLICE_BLA_N_LP;
+}
+
+static bool isLeadingNalType(uint32_t nalType)
+{
+    return nalType >= NAL_UNIT_CODED_SLICE_RADL_N && nalType <= NAL_UNIT_CODED_SLICE_RASL_R;
+}
+
+static bool isDecodableLeadingNalType(uint32_t nalType)
+{
+    return nalType == NAL_UNIT_CODED_SLICE_RADL_N
+        || nalType == NAL_UNIT_CODED_SLICE_RADL_R;
+}
+
 static bool shouldOmitNalFromHvc1Sample(uint32_t nalType)
 {
     return nalType == NAL_UNIT_VPS
@@ -190,6 +212,11 @@ static bool validateHeaderSeiNal(const x265_nal& nal, const char* nonSeiMessage,
 struct SamplePreparation
 {
     bool keyframe;
+    lsmash_random_access_flag raFlags;
+    uint8_t leading;
+    uint8_t independent;
+    uint8_t disposable;
+    uint8_t redundant;
     int64_t pts;
     int64_t dts;
     int sampleSize;
@@ -570,7 +597,7 @@ void MP4Muxer::sign()
     if (!freeBox)
         return;
 
-    if (lsmash_add_box_ex(lsmash_root_as_box(m_root), &freeBox) < 0)
+    if (lsmash_add_box(lsmash_root_as_box(m_root), freeBox) < 0)
     {
         lsmash_destroy_box(freeBox);
         return;
@@ -756,6 +783,7 @@ bool MP4Muxer::setParam(const x265_param* param)
     m_brands[brandCount++] = ISOM_BRAND_TYPE_MP42;
     m_brands[brandCount++] = ISOM_BRAND_TYPE_MP41;
     m_brands[brandCount++] = ISOM_BRAND_TYPE_ISOM;
+    m_brands[brandCount++] = ISOM_BRAND_TYPE_ISO6;
 
     lsmash_file_parameters_t* fparam = &m_fileParam;
     fparam->major_brand = m_brands[0];
@@ -787,6 +815,8 @@ bool MP4Muxer::setParam(const x265_param* param)
     lsmash_media_parameters_t mediaParam;
     lsmash_initialize_media_parameters(&mediaParam);
     mediaParam.timescale = mediaTimescale;
+    mediaParam.roll_grouping = 1;
+    mediaParam.rap_grouping = 1;
     mediaParam.media_handler_name = strdup("L-SMASH Video Media Handler");
     MP4_FAIL_IF(!mediaParam.media_handler_name,
                 "failed to allocate media handler name for video.\n");
@@ -1065,7 +1095,15 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     const bool prepared = [&]() {
         bool hasVcl = false;
         bool hasRandomAccessVcl = false;
+        bool hasClosedRandomAccessVcl = false;
+        bool hasLeadingVcl = false;
+        bool hasDecodableLeadingVcl = false;
         prep.keyframe = sample.pic->sliceType == X265_TYPE_IDR || sample.pic->sliceType == X265_TYPE_I;
+        prep.raFlags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
+        prep.leading = ISOM_SAMPLE_IS_NOT_LEADING;
+        prep.independent = ISOM_SAMPLE_IS_NOT_INDEPENDENT;
+        prep.disposable = ISOM_SAMPLE_IS_NOT_DISPOSABLE;
+        prep.redundant = ISOM_SAMPLE_HAS_NO_REDUNDANCY;
         prep.pts = sample.pic->pts;
         MP4_FAIL_IF(!checkedSubInt64(sample.pic->dts, m_dtsDelayFrames, prep.dts),
                     "timestamp overflow while applying MP4 DTS delay.\n");
@@ -1084,14 +1122,38 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
             {
                 hasVcl = true;
                 if (isRandomAccessNalType(nalType))
+                {
                     hasRandomAccessVcl = true;
+                    if (isIdrNalType(nalType) || isBlaNalType(nalType))
+                        hasClosedRandomAccessVcl = true;
+                }
+                if (isLeadingNalType(nalType))
+                {
+                    hasLeadingVcl = true;
+                    if (isDecodableLeadingNalType(nalType))
+                        hasDecodableLeadingVcl = true;
+                }
             }
             MP4_FAIL_IF(UINT64_MAX - sampleSize64 < sample.nal[i].sizeBytes,
                         "sample payload overflow while assembling MP4 sample.\n");
             sampleSize64 += sample.nal[i].sizeBytes;
         }
         if (hasRandomAccessVcl)
+        {
             prep.keyframe = true;
+            prep.raFlags = static_cast<lsmash_random_access_flag>(ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC
+                         | (hasClosedRandomAccessVcl ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_CLOSED_RAP
+                                                     : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_OPEN_RAP));
+            prep.independent = ISOM_SAMPLE_IS_INDEPENDENT;
+        }
+        else if (prep.keyframe)
+        {
+            prep.raFlags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_RAP;
+            prep.independent = ISOM_SAMPLE_IS_INDEPENDENT;
+        }
+        if (hasLeadingVcl)
+            prep.leading = hasDecodableLeadingVcl ? ISOM_SAMPLE_IS_DECODABLE_LEADING
+                                                  : ISOM_SAMPLE_IS_UNDECODABLE_LEADING;
         MP4_FAIL_IF(!hasVcl, "MP4 sample is missing a VCL NAL unit.\n");
         MP4_FAIL_IF(isFirstSample() && !prep.keyframe, "first MP4 sample must be a random access access unit.\n");
         MP4_FAIL_IF(sampleSize64 > INT_MAX, "sample payload too large for muxer buffer.\n");
@@ -1147,9 +1209,11 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     outSample->dts = prep.sampleDts;
     outSample->cts = prep.sampleCts;
     outSample->index = m_sampleEntry;
-    outSample->prop.ra_flags = prep.keyframe
-                             ? ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC
-                             : ISOM_SAMPLE_RANDOM_ACCESS_FLAG_NONE;
+    outSample->prop.ra_flags = prep.raFlags;
+    outSample->prop.leading = prep.leading;
+    outSample->prop.independent = prep.independent;
+    outSample->prop.disposable = prep.disposable;
+    outSample->prop.redundant = prep.redundant;
 
     if (lsmash_append_sample(m_root, m_track, outSample))
     {

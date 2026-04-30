@@ -63,7 +63,11 @@ namespace X265_NS {
             }
             m_passEnc[i]->init(ret);
             if (m_passEnc[i]->m_ret)
+            {
+                if (!ret)
+                    ret = m_passEnc[i]->m_ret;
                 m_numActiveEncodes.decr();
+            }
         }
 
         m_numInputViews = (m_passEnc[0]->m_param->numViews > 1) ? m_passEnc[0]->m_param->numViews - !!m_passEnc[0]->m_param->format : 0;
