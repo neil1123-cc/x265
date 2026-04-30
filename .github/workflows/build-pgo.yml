@@ -28,13 +28,14 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-    - name: Checkout x265
+    - name: Checkout X265
       uses: actions/checkout@v6
       with:
         path: x265
         fetch-depth: 0
+        fetch-tags: true
 
-    - name: Setup shared dependencies
+    - name: Setup Shared Dependencies
       uses: ./x265/.github/actions/setup-windows-deps
       with:
         ffmpeg-configure: |
@@ -56,36 +57,8 @@ jobs:
             --enable-protocol=file,pipe \
             --cc=cc --cxx=c++ --cpu=x86-64
         use-mimalloc: 'true'
-        extra-msys2-packages: >-
-          mingw-w64-x86_64-gcc
 
-    - name: Checkout L-SMASH
-      uses: actions/checkout@v6
-      with:
-        path: l-smash
-        repository: vimeo/l-smash
-        ref: master
-
-    - name: Override L-SMASH with GCC build
-      working-directory: l-smash
-      run: |
-        env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
-          set -euo pipefail
-          export PATH="/mingw64/bin:/usr/bin:/clang64/bin"
-          hash -r
-          command -v gcc >/dev/null
-          command -v ar >/dev/null
-          command -v ranlib >/dev/null
-          gcc --version
-          LSMASH_CFLAGS="-I/usr/local/include -O3 -DNDEBUG -fno-lto"
-          LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
-          ./configure --prefix=/usr/local --cc=gcc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
-          make clean
-          make lib -j$(nproc)
-          make install-lib
-        '
-
-    - name: Build profiling binaries
+    - name: Build Profiling Binaries
       uses: ./x265/.github/actions/build-x265-profiling
       with:
         target-cpu: x86-64
@@ -94,7 +67,7 @@ jobs:
         use-mimalloc: 'ON'
         enable-lsmash: 'ON'
 
-    - name: Generate test videos for PGO
+    - name: Generate Test Videos for PGO
       working-directory: build
       run: |
         mkdir -p test-videos
@@ -118,7 +91,7 @@ jobs:
         echo "=== Test videos generated ==="
         ls -la test-videos/
 
-    - name: Run PGO profiling workload
+    - name: Run PGO Profiling Workload
       run: |
         profile_target="${{ github.event.inputs.profile_target || 'all' }}"
         case "$profile_target" in
@@ -294,7 +267,7 @@ jobs:
         ls -la ../x265.profdata
         llvm-profdata show --summary ../x265.profdata || llvm-profdata show --detailed-summary ../x265.profdata
 
-    - name: Push baseline profdata to branch
+    - name: Push Baseline Profdata to Branch
       run: |
         set -euo pipefail
 
@@ -306,7 +279,7 @@ jobs:
 
         echo "Publishing profdata for target: $profile_target"
         echo "Destination branch: $profdata_branch"
-        echo "Destination path: x265.profdata + profiles/*.profdata"
+        echo "Destination path: x265.profdata + profiles/*.profdata + metadata.json"
 
         git init "$profdata_push_dir"
         git -C "$profdata_push_dir" config user.name "github-actions[bot]"
@@ -372,13 +345,75 @@ jobs:
           fi
         done
 
+        action_default() {
+          local action_file="$1"
+          local input_name="$2"
+          awk -v input="  ${input_name}:" '
+            $0 == input { in_input = 1; next }
+            in_input && /^  [^[:space:]].*:$/ { exit }
+            in_input && /^[[:space:]]+default:/ { print $2; exit }
+          ' "$action_file"
+        }
+
+        setup_deps_action="$GITHUB_WORKSPACE/x265/.github/actions/setup-windows-deps/action.yml"
+        ffmpeg_ref=$(action_default "$setup_deps_action" ffmpeg-ref)
+        mimalloc_ref=$(action_default "$setup_deps_action" mimalloc-ref)
+        obuparse_ref=$(action_default "$setup_deps_action" obuparse-ref)
+        obuparse_cache_suffix=$(action_default "$setup_deps_action" obuparse-cache-suffix)
+        lsmash_repository=$(action_default "$setup_deps_action" lsmash-repository)
+        lsmash_ref=$(action_default "$setup_deps_action" lsmash-ref)
+        lsmash_cache_suffix=$(action_default "$setup_deps_action" lsmash-cache-suffix)
+        test -n "$ffmpeg_ref"
+        test -n "$mimalloc_ref"
+        test -n "$obuparse_ref"
+        test -n "$obuparse_cache_suffix"
+        test -n "$lsmash_repository"
+        test -n "$lsmash_ref"
+        test -n "$lsmash_cache_suffix"
+
+        source_commit=$(git -C "$GITHUB_WORKSPACE/x265" rev-parse HEAD)
+        source_ref=$(git -C "$GITHUB_WORKSPACE/x265" rev-parse --abbrev-ref HEAD || true)
+        if [ "$source_ref" = "HEAD" ]; then
+          source_ref="${GITHUB_REF_NAME}"
+        fi
+        generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        cat > "$profdata_push_dir/metadata.json" <<EOF
+        {
+          "schema_version": 1,
+          "generated_at": "${generated_at}",
+          "repository": "${GITHUB_REPOSITORY}",
+          "workflow": "${GITHUB_WORKFLOW}",
+          "run_id": "${GITHUB_RUN_ID}",
+          "run_attempt": "${GITHUB_RUN_ATTEMPT}",
+          "source_ref": "${source_ref}",
+          "source_commit": "${source_commit}",
+          "profile_target": "${profile_target}",
+          "profdata_branch": "${profdata_branch}",
+          "layout": "per-target-bounded-window",
+          "window": {
+            "slots": 4,
+            "fresh_slot": "profiles/0.profdata",
+            "weights_newest_to_oldest": [4, 3, 2, 1]
+          },
+          "dependencies": {
+            "ffmpeg_ref": "${ffmpeg_ref}",
+            "mimalloc_ref": "${mimalloc_ref}",
+            "obuparse_ref": "${obuparse_ref}",
+            "obuparse_cache_key": "obuparse-${obuparse_ref}-${obuparse_cache_suffix}",
+            "lsmash_repository": "${lsmash_repository}",
+            "lsmash_ref": "${lsmash_ref}",
+            "lsmash_cache_key": "lsmash-${lsmash_repository}-${lsmash_ref}-${lsmash_cache_suffix}"
+          }
+        }
+        EOF
+
         rm -rf "$scratch_dir"
         if [ "$branch_exists" = true ]; then
           git -C "$profdata_push_dir" branch -D "$profdata_branch" || true
           git -C "$profdata_push_dir" branch -m "$profdata_branch"
         fi
 
-        add_paths=(x265.profdata profiles)
+        add_paths=(x265.profdata profiles metadata.json)
         git -C "$profdata_push_dir" add "${add_paths[@]}"
 
         if git -C "$profdata_push_dir" diff --cached --quiet; then

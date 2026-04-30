@@ -38,19 +38,20 @@ jobs:
           - znver5
 
     steps:
-    - name: Checkout x265
+    - name: Checkout X265
       uses: actions/checkout@v6
       with:
         path: x265
         fetch-depth: 0
+        fetch-tags: true
 
-    - name: Get latest tag
+    - name: Get Latest Tag
       id: tag
       shell: bash
       working-directory: x265
       run: echo "version=$(git describe --tags --match=[0-9].[0-9]* --abbrev=0)" >> $GITHUB_OUTPUT
 
-    - name: Get CI version
+    - name: Get CI Version
       id: ci_version
       shell: bash
       working-directory: x265
@@ -58,9 +59,10 @@ jobs:
         head_tag=$(git describe --tags --match='[0-9].[0-9]*' HEAD 2>/dev/null || true)
         head_hash=$(git rev-parse --short HEAD)
         if [ -z "$head_tag" ]; then
-          version="4.1+unknown-g${head_hash}"
+          # No version tag on this commit, use tag step's raw value as fallback
+          version="${{ steps.tag.outputs.version }}"
         elif [[ "$head_tag" != *-* ]]; then
-          version="${head_tag#M}"
+          version="${head_tag#M}-g${head_hash}"
         else
           orig_tag=${head_tag%%-*}
           rest=${head_tag#*-}
@@ -69,7 +71,7 @@ jobs:
         fi
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
-    - name: Fetch PGO profdata
+    - name: Fetch PGO Profdata
       shell: bash
       run: |
         mkdir -p build
@@ -81,41 +83,55 @@ jobs:
           local fallback_branch="$3"
           local source_path="$4"
           local destination="../build/x265-${target}.profdata"
-          local branch
+          local branch last_branch=""
 
           rm -f "$destination"
 
           for branch in "$primary_branch" "$fallback_branch"; do
             [ -n "$branch" ] || continue
-            if [ "$branch" = "$fallback_branch" ] && [ "$primary_branch" = "$fallback_branch" ]; then
-              [ "$branch" = "$primary_branch" ] || continue
+            [ "$branch" != "$last_branch" ] || continue
+            last_branch="$branch"
+
+            local ls_remote_output ls_remote_status
+            set +e
+            ls_remote_output=$(git ls-remote --exit-code --heads origin "$branch" 2>&1)
+            ls_remote_status=$?
+            set -e
+            if [ "$ls_remote_status" -eq 2 ]; then
+              echo "PGO profdata branch missing: $branch"
+              continue
+            fi
+            if [ "$ls_remote_status" -ne 0 ]; then
+              printf '%s\n' "$ls_remote_output"
+              return "$ls_remote_status"
             fi
 
             echo "=== Fetching PGO profdata for ${target} from ${branch}:${source_path} ==="
-            if ! git fetch origin "$branch" --depth=1; then
-              echo "Branch not found: $branch"
-              continue
-            fi
+            git fetch --quiet origin "$branch" --depth=1
 
             if ! git show "FETCH_HEAD:${source_path}" > "$destination" 2>/dev/null; then
-              echo "profdata not found in $branch at $source_path"
+              echo "PGO profdata file missing: branch=${branch} path=${source_path}"
               rm -f "$destination"
               continue
             fi
 
             if [ "$branch" = "$fallback_branch" ] && [ "$primary_branch" != "$fallback_branch" ]; then
-              echo "Using fallback x86-64 profdata for ${target}"
+              echo "PGO profdata fallback hit: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
+            else
+              echo "PGO profdata hit: target=${target} branch=${branch}"
             fi
-            echo "Fetched profdata to $destination"
+            echo "PGO profdata path: source=${source_path} destination=${destination}"
             return 0
           done
+
+          echo "PGO profdata unavailable: target=${target}"
         }
 
         fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib profdata-x86-64-8b-lib x265.profdata
         fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib profdata-x86-64-12b-lib x265.profdata
         fetch_profdata all profdata-${{ matrix.target_cpu }}-all profdata-x86-64-all x265.profdata
 
-    - name: Setup shared dependencies
+    - name: Setup Shared Dependencies
       uses: ./x265/.github/actions/setup-windows-deps
       with:
         ffmpeg-cache-suffix: lavf-v1-clang
@@ -131,39 +147,131 @@ jobs:
         use-mimalloc: 'true'
         extra-msys2-packages: >-
           mingw-w64-clang-x86_64-ffmpeg
-          mingw-w64-x86_64-gcc
+          mingw-w64-clang-x86_64-lldb
 
-    - name: Checkout L-SMASH
-      uses: actions/checkout@v6
-      with:
-        path: l-smash
-        repository: vimeo/l-smash
-        ref: master
-
-    - name: Override L-SMASH with GCC build
-      working-directory: l-smash
+    - name: Smoke Test L-SMASH
+      env:
+        MSYSTEM: CLANG64
+      shell: msys2 {0}
       run: |
-        env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
-          set -euo pipefail
-          export PATH="/mingw64/bin:/usr/bin:/clang64/bin"
-          hash -r
-          command -v gcc >/dev/null
-          command -v ar >/dev/null
-          command -v ranlib >/dev/null
-          gcc --version
-          LSMASH_CFLAGS="-I/usr/local/include -O3 -DNDEBUG -fno-lto"
-          LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
-          ./configure --prefix=/usr/local --cc=gcc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
-          make clean
-          make lib -j$(nproc)
-          make install-lib
-        '
+        set -ex
+        export PATH="/clang64/bin:/usr/bin:/mingw64/bin"
+        echo "=== Step 1: Check library files ==="
+        ls -la /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a 2>&1
+        echo "=== Step 2: Check symbols in liblsmash ==="
+        nm /usr/local/lib/liblsmash.a 2>/dev/null | grep -E "lsmash_create_root|lsmash_destroy_root" | head -5
+        echo "=== Step 3: Check obp symbols in liblsmash (verifies obuparse linkage) ==="
+        nm /usr/local/lib/liblsmash.a 2>/dev/null | grep " obp_" | head -10
+        echo "=== Step 4: Compile smoke test ==="
+        cat > /tmp/lsmash_smoke.c << 'SMOKE'
+        #include <stdio.h>
+        #include <lsmash.h>
+        int main(void) {
+            printf("Creating root...\n");
+            lsmash_root_t *root = lsmash_create_root();
+            if (!root) { printf("FAIL: lsmash_create_root returned NULL\n"); return 1; }
+            printf("OK: lsmash_create_root succeeded %p\n", (void*)root);
+            printf("Destroying root...\n");
+            lsmash_destroy_root(root);
+            printf("OK: lsmash_destroy_root succeeded\n");
+            return 0;
+        }
+        SMOKE
+        echo "=== Step 5: Compile smoke test (no ASAN - runtime unavailable in clang64) ==="
+        clang -g -I/usr/local/include -L/usr/local/lib /tmp/lsmash_smoke.c /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a -lm -o /tmp/lsmash_smoke.exe
+        cat > /tmp/mp4_smoke.c << 'MP4SMOKE'
+        #include <stdio.h>
+        #include <stdlib.h>
+        #include <string.h>
+        #include <lsmash.h>
+        int main(void) {
+            printf("Creating root...\n");
+            lsmash_root_t *root = lsmash_create_root();
+            if (!root) { printf("FAIL: lsmash_create_root\n"); return 1; }
+            printf("OK: root %p\n", (void*)root);
+
+            lsmash_file_parameters_t params = {0};
+            printf("Opening file...\n");
+            if (lsmash_open_file("./smoke.mp4", 0, &params) < 0) {
+                printf("FAIL: lsmash_open_file\n"); lsmash_destroy_root(root); return 1; }
+            printf("Setting file...\n");
+            if (!lsmash_set_file(root, &params)) {
+                printf("FAIL: lsmash_set_file\n"); lsmash_destroy_root(root); return 1; }
+
+            printf("Creating track...\n");
+            uint32_t track = lsmash_create_track(root, ISOM_MEDIA_HANDLER_TYPE_VIDEO_TRACK);
+            if (!track) { printf("FAIL: lsmash_create_track\n"); lsmash_destroy_root(root); return 1; }
+            printf("OK: track %u\n", track);
+
+            lsmash_media_parameters_t media_params;
+            lsmash_initialize_media_parameters(&media_params);
+            media_params.timescale = 24;
+            if (lsmash_set_media_parameters(root, track, &media_params) < 0) {
+                printf("FAIL: lsmash_set_media_parameters\n"); lsmash_destroy_root(root); return 1; }
+
+            lsmash_video_summary_t *summary = (lsmash_video_summary_t*)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
+            if (!summary) { printf("FAIL: lsmash_create_summary\n"); lsmash_destroy_root(root); return 1; }
+            summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
+            summary->width = 128;
+            summary->height = 72;
+
+            printf("Adding sample entry...\n");
+            uint32_t sampleEntry = lsmash_add_sample_entry(root, track, (lsmash_summary_t*)summary);
+            if (!sampleEntry) { printf("FAIL: lsmash_add_sample_entry\n"); lsmash_destroy_root(root); return 1; }
+            printf("OK: sampleEntry %u\n", sampleEntry);
+
+            // Create a minimal fake HEVC NAL unit (5 bytes: start code + slice)
+            unsigned char fake_nal[5] = {0x00, 0x00, 0x00, 0x01, 0x41};
+            lsmash_sample_t *sample = lsmash_create_sample(16);
+            if (!sample) { printf("FAIL: lsmash_create_sample\n"); lsmash_destroy_root(root); return 1; }
+            memset(sample->data, 0, 16);
+            memcpy(sample->data, fake_nal, 5);
+            sample->length = 16;
+            sample->dts = 0;
+            sample->cts = 0;
+            sample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC;
+            sample->index = sampleEntry;
+
+            printf("Appending sample (track=%u)...\n", track);
+            if (lsmash_append_sample(root, track, sample)) {
+                printf("FAIL: lsmash_append_sample\n"); lsmash_delete_sample(sample); lsmash_destroy_root(root); return 1; }
+            printf("OK: sample appended\n");
+            sample = NULL;
+
+            printf("Finishing movie...\n");
+            lsmash_finish_movie(root, NULL);
+            printf("Closing file...\n");
+            lsmash_close_file(&params);
+            lsmash_destroy_root(root);
+            printf("OK: complete MP4 write smoke passed\n");
+            return 0;
+        }
+        MP4SMOKE
+        echo "=== Step 6: Run root smoke ==="
+        /tmp/lsmash_smoke.exe
+        echo "=== Step 7: MP4 creation smoke (tests lsmash+obuparse ABI) ==="
+        clang -g -I/usr/local/include -L/usr/local/lib /tmp/mp4_smoke.c /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a -lm -o /tmp/mp4_smoke.exe
+        cat > /tmp/mp4_smoke_lldb.cmd <<'LLDB'
+        run
+        process status
+        thread list
+        thread backtrace all
+        bt full
+        frame info
+        register read
+        disassemble --pc
+        image list
+        quit
+        LLDB
+        lldb -b -s /tmp/mp4_smoke_lldb.cmd /tmp/mp4_smoke.exe || true
+        test -s smoke.mp4
+        echo "L-SMASH smoke: PASS"
 
     # === Build x265 ===
-    - name: Setup build dirs
+    - name: Setup Build Dirs
       run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all-8b-lib build/all-12b-lib build/all
 
-    - name: Compile x265
+    - name: Compile X265
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
@@ -198,14 +306,37 @@ jobs:
         run_ninja_logged() {
           local label="$1"
           local dir="$2"
+          local jobs="${3:-}"
           local log="build/logs/${label}.log"
 
           echo "=== Verbose ninja: $dir -> $log ==="
           (
             set -o pipefail
-            ninja -C "$dir" -v 2>&1 | tee "$log"
+            if [ -n "$jobs" ]; then
+              ninja -C "$dir" -v -j "$jobs" 2>&1 | tee "$log"
+            else
+              ninja -C "$dir" -v 2>&1 | tee "$log"
+            fi
           )
         }
+
+        wait_for_jobs() {
+          local status=0
+          local pid
+
+          for pid in "$@"; do
+            if ! wait "$pid"; then
+              status=1
+            fi
+          done
+
+          return "$status"
+        }
+
+        NPROC=$(nproc)
+        NINJA_JOBS_PAIR=$(( (NPROC + 1) / 2 ))
+        NINJA_JOBS_TRIPLE=$(( (NPROC + 2) / 3 ))
+        echo "Ninja job limits: single=${NPROC}, pair=${NINJA_JOBS_PAIR}, triple=${NINJA_JOBS_TRIPLE}"
 
         summarize_thinlto_logs() {
           local compile_cmd link_cmd archive_cmd
@@ -247,6 +378,26 @@ jobs:
         }
 
         BASE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
+        cmake_common_args=(
+          -GNinja x265/source
+          -DCMAKE_PREFIX_PATH=/usr/local
+          -DENABLE_LAVF=ON
+          -DENABLE_STATIC_LAVF=ON
+          -DENABLE_MKV=ON
+          -DENABLE_LSMASH=ON
+          -DTARGET_CPU="$CPU"
+          -DENABLE_AVISYNTH=OFF
+          -DENABLE_VPYSYNTH=OFF
+          -DUSE_MIMALLOC=ON
+          -DENABLE_UNITY_BUILD=ON
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+        )
+
+        configure_x265() {
+          local build_dir="$1"
+          shift
+          cmake "${cmake_common_args[@]}" -B "$build_dir" "$@"
+        }
 
         PGO_8B_LIB_FLAG=""
         if [ -f build/x265-8b-lib.profdata ]; then
@@ -280,133 +431,102 @@ jobs:
         if [ "$FULL_BUILD" = true ]; then
           # === Configure and build 8bit CLI ===
           echo "=== Building 8bit CLI ==="
-          cmake -GNinja x265/source -B build/8b -DCMAKE_PREFIX_PATH=/usr/local \
-            -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-            -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-            -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-            -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          configure_x265 build/8b \
+            -DENABLE_SHARED=OFF \
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
             -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
           print_thinlto_cache build/8b
-          run_ninja_logged 8b build/8b &
+          run_ninja_logged 8b build/8b "$NINJA_JOBS_TRIPLE" &
+          ninja_8b_pid=$!
 
           # === Configure and build 10bit CLI ===
           echo "=== Building 10bit CLI ==="
-          cmake -GNinja x265/source -B build/10b -DCMAKE_PREFIX_PATH=/usr/local \
-            -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-            -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-            -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-            -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          configure_x265 build/10b \
+            -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
             -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
           print_thinlto_cache build/10b
-          run_ninja_logged 10b build/10b &
+          run_ninja_logged 10b build/10b "$NINJA_JOBS_TRIPLE" &
+          ninja_10b_pid=$!
 
           # === Configure and build 12bit CLI ===
           echo "=== Building 12bit CLI ==="
-          cmake -GNinja x265/source -B build/12b -DCMAKE_PREFIX_PATH=/usr/local \
-            -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-            -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-            -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-            -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          configure_x265 build/12b \
+            -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF \
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
             -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
           print_thinlto_cache build/12b
-          run_ninja_logged 12b build/12b &
+          run_ninja_logged 12b build/12b "$NINJA_JOBS_TRIPLE" &
+          ninja_12b_pid=$!
+          wait_for_jobs "$ninja_8b_pid" "$ninja_10b_pid" "$ninja_12b_pid"
+          echo "=== Full CLI builds complete ==="
         fi
 
         if [ "$FULL_BUILD" = true ]; then
           # === Configure and build 8bit multilib ===
           echo "=== Building 8bit multilib ==="
-          cmake -GNinja x265/source -B build/8b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          configure_x265 build/8b-lib \
             -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-            -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-            -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-            -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-            -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS_8B_LIB" \
             -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
           print_thinlto_cache build/8b-lib
-          run_ninja_logged 8b-lib build/8b-lib &
+          run_ninja_logged 8b-lib build/8b-lib "$NINJA_JOBS_PAIR" &
+          ninja_8b_lib_pid=$!
 
           # === Configure and build 12bit multilib ===
           echo "=== Building 12bit multilib ==="
-          cmake -GNinja x265/source -B build/12b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+          configure_x265 build/12b-lib \
             -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-            -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-            -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-            -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-            -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS_12B_LIB" \
             -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
           print_thinlto_cache build/12b-lib
-          run_ninja_logged 12b-lib build/12b-lib &
+          run_ninja_logged 12b-lib build/12b-lib "$NINJA_JOBS_PAIR" &
+          ninja_12b_lib_pid=$!
+          wait_for_jobs "$ninja_8b_lib_pid" "$ninja_12b_lib_pid"
+          echo "=== Full multilib builds complete ==="
         fi
 
-        wait
         echo "=== All CLI and multilib builds complete ==="
 
         # === Build all-bit-depth version ===
         echo "=== Building all-bit-depth version ==="
 
         echo "=== Building all-specific 8bit helper lib ==="
-        cmake -GNinja x265/source -B build/all-8b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+        configure_x265 build/all-8b-lib \
           -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         print_thinlto_cache build/all-8b-lib
-        run_ninja_logged all-8b-lib build/all-8b-lib &
+        run_ninja_logged all-8b-lib build/all-8b-lib "$NINJA_JOBS_PAIR" &
+        ninja_all_8b_lib_pid=$!
 
         echo "=== Building all-specific 12bit helper lib ==="
-        cmake -GNinja x265/source -B build/all-12b-lib -DCMAKE_PREFIX_PATH=/usr/local \
+        configure_x265 build/all-12b-lib \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         print_thinlto_cache build/all-12b-lib
-        run_ninja_logged all-12b-lib build/all-12b-lib
+        run_ninja_logged all-12b-lib build/all-12b-lib "$NINJA_JOBS_PAIR" &
+        ninja_all_12b_lib_pid=$!
+        wait_for_jobs "$ninja_all_8b_lib_pid" "$ninja_all_12b_lib_pid"
 
         cp build/all-8b-lib/libx265.a build/all/libx265_8b.a
         cp build/all-12b-lib/libx265.a build/all/libx265_12b.a
 
-        cmake -GNinja x265/source -B build/all -DCMAKE_PREFIX_PATH=/usr/local \
+        configure_x265 build/all \
           -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
           -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
-          -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DHIGH_BIT_DEPTH=ON \
-          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_MKV=ON -DENABLE_LSMASH=ON -DTARGET_CPU=$CPU \
-          -DUSE_MIMALLOC=ON -DENABLE_UNITY_BUILD=ON \
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
-          -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
-        print_thinlto_cache build/all
+          -DOBUPARSE_LIBRARY=/usr/local/lib/libobuparse.a \
+          -DCMAKE_EXE_LINKER_FLAGS=""
+        echo "=== All builds complete ==="
         run_ninja_logged all build/all
-        summarize_thinlto_logs
         echo "=== All builds complete ==="
 
-        # Strip built executables
-        if [ "$FULL_BUILD" = true ]; then
-          strip -s build/8b/x265.exe
-          strip -s build/10b/x265.exe
-          strip -s build/12b/x265.exe
-        fi
-        strip -s build/all/x265.exe
+        echo "Keeping built executables unstripped until packaging"
 
-    - name: RAW smoke (all CLI)
+    - name: RAW Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p smoke_raw.y4m
@@ -418,7 +538,7 @@ jobs:
         grep -q "width=160" smoke_raw_probe.txt
         grep -q "height=90" smoke_raw_probe.txt
 
-    - name: MKV smoke (all CLI)
+    - name: MKV Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p smoke_mkv.y4m
@@ -434,7 +554,7 @@ jobs:
         grep -q "height=90" smoke_mkv_stream.txt
         grep -q "nb_read_frames=12" smoke_mkv_count.txt
 
-    - name: LAVF input smoke (all CLI)
+    - name: LAVF Input Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p -c:v ffv1 smoke_lavf_input.mkv
@@ -446,7 +566,7 @@ jobs:
         grep -q "width=160" smoke_lavf_probe.txt
         grep -q "height=90" smoke_lavf_probe.txt
 
-    - name: qpfile smoke (all CLI)
+    - name: QPFile Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
         cat > smoke_qpfile.txt <<'EOF'
@@ -461,7 +581,7 @@ jobs:
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_qpfile.hevc > smoke_qpfile_count.txt
         grep -q "nb_read_frames=12" smoke_qpfile_count.txt
 
-    - name: zonefile smoke (all CLI)
+    - name: Zonefile Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
         cat > smoke_zonefile.txt <<'EOF'
@@ -474,7 +594,7 @@ jobs:
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_zonefile.hevc > smoke_zonefile_count.txt
         grep -q "nb_read_frames=12" smoke_zonefile_count.txt
 
-    - name: Recon smoke (all CLI)
+    - name: Recon Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p smoke_recon.y4m
@@ -483,38 +603,99 @@ jobs:
         test -s smoke_recon_out.y4m
         grep -q '^YUV4MPEG2 ' smoke_recon_out.y4m
 
-    - name: MP4 smoke (all CLI)
+    - name: Prepare MP4 Smoke Helpers
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        cat > mp4_smoke_helpers.sh <<'EOF'
+        make_y4m() {
+          local output="$1"
+          local rate="$2"
+          local frames="$3"
+          local pix_fmt="$4"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i "testsrc2=size=128x72:rate=${rate}" -frames:v "$frames" -pix_fmt "$pix_fmt" "$output"
+        }
+
+        probe_mp4() {
+          local prefix="$1"
+          local mp4="$2"
+          local packet_entries="$3"
+          ffprobe -v error -show_streams -select_streams v:0 "$mp4" > "${prefix}_stream.txt"
+          ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 "$mp4" > "${prefix}_timing.txt"
+          ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 "$mp4" > "${prefix}_format.txt"
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 "$mp4" > "${prefix}_count.txt"
+          ffprobe -v error -show_packets -select_streams v:0 -show_entries "packet=${packet_entries}" -of csv=p=0 "$mp4" > "${prefix}_packets.csv"
+          ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 "$mp4" > "${prefix}_frames.csv"
+        }
+
+        assert_common_mp4() {
+          local prefix="$1"
+          local width="$2"
+          local height="$3"
+          local pix_fmt="$4"
+          local fps="$5"
+          local frames="$6"
+          local time_base="$7"
+          grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" "${prefix}_format.txt"
+          grep -q "codec_name=hevc" "${prefix}_stream.txt"
+          grep -q "codec_tag_string=hvc1" "${prefix}_stream.txt"
+          grep -q "codec_type=video" "${prefix}_stream.txt"
+          grep -q "width=${width}" "${prefix}_stream.txt"
+          grep -q "height=${height}" "${prefix}_stream.txt"
+          grep -q "pix_fmt=${pix_fmt}" "${prefix}_stream.txt"
+          awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' "${prefix}_stream.txt"
+          grep -q "time_base=${time_base}" "${prefix}_timing.txt"
+          if grep -q '^nal_length_size=' "${prefix}_timing.txt"; then grep -q "nal_length_size=4" "${prefix}_timing.txt"; fi
+          grep -q "r_frame_rate=${fps}" "${prefix}_timing.txt"
+          grep -q "avg_frame_rate=${fps}" "${prefix}_timing.txt"
+          grep -q "nb_read_frames=${frames}" "${prefix}_count.txt"
+          test -s "${prefix}_timing.txt"
+          test -s "${prefix}_format.txt"
+          test -s "${prefix}_count.txt"
+          test -s "${prefix}_packets.csv"
+          test -s "${prefix}_frames.csv"
+        }
+
+        assert_mp4_markers() {
+          local mp4="$1"
+          shift
+          python - "$mp4" "$@" <<'PY'
+        from pathlib import Path
+        import sys
+        data = Path(sys.argv[1]).read_bytes()
+        for marker in (arg.encode('ascii') for arg in sys.argv[2:]):
+            if marker not in data:
+                raise SystemExit(f'missing MP4 marker: {marker!r}')
+        PY
+        }
+        EOF
+
+    - name: MP4 Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
         trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke mp4 diagnostics ==="; for f in smoke_format.txt smoke_stream.txt smoke_timing.txt smoke_count.txt smoke_packets.csv smoke_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke.y4m
-        build/all/x265.exe --input smoke.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --no-open-gop --output smoke.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke.mp4 > smoke_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke.mp4 > smoke_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke.mp4 > smoke_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke.mp4 > smoke_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke.mp4 > smoke_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke.mp4 > smoke_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_format.txt
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke.y4m 24 16 yuv420p
+        if build/all/x265.exe --input smoke.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --no-open-gop --output smoke.mp4; then
+          :
+        else
+          status=$?
+          cat > smoke_lldb.cmd <<'LLDB'
+        run --input smoke.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --no-open-gop --output smoke.mp4
+        process status
+        thread list
+        thread backtrace all
+        frame info
+        register read
+        disassemble --pc
+        image list
+        quit
+        LLDB
+          lldb -b -s smoke_lldb.cmd build/all/x265.exe || true
+          exit $status
+        fi
+        probe_mp4 smoke smoke.mp4 flags
+        assert_common_mp4 smoke 128 72 yuv420p 24/1 16 1/24000
         grep -q "duration=" smoke_format.txt
-        grep -q "codec_name=hevc" smoke_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_stream.txt
-        grep -q "codec_type=video" smoke_stream.txt
-        grep -q "width=128" smoke_stream.txt
-        grep -q "height=72" smoke_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_stream.txt
-        grep -q "time_base=" smoke_timing.txt
-        grep -q "time_base=1/24000" smoke_timing.txt
-        if grep -q '^nal_length_size=' smoke_timing.txt; then grep -q "nal_length_size=4" smoke_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_timing.txt
-        grep -q "nb_read_frames=16" smoke_count.txt
-        test -s smoke_timing.txt
-        test -s smoke_format.txt
-        test -s smoke_count.txt
-        test -s smoke_packets.csv
-        test -s smoke_frames.csv
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
@@ -530,37 +711,15 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_timing.txt
 
-    - name: MP4 smoke (all CLI open GOP)
+    - name: MP4 Smoke (All CLI Open GOP)
       if: matrix.target_cpu == 'x86-64'
       run: |
         trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke open-gop diagnostics ==="; for f in smoke_open_format.txt smoke_open_stream.txt smoke_open_timing.txt smoke_open_count.txt smoke_open_packets.csv smoke_open_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_open.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_open.y4m 24 16 yuv420p
         build/all/x265.exe --input smoke_open.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --open-gop --output smoke_open.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_open.mp4 > smoke_open_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_open.mp4 > smoke_open_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_open.mp4 > smoke_open_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_open.mp4 > smoke_open_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_open.mp4 > smoke_open_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_open.mp4 > smoke_open_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_open_format.txt
-        grep -q "codec_name=hevc" smoke_open_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_open_stream.txt
-        grep -q "codec_type=video" smoke_open_stream.txt
-        grep -q "width=128" smoke_open_stream.txt
-        grep -q "height=72" smoke_open_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_open_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_open_stream.txt
-        grep -q "time_base=" smoke_open_timing.txt
-        grep -q "time_base=1/24000" smoke_open_timing.txt
-        if grep -q '^nal_length_size=' smoke_open_timing.txt; then grep -q "nal_length_size=4" smoke_open_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_open_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_open_timing.txt
-        grep -q "nb_read_frames=16" smoke_open_count.txt
-        test -s smoke_open_timing.txt
-        test -s smoke_open_format.txt
-        test -s smoke_open_count.txt
-        test -s smoke_open_packets.csv
-        test -s smoke_open_frames.csv
+        probe_mp4 smoke_open smoke_open.mp4 pts_time,dts_time,flags
+        assert_common_mp4 smoke_open 128 72 yuv420p 24/1 16 1/24000
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_open_packets.csv
         awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_open_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_open_frames.csv
@@ -570,39 +729,18 @@ jobs:
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_open_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_open_frames.csv
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_open_packets.csv
+        assert_mp4_markers smoke_open.mp4 iso6 sgpd sbgp 'rap '
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_open_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_open_timing.txt
 
-    - name: MP4 smoke (all CLI CRA)
+    - name: MP4 Smoke (All CLI CRA)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_cra.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_cra.y4m 24 16 yuv420p
         build/all/x265.exe --input smoke_cra.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 1 --min-keyint 1 --cra-nal --output smoke_cra.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_cra.mp4 > smoke_cra_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_cra.mp4 > smoke_cra_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_cra.mp4 > smoke_cra_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_cra.mp4 > smoke_cra_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_cra.mp4 > smoke_cra_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_cra.mp4 > smoke_cra_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_cra_format.txt
-        grep -q "codec_name=hevc" smoke_cra_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_cra_stream.txt
-        grep -q "codec_type=video" smoke_cra_stream.txt
-        grep -q "width=128" smoke_cra_stream.txt
-        grep -q "height=72" smoke_cra_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_cra_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_cra_stream.txt
-        grep -q "time_base=" smoke_cra_timing.txt
-        grep -q "time_base=1/24000" smoke_cra_timing.txt
-        if grep -q '^nal_length_size=' smoke_cra_timing.txt; then grep -q "nal_length_size=4" smoke_cra_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_cra_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_cra_timing.txt
-        grep -q "nb_read_frames=16" smoke_cra_count.txt
-        test -s smoke_cra_timing.txt
-        test -s smoke_cra_format.txt
-        test -s smoke_cra_count.txt
-        test -s smoke_cra_packets.csv
-        test -s smoke_cra_frames.csv
+        probe_mp4 smoke_cra smoke_cra.mp4 flags
+        assert_common_mp4 smoke_cra 128 72 yuv420p 24/1 16 1/24000
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_cra_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_cra_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) != ($3+0)) exit 1 } END { if (NR != 16) exit 1 }' smoke_cra_frames.csv
@@ -614,43 +752,21 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_cra_timing.txt
         awk -F, 'BEGIN { first=""; last=""; step="" } $2 != "N/A" { curr = $2+0; if (first == "") first = curr; if (last != "" && step == "") step = curr - last; last = curr } END { if (first == "" || last == "" || step == "") exit 1; span = (last - first) + step; if (span < 0.60 || span > 0.75) exit 1 }' smoke_cra_frames.csv
 
-    - name: MP4 smoke (all CLI single frame)
+    - name: MP4 Smoke (All CLI Single Frame)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 1 -pix_fmt yuv420p smoke_single.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_single.y4m 24 1 yuv420p
         build/all/x265.exe --input smoke_single.y4m --input-res 128x72 --fps 24 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_single.mp4 > smoke_single_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_single.mp4 > smoke_single_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_single.mp4 > smoke_single_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_single.mp4 > smoke_single_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_single.mp4 > smoke_single_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_single.mp4 > smoke_single_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_single_format.txt
-        grep -q "codec_name=hevc" smoke_single_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_single_stream.txt
-        grep -q "codec_type=video" smoke_single_stream.txt
-        grep -q "width=128" smoke_single_stream.txt
-        grep -q "height=72" smoke_single_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_single_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_single_stream.txt
-        grep -q "time_base=" smoke_single_timing.txt
-        grep -q "time_base=1/24000" smoke_single_timing.txt
-        if grep -q '^nal_length_size=' smoke_single_timing.txt; then grep -q "nal_length_size=4" smoke_single_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_single_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_single_timing.txt
-        grep -q "nb_read_frames=1" smoke_single_count.txt
-        test -s smoke_single_timing.txt
-        test -s smoke_single_format.txt
-        test -s smoke_single_count.txt
-        test -s smoke_single_packets.csv
-        test -s smoke_single_frames.csv
+        probe_mp4 smoke_single smoke_single.mp4 flags
+        assert_common_mp4 smoke_single 128 72 yuv420p 24/1 1 1/24000
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_packets.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frames.csv
         awk -F, 'NR == 1 { if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($2+0) != ($3+0)) exit 1; if (($2+0) < -0.001 || ($2+0) > 0.05) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frames.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.02 || d > 0.08) exit 1 }' smoke_single_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.02 || d > 0.08) exit 1 }' smoke_single_timing.txt
 
-    - name: MP4 smoke (all CLI frames=0 means encode available input)
+    - name: MP4 Smoke (All CLI Frames=0 Means Encode Available Input)
       if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 1 -pix_fmt yuv420p smoke_zero.y4m
@@ -660,42 +776,38 @@ jobs:
         grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_zero_format.txt
         grep -q "nb_read_frames=1" smoke_zero_count.txt
 
-    - name: MP4 smoke (all CLI single frame 24000/1001)
+    - name: MP4 Smoke (All CLI Single Frame 24000/1001)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24000/1001 -frames:v 1 -pix_fmt yuv420p smoke_single_frac.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_single_frac.y4m 24000/1001 1 yuv420p
         build/all/x265.exe --input smoke_single_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single_frac.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_single_frac.mp4 > smoke_single_frac_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_single_frac.mp4 > smoke_single_frac_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_single_frac.mp4 > smoke_single_frac_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_single_frac.mp4 > smoke_single_frac_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=flags -of csv=p=0 smoke_single_frac.mp4 > smoke_single_frac_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_single_frac.mp4 > smoke_single_frac_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_single_frac_format.txt
-        grep -q "codec_name=hevc" smoke_single_frac_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_single_frac_stream.txt
-        grep -q "codec_type=video" smoke_single_frac_stream.txt
-        grep -q "width=128" smoke_single_frac_stream.txt
-        grep -q "height=72" smoke_single_frac_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_single_frac_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_single_frac_stream.txt
-        grep -q "time_base=1/24000" smoke_single_frac_timing.txt
-        if grep -q '^nal_length_size=' smoke_single_frac_timing.txt; then grep -q "nal_length_size=4" smoke_single_frac_timing.txt; fi
-        grep -q "r_frame_rate=24000/1001" smoke_single_frac_timing.txt
-        grep -q "avg_frame_rate=24000/1001" smoke_single_frac_timing.txt
-        grep -q "nb_read_frames=1" smoke_single_frac_count.txt
-        test -s smoke_single_frac_timing.txt
-        test -s smoke_single_frac_format.txt
-        test -s smoke_single_frac_count.txt
-        test -s smoke_single_frac_packets.csv
-        test -s smoke_single_frac_frames.csv
+        probe_mp4 smoke_single_frac smoke_single_frac.mp4 flags
+        assert_common_mp4 smoke_single_frac 128 72 yuv420p 24000/1001 1 1/24000
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frac_packets.csv
         awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frac_frames.csv
         awk -F, 'NR == 1 { if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($2+0) != ($3+0)) exit 1; if (($2+0) < -0.001 || ($2+0) > 0.06) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frac_frames.csv
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.03 || d > 0.06) exit 1 }' smoke_single_frac_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.03 || d > 0.06) exit 1 }' smoke_single_frac_timing.txt
 
-    - name: MP4 smoke (all CLI strict-cbr fails)
+    - name: MP4 Smoke (All CLI VUI Metadata)
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_vui.y4m 24 4 yuv420p
+        build/all/x265.exe --input smoke_vui.y4m --input-res 128x72 --fps 24 --frames 4 --bframes 0 --keyint 4 --min-keyint 4 --sar 4:3 --range limited --colorprim bt709 --transfer bt709 --colormatrix bt709 --output smoke_vui.mp4
+        probe_mp4 smoke_vui smoke_vui.mp4 flags
+        assert_common_mp4 smoke_vui 128 72 yuv420p 24/1 4 1/24000
+        grep -q "sample_aspect_ratio=4:3" smoke_vui_stream.txt
+        grep -q "display_aspect_ratio=64:27" smoke_vui_stream.txt
+        grep -q "color_range=tv" smoke_vui_stream.txt
+        grep -q "color_space=bt709" smoke_vui_stream.txt
+        grep -q "color_transfer=bt709" smoke_vui_stream.txt
+        grep -q "color_primaries=bt709" smoke_vui_stream.txt
+        assert_mp4_markers smoke_vui.mp4 iso6 colr
+        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 4) exit 1 }' smoke_vui_packets.csv
+
+    - name: MP4 Smoke (All CLI Strict-CBR Fails)
       if: matrix.target_cpu == 'x86-64'
       run: |
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_strict_cbr.y4m
@@ -710,37 +822,15 @@ jobs:
           }
         fi
 
-    - name: MP4 smoke (all CLI 24000/1001)
+    - name: MP4 Smoke (All CLI 24000/1001)
       if: matrix.target_cpu == 'x86-64'
       run: |
         trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke frac diagnostics ==="; for f in smoke_frac_format.txt smoke_frac_stream.txt smoke_frac_timing.txt smoke_frac_count.txt smoke_frac_packets.csv smoke_frac_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24000/1001 -frames:v 24 -pix_fmt yuv420p smoke_frac.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_frac.y4m 24000/1001 24 yuv420p
         build/all/x265.exe --input smoke_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 24 --bframes 4 --keyint 12 --min-keyint 12 --no-open-gop --output smoke_frac.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_frac.mp4 > smoke_frac_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_frac.mp4 > smoke_frac_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_frac.mp4 > smoke_frac_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_frac.mp4 > smoke_frac_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_frac.mp4 > smoke_frac_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_frac.mp4 > smoke_frac_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_frac_format.txt
-        grep -q "codec_name=hevc" smoke_frac_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_frac_stream.txt
-        grep -q "codec_type=video" smoke_frac_stream.txt
-        grep -q "width=128" smoke_frac_stream.txt
-        grep -q "height=72" smoke_frac_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_frac_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_frac_stream.txt
-        grep -q "time_base=" smoke_frac_timing.txt
-        grep -q "time_base=1/24000" smoke_frac_timing.txt
-        if grep -q '^nal_length_size=' smoke_frac_timing.txt; then grep -q "nal_length_size=4" smoke_frac_timing.txt; fi
-        grep -q "r_frame_rate=24000/1001" smoke_frac_timing.txt
-        grep -q "avg_frame_rate=24000/1001" smoke_frac_timing.txt
-        grep -q "nb_read_frames=24" smoke_frac_count.txt
-        test -s smoke_frac_timing.txt
-        test -s smoke_frac_format.txt
-        test -s smoke_frac_count.txt
-        test -s smoke_frac_packets.csv
-        test -s smoke_frac_frames.csv
+        probe_mp4 smoke_frac smoke_frac.mp4 pts_time,dts_time,flags
+        assert_common_mp4 smoke_frac 128 72 yuv420p 24000/1001 24 1/24000
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 24) exit 1 }' smoke_frac_packets.csv
         awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frac_packets.csv
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 13) exit 1 } END { if (kf < 2) exit 1 }' smoke_frac_packets.csv
@@ -754,37 +844,15 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.95 || d > 1.10) exit 1 }' smoke_frac_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.95 || d > 1.10) exit 1 }' smoke_frac_timing.txt
 
-    - name: MP4 smoke (all CLI B-pyramid)
+    - name: MP4 Smoke (All CLI B-Pyramid)
       if: matrix.target_cpu == 'x86-64'
       run: |
         trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke bpyramid diagnostics ==="; for f in smoke_bpyramid_format.txt smoke_bpyramid_stream.txt smoke_bpyramid_timing.txt smoke_bpyramid_count.txt smoke_bpyramid_packets.csv smoke_bpyramid_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_bpyramid.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_bpyramid.y4m 24 16 yuv420p
         build/all/x265.exe --input smoke_bpyramid.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --b-pyramid --keyint 8 --min-keyint 8 --no-open-gop --output smoke_bpyramid.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_bpyramid.mp4 > smoke_bpyramid_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_bpyramid.mp4 > smoke_bpyramid_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_bpyramid.mp4 > smoke_bpyramid_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_bpyramid.mp4 > smoke_bpyramid_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_bpyramid.mp4 > smoke_bpyramid_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_bpyramid.mp4 > smoke_bpyramid_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_bpyramid_format.txt
-        grep -q "codec_name=hevc" smoke_bpyramid_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_bpyramid_stream.txt
-        grep -q "codec_type=video" smoke_bpyramid_stream.txt
-        grep -q "width=128" smoke_bpyramid_stream.txt
-        grep -q "height=72" smoke_bpyramid_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_bpyramid_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_bpyramid_stream.txt
-        grep -q "time_base=" smoke_bpyramid_timing.txt
-        grep -q "time_base=1/24000" smoke_bpyramid_timing.txt
-        if grep -q '^nal_length_size=' smoke_bpyramid_timing.txt; then grep -q "nal_length_size=4" smoke_bpyramid_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_bpyramid_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_bpyramid_timing.txt
-        grep -q "nb_read_frames=16" smoke_bpyramid_count.txt
-        test -s smoke_bpyramid_timing.txt
-        test -s smoke_bpyramid_format.txt
-        test -s smoke_bpyramid_count.txt
-        test -s smoke_bpyramid_packets.csv
-        test -s smoke_bpyramid_frames.csv
+        probe_mp4 smoke_bpyramid smoke_bpyramid.mp4 pts_time,dts_time,flags
+        assert_common_mp4 smoke_bpyramid 128 72 yuv420p 24/1 16 1/24000
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_bpyramid_packets.csv
         awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_bpyramid_packets.csv
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_bpyramid_packets.csv
@@ -796,36 +864,14 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_bpyramid_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_bpyramid_timing.txt
 
-    - name: MP4 smoke (all CLI AUD request stays valid)
+    - name: MP4 Smoke (All CLI AUD Request Stays Valid)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_aud.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_aud.y4m 24 16 yuv420p
         build/all/x265.exe --input smoke_aud.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --aud --output smoke_aud.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_aud.mp4 > smoke_aud_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_aud.mp4 > smoke_aud_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_aud.mp4 > smoke_aud_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_aud.mp4 > smoke_aud_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_aud.mp4 > smoke_aud_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_aud.mp4 > smoke_aud_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_aud_format.txt
-        grep -q "codec_name=hevc" smoke_aud_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_aud_stream.txt
-        grep -q "codec_type=video" smoke_aud_stream.txt
-        grep -q "width=128" smoke_aud_stream.txt
-        grep -q "height=72" smoke_aud_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_aud_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_aud_stream.txt
-        grep -q "time_base=" smoke_aud_timing.txt
-        grep -q "time_base=1/24000" smoke_aud_timing.txt
-        if grep -q '^nal_length_size=' smoke_aud_timing.txt; then grep -q "nal_length_size=4" smoke_aud_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_aud_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_aud_timing.txt
-        grep -q "nb_read_frames=16" smoke_aud_count.txt
-        test -s smoke_aud_timing.txt
-        test -s smoke_aud_format.txt
-        test -s smoke_aud_count.txt
-        test -s smoke_aud_packets.csv
-        test -s smoke_aud_frames.csv
+        probe_mp4 smoke_aud smoke_aud.mp4 pts_time,dts_time,flags
+        assert_common_mp4 smoke_aud 128 72 yuv420p 24/1 16 1/24000
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_aud_packets.csv
         awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_aud_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_aud_frames.csv
@@ -836,36 +882,14 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_aud_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_aud_timing.txt
 
-    - name: MP4 smoke (all CLI EOS/EOB request stays valid)
+    - name: MP4 Smoke (All CLI EOS/EOB Request Stays Valid)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_eos.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_eos.y4m 24 16 yuv420p
         build/all/x265.exe --input smoke_eos.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --eos --eob --output smoke_eos.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_eos.mp4 > smoke_eos_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_eos.mp4 > smoke_eos_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_eos.mp4 > smoke_eos_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_eos.mp4 > smoke_eos_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_eos.mp4 > smoke_eos_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_eos.mp4 > smoke_eos_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_eos_format.txt
-        grep -q "codec_name=hevc" smoke_eos_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_eos_stream.txt
-        grep -q "codec_type=video" smoke_eos_stream.txt
-        grep -q "width=128" smoke_eos_stream.txt
-        grep -q "height=72" smoke_eos_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_eos_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_eos_stream.txt
-        grep -q "time_base=" smoke_eos_timing.txt
-        grep -q "time_base=1/24000" smoke_eos_timing.txt
-        if grep -q '^nal_length_size=' smoke_eos_timing.txt; then grep -q "nal_length_size=4" smoke_eos_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_eos_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_eos_timing.txt
-        grep -q "nb_read_frames=16" smoke_eos_count.txt
-        test -s smoke_eos_timing.txt
-        test -s smoke_eos_format.txt
-        test -s smoke_eos_count.txt
-        test -s smoke_eos_packets.csv
-        test -s smoke_eos_frames.csv
+        probe_mp4 smoke_eos smoke_eos.mp4 pts_time,dts_time,flags
+        assert_common_mp4 smoke_eos 128 72 yuv420p 24/1 16 1/24000
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_eos_packets.csv
         awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_eos_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_eos_frames.csv
@@ -876,36 +900,14 @@ jobs:
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_eos_format.txt
         awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_eos_timing.txt
 
-    - name: MP4 smoke (all CLI IDR recovery SEI)
+    - name: MP4 Smoke (All CLI IDR Recovery SEI)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_recovery.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_recovery.y4m 24 16 yuv420p
         build/all/x265.exe --input smoke_recovery.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --idr-recovery-sei --output smoke_recovery.mp4
-        ffprobe -v error -show_streams -select_streams v:0 smoke_recovery.mp4 > smoke_recovery_stream.txt
-        ffprobe -v error -show_entries stream=time_base,r_frame_rate,avg_frame_rate,duration,nal_length_size -select_streams v:0 -of default=noprint_wrappers=1 smoke_recovery.mp4 > smoke_recovery_timing.txt
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_recovery.mp4 > smoke_recovery_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_recovery.mp4 > smoke_recovery_count.txt
-        ffprobe -v error -show_packets -select_streams v:0 -show_entries packet=pts_time,dts_time,flags -of csv=p=0 smoke_recovery.mp4 > smoke_recovery_packets.csv
-        ffprobe -v error -select_streams v:0 -show_entries frame=pts_time,pkt_dts_time,pkt_duration_time,key_frame -of csv=p=0 smoke_recovery.mp4 > smoke_recovery_frames.csv
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_recovery_format.txt
-        grep -q "codec_name=hevc" smoke_recovery_stream.txt
-        grep -q "codec_tag_string=hvc1" smoke_recovery_stream.txt
-        grep -q "codec_type=video" smoke_recovery_stream.txt
-        grep -q "width=128" smoke_recovery_stream.txt
-        grep -q "height=72" smoke_recovery_stream.txt
-        grep -q "pix_fmt=yuv420p" smoke_recovery_stream.txt
-        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_recovery_stream.txt
-        grep -q "time_base=" smoke_recovery_timing.txt
-        grep -q "time_base=1/24000" smoke_recovery_timing.txt
-        if grep -q '^nal_length_size=' smoke_recovery_timing.txt; then grep -q "nal_length_size=4" smoke_recovery_timing.txt; fi
-        grep -q "r_frame_rate=24/1" smoke_recovery_timing.txt
-        grep -q "avg_frame_rate=24/1" smoke_recovery_timing.txt
-        grep -q "nb_read_frames=16" smoke_recovery_count.txt
-        test -s smoke_recovery_timing.txt
-        test -s smoke_recovery_format.txt
-        test -s smoke_recovery_count.txt
-        test -s smoke_recovery_packets.csv
-        test -s smoke_recovery_frames.csv
+        probe_mp4 smoke_recovery smoke_recovery.mp4 pts_time,dts_time,flags
+        assert_common_mp4 smoke_recovery 128 72 yuv420p 24/1 16 1/24000
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_recovery_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_recovery_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) != ($3+0)) exit 1 } END { if (NR != 16) exit 1 }' smoke_recovery_frames.csv
@@ -920,35 +922,44 @@ jobs:
       run: |
         mkdir dist
         if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          strip -s build/8b/x265.exe
+          strip -s build/10b/x265.exe
+          strip -s build/12b/x265.exe
           cp build/8b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-8bit.exe
           cp build/10b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-10bit.exe
           cp build/12b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-12bit.exe
         fi
+        strip -s build/all/x265.exe
         cp build/all/x265.exe dist/x265-win64-${{matrix.target_cpu}}-all.exe
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.ci_version.outputs.version }}
-        path: dist/*
-        compression-level: 9
+    - name: Set Package Version
+      id: package_version
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${{ steps.tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=${{ steps.ci_version.outputs.version }}" >> "$GITHUB_OUTPUT"
+        fi
 
-    - name: Compress for release
-      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    - name: Compress Package
       run: |
         cd dist
-        7za a -t7z -mx=9 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z \
-          x265-win64-${{matrix.target_cpu}}-8bit.exe \
-          x265-win64-${{matrix.target_cpu}}-10bit.exe \
-          x265-win64-${{matrix.target_cpu}}-12bit.exe \
-          x265-win64-${{matrix.target_cpu}}-all.exe
+        7za a -t7z -mx=9 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z ./*.exe
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}
+        path: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z
+        compression-level: 0
 
     - name: Release
       uses: softprops/action-gh-release@v3
       if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
       with:
         tag_name: ${{ steps.tag.outputs.version }}
-        files: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.tag.outputs.version }}.7z
+        files: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true

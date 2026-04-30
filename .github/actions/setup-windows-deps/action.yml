@@ -21,10 +21,54 @@ inputs:
     description: Whether to build and install mimalloc
     required: false
     default: 'true'
-  obuparse-cache-key:
-    description: Cache key for obuparse install artifacts
+  obuparse-ref:
+    description: obuparse ref to checkout
     required: false
-    default: obuparse-latest-clang-v1
+    default: v2.0.2
+  obuparse-cache-suffix:
+    description: Cache suffix appended after the obuparse ref
+    required: false
+    default: clang-v1
+  lsmash-repository:
+    description: L-SMASH repository to checkout
+    required: false
+    default: vimeo/l-smash
+  lsmash-ref:
+    description: L-SMASH ref to checkout
+    required: false
+    default: 04e39f1fb232c332d4b04a1043c02c7c2d282d00
+  lsmash-cache-suffix:
+    description: Cache suffix appended after the L-SMASH ref
+    required: false
+    default: clang-coff-refptr-v2
+  lsmash-path:
+    description: L-SMASH checkout path
+    required: false
+    default: l-smash
+  lsmash-patch-path:
+    description: Patch path relative to the checked-out L-SMASH directory
+    required: false
+    default: ../x265/.github/patches/l-smash-clang-coff-refptr.patch
+  lsmash-patch-check-paths:
+    description: Paths passed to git diff --check --cached after applying the L-SMASH patch
+    required: false
+    default: codecs/av1_obu.c codecs/description.c codecs/hevc.c codecs/mp4a.c codecs/mp4sys.c codecs/nalu.c core/box.c core/box_default.c core/box_default.h core/isom.c core/print.c core/read.c core/write.c
+  lsmash-extra-cflags:
+    description: Extra CFLAGS passed to L-SMASH configure
+    required: false
+    default: -I/usr/local/include -O3 -DNDEBUG -fno-lto -fno-pic -fno-pie
+  lsmash-extra-ldflags:
+    description: Extra LDFLAGS passed to L-SMASH configure
+    required: false
+    default: -L/usr/local/lib -fno-lto -fno-pic
+  lsmash-install-prefix:
+    description: Install prefix passed to L-SMASH configure
+    required: false
+    default: /usr/local
+  lsmash-cc:
+    description: C compiler passed to L-SMASH configure
+    required: false
+    default: clang
   extra-msys2-packages:
     description: Extra MSYS2 packages to install
     required: false
@@ -40,12 +84,19 @@ runs:
         path: ffmpeg
         key: ffmpeg-${{ inputs.ffmpeg-ref }}-${{ inputs.ffmpeg-cache-suffix }}
 
-    - name: Cache obuparse
+    - name: Cache Obuparse
       id: cache-obuparse
       uses: actions/cache@v5
       with:
         path: obuparse-install
-        key: ${{ inputs.obuparse-cache-key }}
+        key: obuparse-${{ inputs.obuparse-ref }}-${{ inputs.obuparse-cache-suffix }}
+
+    - name: Cache L-SMASH
+      id: cache-lsmash
+      uses: actions/cache@v5
+      with:
+        path: lsmash-install
+        key: lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}
 
     - name: Checkout FFmpeg
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -63,12 +114,21 @@ runs:
         repository: microsoft/mimalloc
         ref: ${{ inputs.mimalloc-ref }}
 
-    - name: Checkout obuparse
+    - name: Checkout Obuparse
       if: steps.cache-obuparse.outputs.cache-hit != 'true'
       uses: actions/checkout@v6
       with:
         path: obuparse
         repository: dwbuiten/obuparse
+        ref: ${{ inputs.obuparse-ref }}
+
+    - name: Checkout L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+      uses: actions/checkout@v6
+      with:
+        path: ${{ inputs.lsmash-path }}
+        repository: ${{ inputs.lsmash-repository }}
+        ref: ${{ inputs.lsmash-ref }}
 
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
@@ -103,7 +163,7 @@ runs:
         ${{ inputs.ffmpeg-configure }}
         make -j$(nproc)
 
-    - name: Get rid of .dll.a
+    - name: Remove .dll.a Import Libraries
       shell: msys2 {0}
       run: find /*64/ /usr/ -type f -name "*.dll.a" -print -delete
 
@@ -131,7 +191,7 @@ runs:
           break
         done
 
-    - name: Compile obuparse
+    - name: Compile Obuparse
       if: steps.cache-obuparse.outputs.cache-hit != 'true'
       shell: msys2 {0}
       working-directory: obuparse
@@ -144,9 +204,46 @@ runs:
         cp /usr/local/lib/libobuparse.a obuparse-install/lib/
         mv obuparse-install "$GITHUB_WORKSPACE/"
 
-    - name: Install cached obuparse
+    - name: Install Cached Obuparse
       if: steps.cache-obuparse.outputs.cache-hit == 'true'
       shell: msys2 {0}
       run: |
-        cp obuparse-install/include/* /usr/local/include/
-        cp obuparse-install/lib/* /usr/local/lib/
+        cp -R obuparse-install/include/. /usr/local/include/
+        cp -R obuparse-install/lib/. /usr/local/lib/
+
+    - name: Compile L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+      working-directory: ${{ inputs.lsmash-path }}
+      env:
+        MSYSTEM: CLANG64
+      shell: msys2 {0}
+      run: |
+        set -x
+        export PATH="/clang64/bin:/usr/bin:/mingw64/bin"
+        hash -r
+        clang --version
+
+        git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
+        git diff --check --cached -- ${{ inputs.lsmash-patch-check-paths }}
+
+        LSMASH_CFLAGS="${{ inputs.lsmash-extra-cflags }}"
+        LSMASH_LDFLAGS="${{ inputs.lsmash-extra-ldflags }}"
+        ./configure --prefix=${{ inputs.lsmash-install-prefix }} --cc=${{ inputs.lsmash-cc }} --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
+        make clean
+        make lib -j$(nproc)
+        make install-lib
+
+        mkdir -p lsmash-install/include lsmash-install/lib/pkgconfig
+        cp /usr/local/include/lsmash.h lsmash-install/include/
+        cp /usr/local/lib/liblsmash.a lsmash-install/lib/
+        if [ -d /usr/local/lib/pkgconfig ]; then
+          cp -R /usr/local/lib/pkgconfig/. lsmash-install/lib/pkgconfig/
+        fi
+        mv lsmash-install "$GITHUB_WORKSPACE/"
+
+    - name: Install Cached L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit == 'true'
+      shell: msys2 {0}
+      run: |
+        cp -R lsmash-install/include/. /usr/local/include/
+        cp -R lsmash-install/lib/. /usr/local/lib/

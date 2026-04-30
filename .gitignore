@@ -34,3 +34,9 @@
 # Build directory
 build/
 
+/.*/
+!/.github/
+!/.github/workflows/
+!/.github/patches/
+!/.github/patches/*.patch
+Status.md

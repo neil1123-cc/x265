@@ -35,19 +35,20 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-    - name: Checkout x265
+    - name: Checkout X265
       uses: actions/checkout@v6
       with:
         path: x265
         fetch-depth: 0
+        fetch-tags: true
 
-    - name: Get latest tag
+    - name: Get Latest Tag
       id: tag
       shell: bash
       working-directory: x265
       run: echo "version=$(git describe --tags --match=[0-9].[0-9]* --abbrev=0)" >> $GITHUB_OUTPUT
 
-    - name: Get CI version
+    - name: Get CI Version
       id: ci_version
       shell: bash
       working-directory: x265
@@ -55,9 +56,9 @@ jobs:
         head_tag=$(git describe --tags --match='[0-9].[0-9]*' HEAD 2>/dev/null || true)
         head_hash=$(git rev-parse --short HEAD)
         if [ -z "$head_tag" ]; then
-          version="4.1+unknown-g${head_hash}"
+          version="${{ steps.tag.outputs.version }}"
         elif [[ "$head_tag" != *-* ]]; then
-          version="${head_tag#M}"
+          version="${head_tag#M}-g${head_hash}"
         else
           orig_tag=${head_tag%%-*}
           rest=${head_tag#*-}
@@ -66,7 +67,7 @@ jobs:
         fi
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
-    - name: Setup shared dependencies
+    - name: Setup Shared Dependencies
       uses: ./x265/.github/actions/setup-windows-deps
       with:
         ffmpeg-configure: |
@@ -85,46 +86,22 @@ jobs:
             --enable-protocol=file,pipe \
             --cc=cc --cxx=c++ --cpu=x86-64
         use-mimalloc: 'true'
-        extra-msys2-packages: >-
-          mingw-w64-x86_64-gcc
 
-    - name: Checkout L-SMASH
-      uses: actions/checkout@v6
-      with:
-        path: l-smash
-        repository: vimeo/l-smash
-        ref: master
-
-    - name: Override L-SMASH with GCC build
-      working-directory: l-smash
-      run: |
-        env MSYSTEM=MINGW64 CHERE_INVOKING=1 PATH="/mingw64/bin:/usr/bin:/clang64/bin" /usr/bin/bash -lc '
-          set -euo pipefail
-          export PATH="/mingw64/bin:/usr/bin:/clang64/bin"
-          hash -r
-          command -v gcc >/dev/null
-          command -v ar >/dev/null
-          command -v ranlib >/dev/null
-          gcc --version
-          LSMASH_CFLAGS="-I/usr/local/include -O3 -DNDEBUG -fno-lto"
-          LSMASH_LDFLAGS="-L/usr/local/lib -fno-lto"
-          ./configure --prefix=/usr/local --cc=gcc --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
-          make clean
-          make lib -j$(nproc)
-          make install-lib
-        '
-
-    - name: Prepare artifact directories
+    - name: Prepare Artifact Directories
       run: |
         rm -rf dist profdata-dist
         mkdir -p dist profdata-dist
 
-    - name: Package llvm-profdata tool
+    - name: Package LLVM Profdata Tool
+      id: llvm_profdata
       run: |
         llvm_profdata=$(command -v llvm-profdata.exe || command -v llvm-profdata)
         test -n "$llvm_profdata"
         [ -f "$llvm_profdata" ] || llvm_profdata="${llvm_profdata}.exe"
         test -f "$llvm_profdata"
+        version=$("$llvm_profdata" --version | sed -nE 's/.*LLVM version ([0-9]+(\.[0-9]+)+).*/\1/p' | head -1)
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
         cp "$llvm_profdata" profdata-dist/
 
         declare -A seen
@@ -162,7 +139,7 @@ jobs:
           strip -s "$dll"
         done
 
-    - name: Build 8b-lib profiling binaries
+    - name: Build 8b-lib Profiling Binaries
       uses: ./x265/.github/actions/build-x265-profiling
       with:
         target-cpu: ${{ matrix.target_cpu }}
@@ -170,12 +147,12 @@ jobs:
         use-mimalloc: 'ON'
         enable-lsmash: 'ON'
 
-    - name: Smoke, package, and verify 8b-lib
+    - name: Smoke, Package, and Verify 8b-lib
       run: |
-        cp build/8b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-8b-lib.exe
-
         if [ "${{ matrix.target_cpu }}" != 'x86-64' ]; then
           echo "Skipping runtime smoke for target CPU ${{ matrix.target_cpu }}; GitHub runner host may not support the emitted instructions"
+          strip -s build/8b/x265-profiling.exe
+          cp build/8b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-8b-lib.exe
           exit 0
         fi
 
@@ -197,8 +174,10 @@ jobs:
         ./profdata-dist/llvm-profdata.exe merge -o profile-smoke-8b.profdata "$LLVM_PROFILE_FILE"
         test -s profile-smoke-8b.profdata
         ./profdata-dist/llvm-profdata.exe show profile-smoke-8b.profdata >/dev/null
+        strip -s build/8b/x265-profiling.exe
+        cp build/8b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-8b-lib.exe
 
-    - name: Build 12b-lib profiling binaries
+    - name: Build 12b-lib Profiling Binaries
       uses: ./x265/.github/actions/build-x265-profiling
       with:
         target-cpu: ${{ matrix.target_cpu }}
@@ -206,12 +185,12 @@ jobs:
         use-mimalloc: 'ON'
         enable-lsmash: 'ON'
 
-    - name: Smoke, package, and verify 12b-lib
+    - name: Smoke, Package, and Verify 12b-lib
       run: |
-        cp build/12b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-12b-lib.exe
-
         if [ "${{ matrix.target_cpu }}" != 'x86-64' ]; then
           echo "Skipping runtime smoke for target CPU ${{ matrix.target_cpu }}; GitHub runner host may not support the emitted instructions"
+          strip -s build/12b/x265-profiling.exe
+          cp build/12b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-12b-lib.exe
           exit 0
         fi
 
@@ -233,8 +212,10 @@ jobs:
         ./profdata-dist/llvm-profdata.exe merge -o profile-smoke-12b.profdata "$LLVM_PROFILE_FILE"
         test -s profile-smoke-12b.profdata
         ./profdata-dist/llvm-profdata.exe show profile-smoke-12b.profdata >/dev/null
+        strip -s build/12b/x265-profiling.exe
+        cp build/12b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-12b-lib.exe
 
-    - name: Build all profiling binaries
+    - name: Build All Profiling Binaries
       uses: ./x265/.github/actions/build-x265-profiling
       with:
         target-cpu: ${{ matrix.target_cpu }}
@@ -242,12 +223,12 @@ jobs:
         use-mimalloc: 'ON'
         enable-lsmash: 'ON'
 
-    - name: Smoke, package, and verify all
+    - name: Smoke, Package, and Verify All
       run: |
-        cp build/10b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-all.exe
-
         if [ "${{ matrix.target_cpu }}" != 'x86-64' ]; then
           echo "Skipping runtime smoke for target CPU ${{ matrix.target_cpu }}; GitHub runner host may not support the emitted instructions"
+          strip -s build/10b/x265-profiling.exe
+          cp build/10b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-all.exe
           exit 0
         fi
 
@@ -269,53 +250,61 @@ jobs:
         ./profdata-dist/llvm-profdata.exe merge -o profile-smoke-all.profdata "$LLVM_PROFILE_FILE"
         test -s profile-smoke-all.profdata
         ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null
+        strip -s build/10b/x265-profiling.exe
+        cp build/10b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-all.exe
 
-    - name: Upload combined profiling artifact
+    - name: Set Package Version
+      id: package_version
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${{ steps.tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=${{ steps.ci_version.outputs.version }}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Compress Profiling Build
+      run: |
+        cd dist
+        7za a -t7z -mx=9 ../x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z ./*.exe
+
+    - name: Compress LLVM Profdata
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        cd profdata-dist
+        7za a -t7z -mx=9 ../llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}.7z ./*
+
+    - name: Upload Combined Profiling Artifact
       uses: actions/upload-artifact@v7
       with:
-        name: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.ci_version.outputs.version }}
-        path: dist/*
-        compression-level: 9
+        name: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}
+        path: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z
+        compression-level: 0
 
-    - name: Upload llvm-profdata artifact
+    - name: Upload LLVM Profdata Artifact
       if: matrix.target_cpu == 'x86-64'
       uses: actions/upload-artifact@v7
       with:
-        name: llvm-profdata-win64-clang.${{ steps.ci_version.outputs.version }}
-        path: profdata-dist/*
-        compression-level: 9
+        name: llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}
+        path: llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}.7z
+        compression-level: 0
 
-    - name: Compress profiling build for release
-      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
-      run: |
-        cd dist
-        7za a -t7z -mx=9 ../x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.tag.outputs.version }}.7z \
-          x265-profiling-win64-${{ matrix.target_cpu }}-8b-lib.exe \
-          x265-profiling-win64-${{ matrix.target_cpu }}-12b-lib.exe \
-          x265-profiling-win64-${{ matrix.target_cpu }}-all.exe
-
-    - name: Compress llvm-profdata for release
-      if: matrix.target_cpu == 'x86-64' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
-      run: |
-        cd profdata-dist
-        7za a -t7z -mx=9 ../llvm-profdata-win64-clang.${{ steps.tag.outputs.version }}.7z ./*
-
-    - name: Release profiling archive
+    - name: Release Profiling Archive
       uses: softprops/action-gh-release@v3
       if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
       with:
         tag_name: ${{ steps.tag.outputs.version }}
-        files: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.tag.outputs.version }}.7z
+        files: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true
 
-    - name: Release llvm-profdata archive
+    - name: Release LLVM Profdata Archive
       uses: softprops/action-gh-release@v3
       if: matrix.target_cpu == 'x86-64' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
       with:
         tag_name: ${{ steps.tag.outputs.version }}
-        files: llvm-profdata-win64-clang.${{ steps.tag.outputs.version }}.7z
+        files: llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true

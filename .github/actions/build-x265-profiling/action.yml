@@ -50,14 +50,33 @@ runs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        COMMON_X265_ARGS="-DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }} -DTARGET_CPU=${{ inputs.target-cpu }} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DUSE_MIMALLOC=${{ inputs.use-mimalloc }} -DENABLE_UNITY_BUILD=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy"
-        LSMASH_FLAG=""
+        lsmash_args=()
         if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
-          LSMASH_FLAG='-DENABLE_LSMASH=ON'
+          lsmash_args=(-DENABLE_LSMASH=ON)
         fi
+        cmake_common_args=(
+          -GNinja "${{ inputs.source-dir }}"
+          -DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }}
+          -DENABLE_LAVF=ON
+          -DENABLE_STATIC_LAVF=ON
+          -DENABLE_MKV=ON
+          -DTARGET_CPU=${{ inputs.target-cpu }}
+          -DENABLE_AVISYNTH=OFF
+          -DENABLE_VPYSYNTH=OFF
+          -DUSE_MIMALLOC=${{ inputs.use-mimalloc }}
+          -DENABLE_UNITY_BUILD=ON
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          "${lsmash_args[@]}"
+        )
 
-        cmake -GNinja ${{ inputs.source-dir }} -B build/8b $COMMON_X265_ARGS \
-          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON -DENABLE_MKV=ON $LSMASH_FLAG \
+        configure_x265() {
+          local build_dir="$1"
+          shift
+          cmake "${cmake_common_args[@]}" -B "$build_dir" "$@"
+        }
+
+        configure_x265 build/8b \
+          -DENABLE_SHARED=OFF \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/8b
@@ -69,15 +88,34 @@ runs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        COMMON_X265_ARGS="-DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }} -DTARGET_CPU=${{ inputs.target-cpu }} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DUSE_MIMALLOC=${{ inputs.use-mimalloc }} -DENABLE_UNITY_BUILD=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy"
-        LSMASH_FLAG=""
+        lsmash_args=()
         if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
-          LSMASH_FLAG='-DENABLE_LSMASH=ON'
+          lsmash_args=(-DENABLE_LSMASH=ON)
         fi
+        cmake_common_args=(
+          -GNinja "${{ inputs.source-dir }}"
+          -DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }}
+          -DENABLE_LAVF=ON
+          -DENABLE_STATIC_LAVF=ON
+          -DENABLE_MKV=ON
+          -DTARGET_CPU=${{ inputs.target-cpu }}
+          -DENABLE_AVISYNTH=OFF
+          -DENABLE_VPYSYNTH=OFF
+          -DUSE_MIMALLOC=${{ inputs.use-mimalloc }}
+          -DENABLE_UNITY_BUILD=ON
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          "${lsmash_args[@]}"
+        )
 
-        cmake -GNinja ${{ inputs.source-dir }} -B build/12b $COMMON_X265_ARGS \
+        configure_x265() {
+          local build_dir="$1"
+          shift
+          cmake "${cmake_common_args[@]}" -B "$build_dir" "$@"
+        }
+
+        configure_x265 build/12b \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON \
-          -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON -DENABLE_MKV=ON $LSMASH_FLAG \
+          -DENABLE_SHARED=OFF \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja -C build/12b
@@ -89,39 +127,81 @@ runs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
-        COMMON_X265_ARGS="-DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }} -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DTARGET_CPU=${{ inputs.target-cpu }} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DUSE_MIMALLOC=${{ inputs.use-mimalloc }} -DENABLE_UNITY_BUILD=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy"
-        LSMASH_FLAG=""
+        lsmash_args=()
         if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
-          LSMASH_FLAG='-DENABLE_LSMASH=ON'
+          lsmash_args=(-DENABLE_LSMASH=ON)
         fi
+        cmake_common_args=(
+          -GNinja "${{ inputs.source-dir }}"
+          -DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }}
+          -DEXPORT_C_API=OFF
+          -DENABLE_SHARED=OFF
+          -DENABLE_CLI=OFF
+          -DENABLE_LAVF=ON
+          -DENABLE_STATIC_LAVF=ON
+          -DENABLE_MKV=ON
+          -DTARGET_CPU=${{ inputs.target-cpu }}
+          -DENABLE_AVISYNTH=OFF
+          -DENABLE_VPYSYNTH=OFF
+          -DUSE_MIMALLOC=${{ inputs.use-mimalloc }}
+          -DENABLE_UNITY_BUILD=ON
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          "${lsmash_args[@]}"
+        )
 
-        cmake -GNinja ${{ inputs.source-dir }} -B build/8b $COMMON_X265_ARGS \
-          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON -DENABLE_MKV=ON $LSMASH_FLAG \
+        configure_x265() {
+          local build_dir="$1"
+          shift
+          cmake "${cmake_common_args[@]}" -B "$build_dir" "$@"
+        }
+        NPROC=$(nproc)
+        NINJA_JOBS_PAIR=$(( (NPROC + 1) / 2 ))
+        echo "Ninja job limit for paired profiling helper builds: ${NINJA_JOBS_PAIR}"
+        wait_for_jobs() {
+          local status=0
+          local pid
+
+          for pid in "$@"; do
+            if ! wait "$pid"; then
+              status=1
+            fi
+          done
+
+          return "$status"
+        }
+
+        configure_x265 build/8b \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}"
-        ninja -C build/8b &
+        ninja -C build/8b -j "$NINJA_JOBS_PAIR" &
+        ninja_8b_pid=$!
 
-        cmake -GNinja ${{ inputs.source-dir }} -B build/12b $COMMON_X265_ARGS \
+        configure_x265 build/12b \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON \
-          -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON -DENABLE_MKV=ON $LSMASH_FLAG \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}"
-        ninja -C build/12b &
+        ninja -C build/12b -j "$NINJA_JOBS_PAIR" &
+        ninja_12b_pid=$!
 
-        wait
+        wait_for_jobs "$ninja_8b_pid" "$ninja_12b_pid"
         cp build/8b/libx265.a build/10b/libx265_8b.a
         cp build/12b/libx265.a build/10b/libx265_12b.a
 
         cd build/10b
-        COMMON_X265_ARGS="-DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }} -DTARGET_CPU=${{ inputs.target-cpu }} -DENABLE_AVISYNTH=OFF -DENABLE_VPYSYNTH=OFF -DUSE_MIMALLOC=${{ inputs.use-mimalloc }} -DENABLE_UNITY_BUILD=ON -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy"
-        LSMASH_FLAG=""
-        if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
-          LSMASH_FLAG='-DENABLE_LSMASH=ON'
-        fi
-
-        cmake -GNinja ../../${{ inputs.source-dir }} $COMMON_X265_ARGS \
+        cmake ../../${{ inputs.source-dir }} \
+          -GNinja \
+          -DCMAKE_PREFIX_PATH=${{ inputs.build-prefix-path }} \
+          -DTARGET_CPU=${{ inputs.target-cpu }} \
+          -DENABLE_AVISYNTH=OFF \
+          -DENABLE_VPYSYNTH=OFF \
+          -DUSE_MIMALLOC=${{ inputs.use-mimalloc }} \
+          -DENABLE_UNITY_BUILD=ON \
+          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy \
+          -DENABLE_LAVF=ON \
+          -DENABLE_STATIC_LAVF=ON \
+          -DENABLE_MKV=ON \
+          "${lsmash_args[@]}" \
           -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
           -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
-          -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF -DENABLE_LAVF=ON -DENABLE_STATIC_LAVF=ON \
-          -DENABLE_MKV=ON $LSMASH_FLAG \
+          -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
         ninja

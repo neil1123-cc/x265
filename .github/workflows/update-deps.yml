@@ -2,12 +2,11 @@ name: Update Dependencies
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 1-7,15-21 * 0'
   workflow_dispatch:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   update-deps:
@@ -18,57 +17,77 @@ jobs:
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Get latest FFmpeg release
+      - name: Get Latest FFmpeg Release
         id: ffmpeg
         run: |
-          TAG=$(curl -s "https://api.github.com/repos/FFmpeg/FFmpeg/tags?per_page=100" | \
+          set -euo pipefail
+          TAG=$(curl -fsSL "https://api.github.com/repos/FFmpeg/FFmpeg/tags?per_page=100" | \
             jq -r '.[].name' | \
             grep -E '^n[0-9]+\.[0-9]+$' | \
             sort -Vr | \
-            head -1)
+            sed -n '1p')
+          test -n "$TAG"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "FFmpeg latest release: $TAG"
 
-      - name: Get latest mimalloc release
+      - name: Get Latest Mimalloc Release
         id: mimalloc
         run: |
-          TAG=$(curl -s "https://api.github.com/repos/microsoft/mimalloc/tags?per_page=100" | \
+          set -euo pipefail
+          TAG=$(curl -fsSL "https://api.github.com/repos/microsoft/mimalloc/tags?per_page=100" | \
             jq -r '.[].name' | \
             grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
             sort -Vr | \
-            head -1)
+            sed -n '1p')
+          test -n "$TAG"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "mimalloc latest release: $TAG"
 
-      - name: Get latest obuparse commit
+      - name: Get Latest Obuparse Release
         id: obuparse
         run: |
-          SHA=$(curl -s "https://api.github.com/repos/dwbuiten/obuparse/commits?per_page=1" | \
-            jq -r '.[0].sha')
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
-          echo "obuparse latest commit: $SHA"
+          set -euo pipefail
+          TAG=$(curl -fsSL "https://api.github.com/repos/dwbuiten/obuparse/tags?per_page=100" | \
+            jq -r '.[].name' | \
+            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -Vr | \
+            sed -n '1p')
+          test -n "$TAG"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "obuparse latest release: $TAG"
 
-      - name: Get current versions
+      - name: Get Latest L-SMASH Commit
+        id: lsmash
+        run: |
+          set -euo pipefail
+          SHA=$(curl -fsSL "https://api.github.com/repos/vimeo/l-smash/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          test -n "$SHA"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "L-SMASH latest commit: $SHA"
+
+      - name: Get Current Versions
         id: current
         run: |
           FFMPEG=$(grep -oP 'default: n[0-9]+\.[0-9]+' .github/actions/setup-windows-deps/action.yml | head -1 | grep -oP 'n[0-9]+\.[0-9]+')
           MIMALLOC=$(grep -oP 'default: v[0-9]+\.[0-9]+\.[0-9]+' .github/actions/setup-windows-deps/action.yml | head -1 | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+')
+          OBUPARSE=$(grep -A3 'obuparse-ref:' .github/actions/setup-windows-deps/action.yml | grep -oP 'default: v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+')
+          if [ -f .github/deps-cache.json ]; then
+            LSMASH_SHA=$(jq -r '.lsmash // ""' .github/deps-cache.json)
+          else
+            LSMASH_SHA=""
+          fi
           echo "ffmpeg=$FFMPEG" >> $GITHUB_OUTPUT
           echo "mimalloc=$MIMALLOC" >> $GITHUB_OUTPUT
-
-          if [ -f .github/deps-cache.json ]; then
-            OBUPARSE_SHA=$(jq -r '.obuparse // ""' .github/deps-cache.json)
-          else
-            OBUPARSE_SHA=""
-          fi
-          echo "obuparse_sha=$OBUPARSE_SHA" >> $GITHUB_OUTPUT
+          echo "obuparse=$OBUPARSE" >> $GITHUB_OUTPUT
+          echo "lsmash_sha=$LSMASH_SHA" >> $GITHUB_OUTPUT
 
           echo "=== Current versions ==="
           echo "FFmpeg: $FFMPEG"
           echo "mimalloc: $MIMALLOC"
-          echo "obuparse: $OBUPARSE_SHA"
+          echo "obuparse: $OBUPARSE"
+          echo "L-SMASH: $LSMASH_SHA"
 
-      - name: Check for changes
+      - name: Check for Changes
         id: check
         run: |
           CHANGES=""
@@ -90,12 +109,20 @@ jobs:
             echo "mimalloc_changed=false" >> $GITHUB_OUTPUT
           fi
 
-          if [ -n "${{ steps.current.outputs.obuparse_sha }}" ] && [ "${{ steps.obuparse.outputs.sha }}" != "${{ steps.current.outputs.obuparse_sha }}" ]; then
-            CHANGES="${CHANGES}obuparse new commit, "
+          if [ "${{ steps.obuparse.outputs.tag }}" != "${{ steps.current.outputs.obuparse }}" ]; then
+            CHANGES="${CHANGES}obuparse ${{ steps.current.outputs.obuparse }} -> ${{ steps.obuparse.outputs.tag }}, "
             NEED_BUILD="true"
             echo "obuparse_changed=true" >> $GITHUB_OUTPUT
           else
             echo "obuparse_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "${{ steps.current.outputs.lsmash_sha }}" ] && [ "${{ steps.lsmash.outputs.sha }}" != "${{ steps.current.outputs.lsmash_sha }}" ]; then
+            CHANGES="${CHANGES}L-SMASH new commit, "
+            NEED_BUILD="true"
+            echo "lsmash_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "lsmash_changed=false" >> $GITHUB_OUTPUT
           fi
 
           if [ ! -f .github/deps-cache.json ]; then
@@ -115,23 +142,26 @@ jobs:
             echo "=== No changes detected ==="
           fi
 
-      - name: Update dependency refs
-        if: steps.check.outputs.ffmpeg_changed == 'true' || steps.check.outputs.mimalloc_changed == 'true'
+      - name: Update Dependency Refs
+        if: steps.check.outputs.ffmpeg_changed == 'true' || steps.check.outputs.mimalloc_changed == 'true' || steps.check.outputs.obuparse_changed == 'true' || steps.check.outputs.lsmash_changed == 'true'
         run: |
           sed -i "0,/default: n[0-9]\+\.[0-9]\+/s//default: ${{ steps.ffmpeg.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
           sed -i "0,/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/s//default: ${{ steps.mimalloc.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
+          sed -i "/obuparse-ref:/,/extra-msys2-packages:/s/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/default: ${{ steps.obuparse.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
+          sed -i "/lsmash-ref:/,/lsmash-cache-suffix:/s/default: [0-9a-f]\{40\}/default: ${{ steps.lsmash.outputs.sha }}/" .github/actions/setup-windows-deps/action.yml
 
-      - name: Update deps cache
+      - name: Update Deps Cache
         run: |
           cat > .github/deps-cache.json << EOF
           {
-            "obuparse": "${{ steps.obuparse.outputs.sha }}",
+            "lsmash": "${{ steps.lsmash.outputs.sha }}",
+            "obuparse": "${{ steps.obuparse.outputs.tag }}",
             "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
           cat .github/deps-cache.json
 
-      - name: Commit and push changes
+      - name: Commit and Push Changes
         if: steps.check.outputs.need_build == 'true'
         run: |
           git config user.name "github-actions[bot]"
@@ -139,9 +169,3 @@ jobs:
           git add .github/actions/setup-windows-deps/action.yml .github/deps-cache.json
           git commit -m "Update dependencies: ${{ steps.check.outputs.changes }}" || echo "Nothing to commit"
           git push
-
-      - name: Trigger CI build
-        if: steps.check.outputs.need_build == 'true'
-        run: |
-          echo "Triggering CI build due to: ${{ steps.check.outputs.changes }}"
-          echo "Build will be triggered automatically by the push event"
