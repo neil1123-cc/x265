@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-04-30T01:04:10Z",
+  "repository": "neil1123-cc/x265",
+  "workflow": "local-update-pgo-profdata",
+  "run_id": "local",
+  "run_attempt": "1",
+  "source_ref": "4.1",
+  "source_commit": "b7e8a553f96d5f474b5435cef176457faf066ab6",
+  "profile_target": "all",
+  "profdata_branch": "profdata-alderlake-all",
+  "layout": "per-target-bounded-window",
+  "window": {
+    "slots": 4,
+    "fresh_slot": "profiles/0.profdata",
+    "weights_newest_to_oldest": [4, 3, 2, 1]
+  },
+  "dependencies": {
+    "ffmpeg_ref": "n8.1",
+    "mimalloc_ref": "v3.3.1",
+    "obuparse_ref": "v2.0.2",
+    "obuparse_cache_key": "obuparse-v2.0.2-clang-v1",
+    "lsmash_repository": "vimeo/l-smash",
+    "lsmash_ref": "master"
+  }
+}
