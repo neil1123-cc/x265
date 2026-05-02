@@ -1143,11 +1143,110 @@ add_custom_target(uninstall
 
 # Main CLI application
 set(ENABLE_CLI ON CACHE BOOL "Build standalone CLI application")
+
+option(ENABLE_MKV "Enable Haali Matroska muxer" OFF)
+if(ENABLE_MKV AND ENABLE_CLI)
+    add_definitions(-DENABLE_MKV)
+endif()
+
+option(ENABLE_LSMASH "Enable L-SMASH MP4 muxer" OFF)
+if(ENABLE_LSMASH AND ENABLE_CLI)
+    find_package(LSMASH)
+    if(NOT LSMASH_FOUND)
+        message(FATAL_ERROR "ENABLE_LSMASH is ON but L-SMASH was not found")
+    endif()
+    add_definitions(-DENABLE_LSMASH)
+endif()
+
+option(ENABLE_AVISYNTH "Enable AviSynth input" OFF)
+if(ENABLE_AVISYNTH AND ENABLE_CLI)
+    find_path(AVISYNTH_INCLUDE_DIR avisynth/avisynth_c.h)
+    if(NOT AVISYNTH_INCLUDE_DIR)
+        message(FATAL_ERROR "ENABLE_AVISYNTH is ON but AviSynth headers were not found")
+    endif()
+    include_directories(${AVISYNTH_INCLUDE_DIR})
+    add_definitions(-DENABLE_AVISYNTH)
+endif()
+
+option(ENABLE_VPYSYNTH "Enable VapourSynth input" OFF)
+if(ENABLE_VPYSYNTH AND ENABLE_CLI)
+    find_path(VAPOURSYNTH_INCLUDE_DIR vapoursynth/VSScript.h)
+    if(NOT VAPOURSYNTH_INCLUDE_DIR)
+        message(FATAL_ERROR "ENABLE_VPYSYNTH is ON but VapourSynth headers were not found")
+    endif()
+    include_directories(${VAPOURSYNTH_INCLUDE_DIR})
+    add_definitions(-DENABLE_VPYSYNTH)
+endif()
+
+option(ENABLE_LAVF "Enable LAVF decoder" OFF)
+option(ENABLE_STATIC_LAVF "Link to LAVF's private libs" ON)
+if(ENABLE_LAVF AND ENABLE_CLI)
+    find_package(FF)
+    if(NOT FF_FOUND)
+        message(FATAL_ERROR "ENABLE_LAVF is ON but FFmpeg libraries were not found")
+    endif()
+    add_definitions(-DENABLE_LAVF)
+    if(ENABLE_STATIC_LAVF)
+        set(FFMPEG_STATIC_LIBRARIES ${PC_LIBAVUTIL_STATIC_LDFLAGS}
+                                    ${PC_LIBAVFORMAT_STATIC_LDFLAGS}
+                                    ${PC_LIBAVCODEC_STATIC_LDFLAGS}
+                                    ${PC_LIBSWSCALE_STATIC_LDFLAGS})
+        if(WIN32)
+            list(REMOVE_ITEM FFMPEG_STATIC_LIBRARIES -ldl)
+        endif()
+    endif()
+endif()
+
+option(ENABLE_ZIMG "Enable zimg scaling library" OFF)
+if(ENABLE_ZIMG AND ENABLE_CLI)
+    find_path(ZIMG_INCLUDE_DIR zimg.h)
+    find_library(ZIMG_LIBRARY NAMES zimg)
+    if(NOT ZIMG_INCLUDE_DIR OR NOT ZIMG_LIBRARY)
+        message(FATAL_ERROR "ENABLE_ZIMG is ON but zimg headers or library were not found")
+    endif()
+    include_directories(${ZIMG_INCLUDE_DIR})
+    list(APPEND PLATFORM_LIBS ${ZIMG_LIBRARY})
+    add_definitions(-DENABLE_ZIMG)
+endif()
+
 if(ENABLE_CLI)
     file(GLOB InputFiles input/input.cpp input/yuv.cpp input/y4m.cpp input/*.h)
     file(GLOB OutputFiles output/output.cpp output/reconplay.cpp output/*.h
                           output/yuv.cpp output/y4m.cpp # recon
                           output/raw.cpp)               # muxers
+    set(FilterFiles filters/filters.cpp filters/filters.h)
+
+    if(ENABLE_LAVF)
+        include_directories(${FFMPEG_INCLUDE_DIRS})
+        link_directories(${FFMPEG_LIBRARY_DIRS})
+        if(ENABLE_STATIC_LAVF)
+            list(APPEND PLATFORM_LIBS ${FFMPEG_STATIC_LIBRARIES})
+        else()
+            list(APPEND PLATFORM_LIBS ${FFMPEG_LIBRARIES})
+        endif()
+        list(APPEND InputFiles input/lavf.cpp input/lavf.h)
+    endif()
+    if(ENABLE_AVISYNTH)
+        list(APPEND InputFiles input/avs.cpp input/avs.h)
+    endif()
+    if(ENABLE_VPYSYNTH)
+        list(APPEND InputFiles input/vpy.cpp input/vpy.h)
+    endif()
+    if(ENABLE_MKV)
+        list(APPEND OutputFiles output/mkv.cpp output/mkv.h output/matroska_ebml.cpp output/matroska_ebml.h)
+    endif()
+    if(ENABLE_LSMASH)
+        include_directories(${LSMASH_INCLUDE_DIRS})
+        link_directories(${LSMASH_LIBRARY_DIRS})
+        list(APPEND PLATFORM_LIBS ${LSMASH_LIBRARIES})
+        list(APPEND OutputFiles output/mp4.cpp output/mp4.h output/containerMuxer.h)
+    endif()
+    if(ENABLE_ZIMG)
+        list(APPEND FilterFiles filters/zimgfilter.cpp filters/zimgfilter.h)
+    endif()
+    list(APPEND OutputFiles output/gop.cpp output/gop.h)
+
+    source_group(filters FILES ${FilterFiles})
     source_group(input FILES ${InputFiles})
     source_group(output FILES ${OutputFiles})
 
@@ -1165,16 +1264,16 @@ if(ENABLE_CLI)
     if(XCODE)
         # Xcode seems unable to link the CLI with libs, so link as one targget
         if(ENABLE_HDR10_PLUS)
-        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${GETOPT}
+        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${FilterFiles} ${GETOPT}
                         x265.cpp x265.h x265cli.cpp x265cli.h abrEncApp.cpp abrEncApp.h
                         $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> $<TARGET_OBJECTS:dynamicHDR10> ${ASM_OBJS})
         else()
-            add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${GETOPT}
+            add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${FilterFiles} ${GETOPT}
                         x265.cpp x265.h x265cli.cpp x265cli.h abrEncApp.cpp abrEncApp.h
                         $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> ${ASM_OBJS})
         endif()
     else()
-        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${GETOPT} ${X265_RC_FILE}
+        add_executable(cli ../COPYING ${InputFiles} ${OutputFiles} ${FilterFiles} ${GETOPT} ${X265_RC_FILE}
                        ${ExportDefs} x265.cpp x265.h x265cli.cpp x265cli.h abrEncApp.cpp abrEncApp.h)
         if(WIN32 OR NOT ENABLE_SHARED OR INTEL_CXX)
             # The CLI cannot link to the shared library on Windows, it

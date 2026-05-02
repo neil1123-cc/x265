@@ -30,6 +30,7 @@
 #include "input/input.h"
 #include "output/output.h"
 #include "output/reconplay.h"
+#include "filters/filters.h"
 
 #include <getopt.h>
 
@@ -83,6 +84,7 @@ static const struct option long_options[] =
     { "input-depth",    required_argument, NULL, 0 },
     { "input-res",      required_argument, NULL, 0 },
     { "input-csp",      required_argument, NULL, 0 },
+    { "vf",             required_argument, NULL, 0 },
     { "interlace",      required_argument, NULL, 0 },
     { "no-interlace",         no_argument, NULL, 0 },
     { "field",                no_argument, NULL, 0 },
@@ -437,6 +439,8 @@ static const struct option long_options[] =
         char** argString;
         char *stringPool;
         char* inputfn[MAX_VIEWS];
+        char* vf;
+        vector<Filter*> filters;
 
         /* ABR ladder settings */
         bool isAbrLadderConfig;
@@ -491,6 +495,7 @@ static const struct option long_options[] =
             orgArgv = NULL;
             argString = NULL;
             stringPool = NULL;
+            vf = NULL;
         }
 
         void destroy();
