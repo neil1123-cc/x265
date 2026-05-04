@@ -60,7 +60,11 @@ namespace X265_NS {
         H0("-o/--output <filename>           Bitstream output file name\n");
         H0("-D/--output-depth 8|10|12        Output bit depth (also internal bit depth). Default %d\n", param->internalBitDepth);
         H0("   --log-level <string>          Logging level: none error warning info debug full. Default %s\n", X265_NS::logLevelNames[param->logLevel + 1]);
+        H0("   --log-file <filename>         Append general encoder log output to a file\n");
+        H0("   --log-file-level <string>     Logging level for the general log file. Default %s\n", X265_NS::logLevelNames[param->logfLevel + 1]);
         H0("   --no-progress                 Disable CLI progress reports\n");
+        H0("   --progress-file <filename>    Write periodic JSON progress updates to a file\n");
+        H0("   --stylish                     Enable x264-style compact CLI progress output\n");
         H0("   --csv <filename>              Comma separated log file, if csv-log-level > 0 frame level statistics, else one line per run\n");
         H0("   --csv-log-level <integer>     Level of csv logging, if csv-log-level > 0 frame level statistics, else one line per run: 0-2\n");
         H0("\nInput Options:\n");
@@ -111,6 +115,8 @@ namespace X265_NS {
         H0("-p/--preset <string>             Trade off performance for compression efficiency. Default medium\n");
         H0("                                 ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, or placebo\n");
         H0("-t/--tune <string>               Tune the settings for a particular type of source or situation:\n");
+        H0("             (mid bitrate anime) littlepox/lp, (slower) littlepox++/lp++,\n");
+        H0("  (high bitrate anime BD / film) vcb-s/vcbs,   (slower) vcb-s++/vcbs++,\n");
         H0("                                 psnr, ssim, grain, zerolatency, fastdecode\n");
         H0("\nQuad-Tree size and depth:\n");
         H0("-s/--ctu <64|32|16>              Maximum CU size (WxH). Default %d\n", param->maxCUSize);
@@ -128,6 +134,9 @@ namespace X265_NS {
            "                                  - 2:levels & coding groups.\n"
            "                                 Default %d\n", param->rdoqLevel);
         H0("   --[no-]psy-rdoq <0..50.0>     Strength of psycho-visual optimization in RDO quantization, 0 to disable. Default %.1f\n", param->psyRdoq);
+        H0("   --psy-bscale <0..300>         Scaling of psycho-visual optimization in RDO quantization for B-slice. Default %d\n", param->psyScaleB);
+        H0("   --psy-pscale <0..300>         Scaling of psycho-visual optimization in RDO quantization for P-slice. Default %d\n", param->psyScaleP);
+        H0("   --psy-iscale <0..300>         Scaling of psycho-visual optimization in RDO quantization for I-slice. Default %d\n", param->psyScaleI);
         H0("   --dynamic-rd <0..4.0>         Strength of dynamic RD, 0 to disable. Default %.2f\n", param->dynamicRd);
         H0("   --[no-]ssim-rd                Enable ssim rate-distortion optimization, 0 to disable. Default %s\n", OPT(param->bSsimRd));
         H0("   --[no-]rd-refine              Enable QP-based RD refinement for rd levels 5 and 6. Default %s\n", OPT(param->bEnableRdRefine));
@@ -243,7 +252,6 @@ namespace X265_NS {
         H0("   --analysis-save <filename>    Dump analysis info into the specified file. Default Disabled\n");
         H0("   --analysis-load <filename>    Load analysis buffers from the file specified. Default Disabled\n");
         H0("   --analysis-reuse-file <filename>    Specify the file name used for either dumping or reading analysis data. Default x265_analysis.dat\n");
-        H0("   --analysis-reuse-level <1..10>      Level of analysis reuse indicates the amount of info stored/reused in save/load mode, 1:least..10:most. Now deprecated. Default %d\n", param->analysisReuseLevel);
         H0("   --analysis-save-reuse-level <1..10> Indicates the amount of analysis info stored in save mode, 1:least..10:most. Default %d\n", param->analysisSaveReuseLevel);
         H0("   --analysis-load-reuse-level <1..10> Indicates the amount of analysis info reused in load mode, 1:least..10:most. Default %d\n", param->analysisLoadReuseLevel);
         H0("   --refine-analysis-type <string>     Reuse analysis information received through API call. Supported options are AVC and HEVC. Default disabled - %d\n", param->bAnalysisType);
@@ -273,19 +281,27 @@ namespace X265_NS {
            "                                   - 1:uniform AQ\n"
            "                                   - 2:auto variance\n"
            "                                   - 3:auto variance with bias to dark scenes\n"
-           "                                   - 4:auto variance with edge information.\n"
+           "                                   - 4:auto variance with edge information\n"
+           "                                   - 5:auto variance with edge information and bias to dark scenes\n"
            "                                 Default %d\n", param->rc.aqMode);
         H0("   --[no-]hevc-aq                Mode for HEVC Adaptive Quantization. Default %s\n", OPT(param->rc.hevcAq));
+        H0("   --[no-]limit-aq1              Use QP offset determined by aq-mode 1 as hard upper limit on QP offset allowed in aq-mode 2-5. Default is %s\n", OPT(param->rc.limitAq1));
         H0("   --aq-strength <float>         Reduces blocking and blurring in flat and textured areas (0 to 3.0). Default %.2f\n", param->rc.aqStrength);
+        H0("   --aq-bias-strength <float>    Sets the bias to dark strength in AQ modes 3 and 5. Default %.2f\n", param->rc.aqBiasStrength);
+        H0("   --limit-aq1-strength <float>  Sets the aq-strength aq-mode 1 when limit-aq1 is enabled (0 to 3.0). Default %.2f\n", param->rc.limitAq1Strength);
         H0("   --qp-adaptation-range <float> Delta QP range by QP adaptation based on a psycho-visual model (1.0 to 6.0). Default %.2f\n", param->rc.qpAdaptationRange);
         H0("   --[no-]aq-motion              Block level QP adaptation based on the relative motion between the block and the frame. Default %s\n", OPT(param->bAQMotion));
         H1("   --[no-]sbrc                   Enables the segment based rate control. Default %s\n", OPT(param->bEnableSBRC));
         H0("   --qg-size <int>               Specifies the size of the quantization group (64, 32, 16, 8). Default %d\n", param->rc.qgSize);
         H0("   --[no-]cutree                 Enable cutree for Adaptive Quantization. Default %s\n", OPT(param->rc.cuTree));
+        H1("   --cutree-strength <float>     Overrides the strength of cutree Adaptive Quantization. Default %.2f\n", param->rc.cuTreeStrength);
+        H1("   --cutree-minqpoffs <float>    Sets a hard lower limit on cutree QP offset. Default %.2f\n", param->rc.cuTreeMinQpOffset);
+        H1("   --cutree-maxqpoffs <float>    Sets a hard upper limit on cutree QP offset. Default %.2f\n", param->rc.cuTreeMaxQpOffset);
         H0("   --[no-]rc-grain               Enable rate-control mode to handle grains specifically. Turned on with tune grain. Default %s\n", OPT(param->rc.bEnableGrain));
         H1("   --ipratio <float>             QP factor between I and P. Default %.2f\n", param->rc.ipFactor);
         H1("   --pbratio <float>             QP factor between P and B. Default %.2f\n", param->rc.pbFactor);
         H1("   --qcomp <float>               Weight given to predicted complexity. Default %.2f\n", param->rc.qCompress);
+        H1("   --qscale-mode <integer>       Overrides how ratecontrol estimates qScale. Default %d\n", param->rc.qScaleMode);
         H1("   --qpstep <integer>            The maximum single adjustment in QP allowed to rate control. Default %d\n", param->rc.qpStep);
         H1("   --qpmin <integer>             sets a hard lower limit on QP allowed to ratecontrol. Default %d\n", param->rc.qpMin);
         H1("   --qpmax <integer>             sets a hard upper limit on QP allowed to ratecontrol. Default %d\n", param->rc.qpMax);
@@ -359,7 +375,6 @@ namespace X265_NS {
         H0("                                              BT2100x108n0005: --master-display G(8500,39850)B(6550,2300)R(34000,146000)WP(15635,16450)L(10000000,1)\n");
         H0("   --[no-]cll                    Emit content light level info SEI. Default %s\n", OPT(param->bEmitCLL));
         H0("   --[no-]hdr10                  Control dumping of HDR10 SEI packet. If max-cll or master-display has non-zero values, this is enabled. Default %s\n", OPT(param->bEmitHDR10SEI));
-        H0("   --[no-]hdr-opt                Add luma and chroma offsets for HDR/WCG content. Default %s. Now deprecated.\n", OPT(param->bHDROpt));
         H0("   --[no-]hdr10-opt              Block-level QP optimization for HDR10 content. Default %s.\n", OPT(param->bHDR10Opt));
         H0("   --min-luma <integer>          Minimum luma plane value of input source picture\n");
         H0("   --max-luma <integer>          Maximum luma plane value of input source picture\n");
@@ -502,29 +517,77 @@ namespace X265_NS {
 
     void CLIOptions::printStatus(uint32_t frameNum)
     {
-        char buf[200];
+        char buf[1024];
         int64_t time = x265_mdate();
+        int64_t elapsed = time - startTime;
 
-        if (!bProgress || !frameNum || (prevUpdateTime && time - prevUpdateTime < UPDATE_INTERVAL))
+        if (!frameNum)
             return;
 
-        int64_t elapsed = time - startTime;
+        bool updateConsole = bProgress && (!prevUpdateTime || time - prevUpdateTime >= UPDATE_INTERVAL);
+        bool updateFile = param->pgfn && (!prevUpdateTimeFile || time - prevUpdateTimeFile >= UPDATE_INTERVAL_FILE);
+        if (!updateConsole && !updateFile)
+            return;
+
         double fps = elapsed > 0 ? frameNum * 1000000. / elapsed : 0;
         float bitrate = 0.008f * totalbytes * (param->fpsNum / param->fpsDenom) / ((float)frameNum);
+
+        int eta, eta_hh = 0, eta_mm = 0, eta_ss = 0, fps_prec, bitrate_prec, file_prec, estsz_prec = 0;
+        double percentage = 0., estsz = 0., file_num, estsz_num = 0.;
+        const char *file_unit, *estsz_unit = "";
+        fps_prec = fps > 999.5 ? 0 : fps > 99.5 ? 1 : fps > 9.95 ? 2 : 3;
+        bitrate_prec = bitrate > 9999.5 ? 0 : bitrate > 999.5 ? 1 : 2;
+        file_prec = totalbytes < 1048576000 ? 2 : totalbytes < 10485760000 ? 1 : 0;
+        file_num = totalbytes < 1048576 ? (double)totalbytes / 1024. : (double)totalbytes / 1048576.;
+        file_unit = totalbytes < 1048576 ? "K" : "M";
         if (framesToBeEncoded)
         {
-            int eta = (int)(elapsed * (framesToBeEncoded - frameNum) / ((int64_t)frameNum * 1000000));
-            snprintf(buf, sizeof(buf), "x265 [%.1f%%] %d/%d frames, %.2f fps, %.2f kb/s, eta %d:%02d:%02d",
-                100. * frameNum / (param->chunkEnd ? param->chunkEnd : param->totalFrames), frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps, bitrate,
-                eta / 3600, (eta / 60) % 60, eta % 60);
+            eta = (int)(elapsed * (framesToBeEncoded - frameNum) / ((int64_t)frameNum * 1000000));
+            percentage = 100. * frameNum / (param->chunkEnd ? param->chunkEnd : param->totalFrames);
+            eta_hh = eta / 3600;
+            eta_mm = (eta / 60) % 60;
+            eta_ss = eta % 60;
+            estsz = (double)totalbytes * framesToBeEncoded / (frameNum * 1024.);
+            estsz_prec = estsz < 1024000 ? 2 : estsz < 10240000 ? 1 : 0;
+            estsz_num = estsz < 1024 ? estsz : estsz / 1024;
+            estsz_unit = estsz < 1024 ? "K" : "M";
+            snprintf(buf, sizeof(buf), "x265 [%.1f%%] %d/%d frames, %.*f fps, %.*f kb/s, %.*f %sB, eta %d:%02d:%02d, est.size %.*f %sB",
+                percentage, frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
+                file_prec, file_num, file_unit,
+                eta_hh, eta_mm, eta_ss,
+                estsz_prec, estsz_num, estsz_unit);
         }
         else
-            snprintf(buf, sizeof(buf), "x265 %d frames: %.2f fps, %.2f kb/s", frameNum, fps, bitrate);
+            snprintf(buf, sizeof(buf), "x265 %d frames: %.*f fps, %.*f kb/s, %.*f %sB",
+                frameNum, fps_prec, fps, bitrate_prec, bitrate,
+                file_prec, file_num, file_unit);
 
-        fprintf(stderr, "%s  \r", buf + 5);
-        SetConsoleTitle(buf);
-        fflush(stderr); // needed in windows
-        prevUpdateTime = time;
+        if (updateConsole)
+        {
+            if (param->bStylish && framesToBeEncoded)
+                fprintf(stderr, "\rx265 [%5.1f%%] %d/%d %.*f fps %.*f kb/s eta %d:%02d:%02d   ",
+                    percentage, frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
+                    eta_hh, eta_mm, eta_ss);
+            else
+                fprintf(stderr, "%s       \r", buf + 5);
+            SetConsoleTitle(buf);
+            fflush(stderr);
+            prevUpdateTime = time;
+        }
+
+        if (updateFile)
+        {
+            FILE *progressfp = x265_fopen(param->pgfn, "wb");
+            if (progressfp)
+            {
+                fprintf(progressfp,
+                    "{\"frame\":%u,\"frames\":%u,\"fps\":%.*f,\"bitrate\":%.*f,\"size_bytes\":%.0f,\"progress\":%.4f,\"eta_seconds\":%d}\n",
+                    frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
+                    (double)totalbytes, framesToBeEncoded ? percentage / 100.0 : 0.0, framesToBeEncoded ? eta : 0);
+                fclose(progressfp);
+            }
+            prevUpdateTimeFile = time;
+        }
     }
 
     bool CLIOptions::parseZoneParam(int argc, char **argv, x265_param* globalParam, int zonefileCount)
@@ -779,9 +842,10 @@ namespace X265_NS {
              !strcmp(long_options[long_options_index].name, name2))
 
                 if (0);
-                OPT2("frame-skip", "seek") this->seek = (uint32_t)x265_atoi(optarg, bError);
+                OPT("seek") this->seek = (uint32_t)x265_atoi(optarg, bError);
                 OPT("frames") this->framesToBeEncoded = (uint32_t)x265_atoi(optarg, bError);
                 OPT("no-progress") this->bProgress = false;
+                OPT("stylish") this->param->bStylish = true;
                 OPT("output") outputfn = optarg;
                 OPT("input") strncpy(inputfn[0] , optarg, 1024);
                 OPT("recon") reconfn[0] = optarg;
@@ -1015,7 +1079,7 @@ namespace X265_NS {
         if (api->param_apply_profile(param, profile))
             return true;
 
-        if (param->logLevel >= X265_LOG_INFO)
+        if (param->logLevel >= X265_LOG_INFO || (param->logfn && param->logfLevel >= X265_LOG_INFO))
         {
             char buf[128];
             int p = snprintf(buf, sizeof(buf), "%dx%d fps %d/%d %sp%d", param->sourceWidth, param->sourceHeight,

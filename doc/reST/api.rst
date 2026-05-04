@@ -153,6 +153,23 @@ After the encoder has been created, you may release the param structure::
 	 *  allocated by x265_param_alloc() */
 	void x265_param_free(x265_param *);
 
+Some :code:`x265_param` fields used by applications are heap-backed strings,
+including the general log filename and progress filename. Applications which
+set these values through :code:`x265_param_parse()` should treat their storage
+as owned by the param structure and release it with :code:`x265_param_free()`.
+
+For direct structure access, the relevant fields in :file:`x265.h` are:
+
+* :code:`logLevel` - console log verbosity threshold
+* :code:`logfn` - optional general log filename
+* :code:`logfLevel` - verbosity threshold for :code:`logfn`
+* :code:`pgfn` - optional progress report filename
+* :code:`bStylish` - enable compact x264-style CLI progress formatting
+
+These fields may also be configured by name through :code:`x265_param_parse()`
+using :code:`log-level`, :code:`log-file`, :code:`log-file-level`,
+:code:`progress-file`, and :code:`stylish`.
+
 .. Note::
 
 	Using these methods to allocate and release the param structures
