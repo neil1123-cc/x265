@@ -34,6 +34,37 @@ def entry_file_path(entry):
     return str(entry['file']).replace('\\', '/')
 
 
+def canonical_standard_flag(flag):
+    if flag in ACCEPTED_STANDARD_FLAGS[:2]:
+        return 'gnu++20'
+    if flag in GNU_DIALECT_DRIFT_FLAGS:
+        return 'c++20'
+    return flag
+
+
+def has_cxx_language_flag(tokens):
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == '-x' and index + 1 < len(tokens):
+            if tokens[index + 1].lower() in ('c++', 'c++-header', 'objective-c++'):
+                return True
+            index += 2
+            continue
+        if token.startswith('-x') and token[2:].lower() in ('c++', 'c++-header', 'objective-c++'):
+            return True
+        index += 1
+    return False
+
+
+def is_cpp_entry(entry):
+    return entry_file_path(entry).lower().endswith(CXX_SUFFIXES) or any(has_cxx_language_flag(tokens) for tokens in entry_token_groups(entry))
+
+
+def unique_source_count(entries):
+    return len({entry_file_path(entry).lower() for entry in entries})
+
+
 def strip_quotes(token):
     if len(token) >= 2 and token[0] == token[-1] and token[0] in ('"', "'"):
         return token[1:-1]
@@ -126,11 +157,14 @@ def depth_flags(tokens):
 def entry_standard_flags(entry):
     groups = [standard_flags(tokens) for tokens in entry_token_groups(entry)]
     merged = []
+    canonical = set()
     for flags in groups:
         if len(flags) != 1:
             return flags
         for flag in flags:
-            if flag not in merged:
+            canonical_flag = canonical_standard_flag(flag)
+            if canonical_flag not in canonical:
+                canonical.add(canonical_flag)
                 merged.append(flag)
     return merged
 
@@ -224,7 +258,7 @@ def main():
             fail(f'compile command entry #{index} command field must be a string', commands_path)
         if 'arguments' in entry and not isinstance(entry['arguments'], list):
             fail(f'compile command entry #{index} arguments field must be a list', commands_path)
-    cpp = [entry for entry in commands if entry_file_path(entry).lower().endswith(CXX_SUFFIXES)]
+    cpp = [entry for entry in commands if is_cpp_entry(entry)]
     if not cpp:
         fail(f'no C++ compile commands: {commands_path}')
 
@@ -327,9 +361,10 @@ def main():
     depth_excludes = ','.join(args.depth_exclude_path) if args.depth_exclude_path else '<none>'
     min_cpp_commands = args.min_cpp_commands if args.min_cpp_commands is not None else '<none>'
     accepted_standards = ','.join(ACCEPTED_STANDARD_FLAGS)
-    print(f'{args.build_dir}: accepted_standards={accepted_standards} checked_cpp_commands={len(cpp)} min_cpp_commands={min_cpp_commands} required_flags={required_flags} required_flag_prefixes={required_flag_prefixes} required_file_substrings={required_file_substrings} forbidden_file_substrings={forbidden_file_substrings_text} required_file_flags={required_file_flag_rules} forbidden_file_flags={forbidden_file_flag_rules_text} forbidden_flags={forbidden_flags_text} forbidden_flag_substrings={forbidden_flag_substrings} required_depth_define={depth_rule} depth_checked_commands={depth_checked} depth_exclude_paths={depth_excludes}')
-    if args.min_cpp_commands is not None and len(cpp) < args.min_cpp_commands:
-        fail(f'{args.build_dir}: expected at least {args.min_cpp_commands} C++ compile commands, found {len(cpp)}')
+    checked_sources = unique_source_count(cpp)
+    print(f'{args.build_dir}: accepted_standards={accepted_standards} checked_cpp_commands={len(cpp)} checked_cpp_sources={checked_sources} min_cpp_commands={min_cpp_commands} required_flags={required_flags} required_flag_prefixes={required_flag_prefixes} required_file_substrings={required_file_substrings} forbidden_file_substrings={forbidden_file_substrings_text} required_file_flags={required_file_flag_rules} forbidden_file_flags={forbidden_file_flag_rules_text} forbidden_flags={forbidden_flags_text} forbidden_flag_substrings={forbidden_flag_substrings} required_depth_define={depth_rule} depth_checked_commands={depth_checked} depth_exclude_paths={depth_excludes}')
+    if args.min_cpp_commands is not None and checked_sources < args.min_cpp_commands:
+        fail(f'{args.build_dir}: expected at least {args.min_cpp_commands} unique C++ compile commands, found {checked_sources}')
     if duplicate_std:
         entry, flags = duplicate_std[0]
         fail(f'{args.build_dir}: duplicate standard flags {detected_standard_text(flags)} ({len(duplicate_std)} files, showing first)', entry['file'], entry_command_text(entry))

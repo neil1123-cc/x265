@@ -20,6 +20,7 @@ COMPILE_FLAG_COMMANDS = {'add_compile_options', 'target_compile_options', 'add_d
 COMPILE_FLAG_PROPERTY_COMMANDS = {'set_property', 'set_source_files_properties', 'set_target_properties'}
 COMPILE_FLAG_PROPERTIES = {'COMPILE_FLAGS', 'COMPILE_OPTIONS', 'INTERFACE_COMPILE_OPTIONS'}
 LIST_COMPILE_FLAG_SUBCOMMANDS = {'append', 'prepend', 'insert'}
+STRING_COMPILE_FLAG_SUBCOMMANDS = {'append', 'prepend', 'concat'}
 COMPILE_FLAG_VARIABLE_MARKERS = ('COMPILE_FLAGS', 'COMPILE_OPTIONS', 'CXX_FLAGS', 'CXX_OPTIONS')
 WRAPPED_FLAG_COMMAND_MARKERS = ('compile', 'cxx', 'flag', 'option', 'definition')
 WRAPPED_FLAG_COMMAND_ALLOWLIST = {
@@ -62,6 +63,7 @@ SCRIPT_STANDARD_ALLOWLIST = (
     "GNU_DIALECT_DRIFT_FLAGS = ('-std=c++20', '--std=c++20')",
     "'--std=gnu++20',",
     '--std=gnu++20',
+    'if flag in GNU_DIALECT_DRIFT_FLAGS:',
     "STANDARD_PREFIXES = ('-std=', '--std=', '/std:')",
 )
 
@@ -200,6 +202,18 @@ def has_target_property_override(command):
     return False
 
 
+def is_compile_flag_variable(variable):
+    if CXX_FLAG_VARIABLE_RE.search(variable):
+        return True
+    variable_tokens = {token for token in re.split(r'[^A-Z0-9]+', variable.upper()) if token}
+    for marker in COMPILE_FLAG_VARIABLE_MARKERS:
+        marker_tokens = marker.split('_')
+        if len(marker_tokens) <= len(variable_tokens) and all(token in variable_tokens for token in marker_tokens):
+            if not ({'DOC', 'DOCS', 'DOCUMENTATION', 'HELP'} & variable_tokens):
+                return True
+    return False
+
+
 def contains_manual_standard_flag(parts):
     return any(marker in part for part in parts for marker in MANUAL_STANDARD_MARKERS)
 
@@ -211,11 +225,15 @@ def has_manual_standard_flag(command):
         return False
     if name == 'set' and parts:
         variable = parts[0]
-        if CXX_FLAG_VARIABLE_RE.search(variable) or any(marker in variable for marker in COMPILE_FLAG_VARIABLE_MARKERS):
+        if is_compile_flag_variable(variable):
             return contains_manual_standard_flag(parts[1:])
     if name == 'list' and len(parts) >= 3 and parts[0].lower() in LIST_COMPILE_FLAG_SUBCOMMANDS:
         variable = parts[1]
-        if any(marker in variable for marker in COMPILE_FLAG_VARIABLE_MARKERS):
+        if is_compile_flag_variable(variable):
+            return contains_manual_standard_flag(parts[2:])
+    if name == 'string' and len(parts) >= 3 and parts[0].lower() in STRING_COMPILE_FLAG_SUBCOMMANDS:
+        variable = parts[1]
+        if is_compile_flag_variable(variable):
             return contains_manual_standard_flag(parts[2:])
     if name in COMPILE_FLAG_COMMANDS:
         return contains_manual_standard_flag(parts)

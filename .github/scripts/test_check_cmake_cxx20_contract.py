@@ -173,6 +173,12 @@ def main():
         ''')
         expect_pass(run_checker(wrapped_flags_pass_source))
 
+        string_docs_source = write_source(root / 'string-docs-pass')
+        string_docs_nested = string_docs_source / 'cmake'
+        string_docs_nested.mkdir()
+        (string_docs_nested / 'docs.cmake').write_text('string(APPEND MY_CXX_FLAGS_DOC " -std=gnu++17 appears in docs")\n')
+        expect_pass(run_checker(string_docs_source))
+
         quoted_paren_source = write_source(root / 'quoted-paren-command')
         quoted_paren_nested = quoted_paren_source / 'cmake'
         quoted_paren_nested.mkdir()
@@ -223,6 +229,46 @@ def main():
         toolchain_list_nested.mkdir()
         (toolchain_list_nested / 'toolchain.cmake').write_text('list(PREPEND PROJECT_CXX_FLAGS -std=gnu++17)\n')
         expect_fail(run_checker(toolchain_list_source), 'manual C++ standard flag in CMake')
+
+        string_compile_flags_source = write_source(root / 'string-compile-flags')
+        string_compile_flags_nested = string_compile_flags_source / 'cmake'
+        string_compile_flags_nested.mkdir()
+        (string_compile_flags_nested / 'flags.cmake').write_text('''
+        function(add_local_flags)
+          string(APPEND CMAKE_CXX_FLAGS " -std=gnu++17")
+        endfunction()
+        ''')
+        expect_fail(run_checker(string_compile_flags_source), 'manual C++ standard flag in CMake')
+
+        macro_toolchain_string_source = write_source(root / 'macro-toolchain-string-flags')
+        macro_toolchain_string_nested = macro_toolchain_string_source / 'cmake'
+        macro_toolchain_string_nested.mkdir()
+        (macro_toolchain_string_nested / 'toolchain.cmake').write_text('''
+        macro(add_project_flags)
+          string(PREPEND PROJECT_CXX_FLAGS "-std=gnu++17 ")
+        endmacro()
+        ''')
+        expect_fail(run_checker(macro_toolchain_string_source), 'manual C++ standard flag in CMake')
+
+        function_parent_scope_source = write_source(root / 'function-parent-scope-flags')
+        function_parent_scope_nested = function_parent_scope_source / 'cmake'
+        function_parent_scope_nested.mkdir()
+        (function_parent_scope_nested / 'flags.cmake').write_text('''
+        function(add_parent_flags)
+          set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++17" PARENT_SCOPE)
+        endfunction()
+        ''')
+        expect_fail(run_checker(function_parent_scope_source), 'manual C++ standard flag in CMake')
+
+        foreach_list_insert_source = write_source(root / 'foreach-list-insert-flags')
+        foreach_list_insert_nested = foreach_list_insert_source / 'cmake'
+        foreach_list_insert_nested.mkdir()
+        (foreach_list_insert_nested / 'flags.cmake').write_text('''
+        foreach(flag -Wall)
+          list(INSERT CMAKE_CXX_FLAGS 0 -std=gnu++17)
+        endforeach()
+        ''')
+        expect_fail(run_checker(foreach_list_insert_source), 'manual C++ standard flag in CMake')
 
         included_manual_standard_source = write_source(root / 'included-manual-standard', BASE_CMAKELISTS + 'include(cmake/flags.cmake)\n')
         included_manual_standard_nested = included_manual_standard_source / 'cmake'
