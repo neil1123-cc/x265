@@ -37,10 +37,12 @@
 #include <queue>
 #include <vector>
 #include <fstream>
+#include <atomic>
 
 namespace X265_NS {
 
-extern int g_puStartIdx[128][8];
+enum { TME_PU_START_IDX_SIZE = 2 * MAX_CU_SIZE + 1 };
+extern int g_puStartIdx[TME_PU_START_IDX_SIZE][8];
 
 class Encoder;
 class Analysis;
@@ -167,8 +169,8 @@ public:
     Lock                    m_taskQueueLock;
     Event                   m_taskEvent;
 
-    volatile bool           m_active;
-    unsigned long long      m_enqueueSeq;
+    std::atomic<bool>       m_active;
+    std::atomic<uint64_t>   m_enqueueSeq;
 
     ThreadLocalData*        m_tld;
     int                     m_tldCount;

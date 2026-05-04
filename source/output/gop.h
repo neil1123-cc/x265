@@ -31,11 +31,12 @@
 
 #include "output.h"
 #include "common.h"
-#include <string>
-// #include <fstream>
-// #include <iostream>
-#include <sstream>
+#include <cstddef>
+#include <cstdio>
 #include <iomanip>
+#include <sstream>
+#include <string>
+
 
 enum
 {
@@ -68,8 +69,8 @@ public:
     {
         info = inputInfo;
         b_fail = false;
-        gop_file = NULL;
-        data_file = NULL;
+        gop_file = nullptr;
+        data_file = nullptr;
         options_written = false;
         openFile(fname);
     }

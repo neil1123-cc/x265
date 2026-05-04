@@ -25,6 +25,8 @@
 #ifndef X265_WAVEFRONT_H
 #define X265_WAVEFRONT_H
 
+#include <atomic>
+
 #include "common.h"
 #include "threadpool.h"
 
@@ -44,8 +46,8 @@ private:
     // Dependencies are categorized as internal and external. Internal dependencies
     // are caused by neighbor block availability.  External dependencies are generally
     // reference frame reconstructed pixels being available.
-    uint32_t volatile *m_internalDependencyBitmap;
-    uint32_t volatile *m_externalDependencyBitmap;
+    std::atomic<uint32_t> *m_internalDependencyBitmap;
+    std::atomic<uint32_t> *m_externalDependencyBitmap;
 
     // number of words in the bitmap
     int m_numWords;

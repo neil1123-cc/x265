@@ -78,7 +78,7 @@ void DPB::recycleUnreferenced()
         if (curFrame->m_param->bEnableTemporalFilter)
             isMCSTFReferenced =!!(curFrame->m_refPicCnt[1]);
 
-        if (curFrame->m_valid && !curFrame->m_encData->m_bHasReferences && !curFrame->m_countRefEncoders && !isMCSTFReferenced)
+        if (curFrame->m_valid && !curFrame->m_encData->m_bHasReferences && !curFrame->m_countRefEncoders.load() && !isMCSTFReferenced)
         {
             curFrame->m_bChromaExtended = false;
 
@@ -373,7 +373,7 @@ void DPB::prepareEncode(Frame *newFrame)
         for (int ref = 0; ref < slice->m_numRefIdx[l]; ref++)
         {
             Frame *refpic = slice->m_refFrameList[l][ref];
-            ATOMIC_INC(&refpic->m_countRefEncoders);
+            refpic->m_countRefEncoders.fetch_add(1);
         }
     }
 }

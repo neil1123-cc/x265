@@ -24,7 +24,7 @@ using namespace X265_NS;
 #endif
 
 #define NALU_LENGTH_SIZE 4
-#define MP4_LOG_ERROR(...) general_log(NULL, "mp4", X265_LOG_ERROR, __VA_ARGS__)
+#define MP4_LOG_ERROR(...) general_log(nullptr, "mp4", X265_LOG_ERROR, __VA_ARGS__)
 
 #define MP4_FAIL_IF(cond, ...) \
 if (cond) \
@@ -234,9 +234,9 @@ struct SamplePreparation
 MP4Muxer::MP4Muxer()
 {
     m_fail = false;
-    m_root = NULL;
-    m_summary = NULL;
-    m_seiBuffer = NULL;
+    m_root = nullptr;
+    m_summary = nullptr;
+    m_seiBuffer = nullptr;
     m_brands.fill(static_cast<lsmash_brand_type>(0));
     resetRuntimeState();
 }
@@ -443,7 +443,7 @@ bool MP4Muxer::scaleSampleTimestamps(int64_t pts, int64_t dts, uint64_t& sampleD
 void MP4Muxer::clearBufferedSeiState()
 {
     delete[] m_seiBuffer;
-    m_seiBuffer = NULL;
+    m_seiBuffer = nullptr;
     m_seiSize = 0;
 }
 
@@ -570,7 +570,7 @@ void MP4Muxer::cleanupHandle()
     if (m_summary)
     {
         lsmash_cleanup_summary((lsmash_summary_t*)m_summary);
-        m_summary = NULL;
+        m_summary = nullptr;
     }
     if (m_root)
     {
@@ -580,7 +580,7 @@ void MP4Muxer::cleanupHandle()
             m_fileOpen = false;
         }
         lsmash_destroy_root(m_root);
-        m_root = NULL;
+        m_root = nullptr;
     }
     clearBufferedSeiState();
     resetRuntimeState();
@@ -678,7 +678,7 @@ bool MP4Muxer::setParam(const x265_param* param)
         m_fail = true;
         return false;
     }
-    if (!validateParameterState("MP4 muxer reached parameter setup with partial parameter state.\n", NULL))
+    if (!validateParameterState("MP4 muxer reached parameter setup with partial parameter state.\n", nullptr))
     {
         m_fail = true;
         return false;
@@ -935,7 +935,7 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
     uint8_t* sps = m_spsData.data();
     uint8_t* pps = m_ppsData.data();
 
-    uint8_t* newSeiBuffer = NULL;
+    uint8_t* newSeiBuffer = nullptr;
     uint32_t newSeiSize = 0;
     const auto failSeiAssembly = [&](const char* message) {
         freeTemporarySeiState(newSeiBuffer);
@@ -945,7 +945,7 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
         return false;
     };
     const uint32_t seiOffset = headerOffset + 3;
-    newSeiBuffer = NULL;
+    newSeiBuffer = nullptr;
     newSeiSize = 0;
     if (nalcount > seiOffset)
     {
@@ -957,7 +957,7 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
                                       "missing SEI payload pointer in headers.\n",
                                       "invalid empty SEI in headers.\n",
                                       "SEI payload type does not match MP4 header metadata.\n"))
-                return failSeiAssembly(NULL);
+                return failSeiAssembly(nullptr);
             if (UINT64_MAX - seiTotalSize < nal[i].sizeBytes)
                 return failSeiAssembly("SEI payload overflow while assembling MP4 headers.\n");
             seiTotalSize += nal[i].sizeBytes;
@@ -1005,7 +1005,7 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
 
     uint32_t sampleEntry = lsmash_add_sample_entry(m_root, m_track, m_summary);
     if (!sampleEntry)
-        return failSampleEntry("failed to add sample entry for video.\n", NULL);
+        return failSampleEntry("failed to add sample entry for video.\n", nullptr);
 
     m_sampleEntry = sampleEntry;
     m_seiBuffer = newSeiBuffer;
@@ -1359,7 +1359,7 @@ void MP4Muxer::finalize(int64_t largestPts, int64_t secondLargestPts)
 
     if (!m_fail)
     {
-        if (lsmash_finish_movie(m_root, NULL))
+        if (lsmash_finish_movie(m_root, nullptr))
         {
             MP4_LOG_ERROR("failed to finish movie.\n");
             m_fail = true;

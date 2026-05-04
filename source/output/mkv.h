@@ -59,7 +59,8 @@ protected:
     bool bEnableWavefront;
     InputFileInfo info;
     ProfileTierLevel m_ptl;
-    SPS m_sps;
+    int m_chromaFormatIdc;
+    uint32_t m_maxTempSubLayers;
 
 public:
 

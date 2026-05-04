@@ -155,7 +155,7 @@ class ScalerHLumFilter : public ScalerFilter {
 private:
     HFilterScaler* m_hFilterScaler;
 public:
-    ScalerHLumFilter(int bitDepth) { bitDepth == 8 ? m_hFilterScaler = new HFilterScaler8Bit : bitDepth == 10 ? m_hFilterScaler = new HFilterScaler10Bit : NULL;}
+    ScalerHLumFilter(int bitDepth) { bitDepth == 8 ? m_hFilterScaler = new HFilterScaler8Bit : bitDepth == 10 ? m_hFilterScaler = new HFilterScaler10Bit : nullptr;}
     ~ScalerHLumFilter() { if (m_hFilterScaler) X265_FREE(m_hFilterScaler); }
     virtual void process(int sliceVer, int sliceHor);
 };
@@ -165,7 +165,7 @@ class ScalerHCrFilter : public ScalerFilter {
 private:
     HFilterScaler* m_hFilterScaler;
 public:
-    ScalerHCrFilter(int bitDepth) { bitDepth == 8 ? m_hFilterScaler = new HFilterScaler8Bit : bitDepth == 10 ? m_hFilterScaler = new HFilterScaler10Bit : NULL;}
+    ScalerHCrFilter(int bitDepth) { bitDepth == 8 ? m_hFilterScaler = new HFilterScaler8Bit : bitDepth == 10 ? m_hFilterScaler = new HFilterScaler10Bit : nullptr;}
     ~ScalerHCrFilter() { if (m_hFilterScaler) X265_FREE(m_hFilterScaler); }
     virtual void process(int sliceVer, int sliceHor);
 };
@@ -175,7 +175,7 @@ class ScalerVLumFilter : public ScalerFilter {
 private:
     VFilterScaler* m_vFilterScaler;
 public:
-    ScalerVLumFilter(int bitDepth) { bitDepth == 8 ? m_vFilterScaler = new VFilterScaler8Bit : bitDepth == 10 ? m_vFilterScaler = new VFilterScaler10Bit : NULL;}
+    ScalerVLumFilter(int bitDepth) { bitDepth == 8 ? m_vFilterScaler = new VFilterScaler8Bit : bitDepth == 10 ? m_vFilterScaler = new VFilterScaler10Bit : nullptr;}
     ~ScalerVLumFilter() { if (m_vFilterScaler) X265_FREE(m_vFilterScaler); }
     virtual void process(int sliceVer, int sliceHor);
 };
@@ -185,7 +185,7 @@ class ScalerVCrFilter : public ScalerFilter {
 private:
     VFilterScaler*    m_vFilterScaler;
 public:
-    ScalerVCrFilter(int bitDepth) { bitDepth == 8 ? m_vFilterScaler = new VFilterScaler8Bit : bitDepth == 10 ? m_vFilterScaler = new VFilterScaler10Bit : NULL;}
+    ScalerVCrFilter(int bitDepth) { bitDepth == 8 ? m_vFilterScaler = new VFilterScaler8Bit : bitDepth == 10 ? m_vFilterScaler = new VFilterScaler10Bit : nullptr;}
     ~ScalerVCrFilter() { if (m_vFilterScaler) X265_FREE(m_vFilterScaler); }
     virtual void process(int sliceVer, int sliceHor);
 };
@@ -242,9 +242,9 @@ public:
     ScalerFilterManager();
     ~ScalerFilterManager() {
         for (int i = 0; i < m_numSlice; i++)
-            if (m_slices[i]) { m_slices[i]->destroy(); delete m_slices[i]; m_slices[i] = NULL; }
+            if (m_slices[i]) { m_slices[i]->destroy(); delete m_slices[i]; m_slices[i] = nullptr; }
         for (int i = 0; i < m_numFilter; i++)
-            if (m_ScalerFilters[i]) { delete m_ScalerFilters[i]; m_ScalerFilters[i] = NULL; }
+            if (m_ScalerFilters[i]) { delete m_ScalerFilters[i]; m_ScalerFilters[i] = nullptr; }
     }
     int init(int algorithmFlags, VideoDesc* srcVideoDesc, VideoDesc* dstVideoDesc);
     int scale_pic(void** src, void** dst, int* srcStride, int* dstStride);

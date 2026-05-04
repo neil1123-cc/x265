@@ -31,6 +31,8 @@
 #include "threading.h"
 #include "x265cli.h"
 
+#include <atomic>
+
 namespace X265_NS {
     // private namespace
 
@@ -77,9 +79,9 @@ namespace X265_NS {
         x265_encoder *m_encoder;
         Reader *m_reader;
         Scaler *m_scaler;
-        bool m_inputOver;
+        std::atomic<bool> m_inputOver;
 
-        int m_threadActive;
+        std::atomic<bool> m_threadActive;
         int m_lastIdx;
         uint32_t m_outputNalsCount;
 
@@ -124,7 +126,7 @@ namespace X265_NS {
         ThreadSafeInteger m_scaledWriteCnt;
         VideoDesc* m_srcFormat;
         VideoDesc* m_dstFormat;
-        int m_threadActive;
+        std::atomic<bool> m_threadActive;
         ScalerFilterManager* m_filterManager;
 
         Scaler(int threadId, int threadNum, int id, VideoDesc *src, VideoDesc * dst, PassEncoder *parentEnc);
@@ -135,7 +137,7 @@ namespace X265_NS {
             if (m_filterManager)
             {
                 delete m_filterManager;
-                m_filterManager = NULL;
+                m_filterManager = nullptr;
             }
         }
     };
@@ -146,7 +148,7 @@ namespace X265_NS {
         PassEncoder *m_parentEnc;
         int m_id;
         InputFile* m_input[MAX_VIEWS];
-        int m_threadActive;
+        std::atomic<bool> m_threadActive;
 
         Reader(int id, PassEncoder *parentEnc);
         void threadMain();

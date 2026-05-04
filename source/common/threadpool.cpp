@@ -35,11 +35,13 @@
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
+#include <unistd.h>
 #elif !defined(_WIN32)
 #include <fstream>
 #include <string>
 #include <cstdio>
 #include <cstdlib>
+#include <unistd.h>
 #endif
 
 #if X86_64
@@ -135,19 +137,19 @@ void WorkerThread::threadMain()
 
     sleepbitmap_t idBit = (sleepbitmap_t)1 << m_id;
     m_curJobProvider = m_pool.m_jpTable[0];
-    m_bondMaster = NULL;
+    m_bondMaster = nullptr;
 
     SLEEPBITMAP_OR(&m_curJobProvider->m_ownerBitmap, idBit);
     SLEEPBITMAP_OR(&m_pool.m_sleepBitmap, idBit);
     m_wakeEvent.wait();
 
-    while (m_pool.m_isActive)
+    while (m_pool.m_isActive.load())
     {
         if (m_bondMaster)
         {
             m_bondMaster->processTasks(m_id);
             m_bondMaster->m_exitedPeerCount.incr();
-            m_bondMaster = NULL;
+            m_bondMaster = nullptr;
         }
 
         do
@@ -158,12 +160,12 @@ void WorkerThread::threadMain()
             /* if the current job provider still wants help, only switch to a
              * higher priority provider (lower slice type). Else take the first
              * available job provider with the highest priority */
-            int curPriority = (m_curJobProvider->m_helpWanted) ? m_curJobProvider->m_sliceType :
+            int curPriority = m_curJobProvider->m_helpWanted.load() ? m_curJobProvider->m_sliceType :
                                                                  INVALID_SLICE_PRIORITY + 1;
             int nextProvider = -1;
             for (int i = 0; i < m_pool.m_numProviders; i++)
             {
-                if (m_pool.m_jpTable[i]->m_helpWanted &&
+                if (m_pool.m_jpTable[i]->m_helpWanted.load() &&
                     m_pool.m_jpTable[i]->m_sliceType < curPriority)
                 {
                     nextProvider = i;
@@ -177,7 +179,7 @@ void WorkerThread::threadMain()
                 SLEEPBITMAP_OR(&m_curJobProvider->m_ownerBitmap, idBit);
             }
         }
-        while (m_curJobProvider->m_helpWanted);
+        while (m_curJobProvider->m_helpWanted.load());
 
         /* While the worker sleeps, a job-provider or bond-group may acquire this
          * worker's sleep bitmap bit. Once acquired, that thread may modify 
@@ -194,7 +196,7 @@ void JobProvider::tryWakeOne()
     int id = m_pool->tryAcquireSleepingThread(m_ownerBitmap, ALL_POOL_THREADS);
     if (id < 0)
     {
-        m_helpWanted = true;
+        m_helpWanted.store(true);
         return;
     }
 
@@ -564,7 +566,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
     }
     
     if (!numPools)
-        return NULL;
+        return nullptr;
 
     if (numPools > p->frameNumThreads && !p->bThreadedME)
     {
@@ -607,7 +609,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
             {
                 delete[] pools;
                 numPools = 0;
-                return NULL;
+                return nullptr;
             }
             if (numNumaNodes > 1)
             {
@@ -630,8 +632,17 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
 }
 
 ThreadPool::ThreadPool()
+    : m_sleepBitmap(0)
+    , m_numProviders(0)
+    , m_numWorkers(0)
+    , m_numaMask(nullptr)
+#if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7
+    , m_groupAffinity()
+#endif
+    , m_isActive(false)
+    , m_jpTable(nullptr)
+    , m_workers(nullptr)
 {
-    memset((void*)this, 0, sizeof(*this));
 }
 
 bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
@@ -658,7 +669,7 @@ bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
             m_numaMask = nodemask;
         }
         else
-            x265_log(NULL, X265_LOG_ERROR, "unable to get NUMA node mask for %lx\n", nodeMask);
+            x265_log(nullptr, X265_LOG_ERROR, "unable to get NUMA node mask for %lx\n", nodeMask);
     }
 #else
     (void)nodeMask;
@@ -682,12 +693,12 @@ bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
 
 bool ThreadPool::start()
 {
-    m_isActive = true;
+    m_isActive.store(true);
     for (int i = 0; i < m_numWorkers; i++)
     {
         if (!m_workers[i].start())
         {
-            m_isActive = false;
+            m_isActive.store(false);
             return false;
         }
     }
@@ -698,7 +709,7 @@ void ThreadPool::stopWorkers()
 {
     if (m_workers)
     {
-        m_isActive = false;
+        m_isActive.store(false);
         for (int i = 0; i < m_numWorkers; i++)
         {
             while (!(m_sleepBitmap & ((sleepbitmap_t)1 << i)))
@@ -740,10 +751,10 @@ void ThreadPool::setThreadNodeAffinity(void *numaMask)
     groupAffinity.Group = m_groupAffinity.Group;
     groupAffinity.Mask = m_groupAffinity.Mask;
     const PGROUP_AFFINITY affinityPointer = &groupAffinity;
-    if (SetThreadGroupAffinity(GetCurrentThread(), affinityPointer, NULL))
+    if (SetThreadGroupAffinity(GetCurrentThread(), affinityPointer, nullptr))
         return;
     else
-        x265_log(NULL, X265_LOG_ERROR, "unable to set thread affinity for NUMA node mask\n");
+        x265_log(nullptr, X265_LOG_ERROR, "unable to set thread affinity for NUMA node mask\n");
 #elif HAVE_LIBNUMA
     if (numa_available() >= 0)
     {
@@ -752,7 +763,7 @@ void ThreadPool::setThreadNodeAffinity(void *numaMask)
         numa_set_localalloc();
         return;
     }
-    x265_log(NULL, X265_LOG_ERROR, "unable to set thread affinity for NUMA node mask\n");
+    x265_log(nullptr, X265_LOG_ERROR, "unable to set thread affinity for NUMA node mask\n");
 #else
     (void)numaMask;
 #endif
@@ -808,12 +819,12 @@ int ThreadPool::getCpuCount()
 
     nm[0] = CTL_HW;
     nm[1] = HW_AVAILCPU;
-    sysctl(nm, 2, &count, &len, NULL, 0);
+    sysctl(nm, 2, &count, &len, nullptr, 0);
 
     if (count < 1)
     {
         nm[1] = HW_NCPU;
-        sysctl(nm, 2, &count, &len, NULL, 0);
+        sysctl(nm, 2, &count, &len, nullptr, 0);
         if (count < 1)
             count = 1;
     }
@@ -934,7 +945,7 @@ double getCPUFrequencyMHz()
                       "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
                       0, KEY_READ, &hKey) == ERROR_SUCCESS)
     {
-        RegQueryValueExA(hKey, "~MHz", NULL, NULL, (LPBYTE)&mhz, &size);
+        RegQueryValueExA(hKey, "~MHz", nullptr, nullptr, (LPBYTE)&mhz, &size);
         RegCloseKey(hKey);
     }
     return (double)mhz;
@@ -942,7 +953,7 @@ double getCPUFrequencyMHz()
 #elif defined(__APPLE__)
     uint64_t freq = 0;
     size_t size = sizeof(freq);
-    if (sysctlbyname("hw.cpufrequency", &freq, &size, NULL, 0) == 0)
+    if (sysctlbyname("hw.cpufrequency", &freq, &size, nullptr, 0) == 0)
         return (double)freq / 1.0e6;
     return 0.0;
 
@@ -980,7 +991,7 @@ double getCPUFrequencyMHz()
                 size_t colon = line.find(':');
                 if (colon != std::string::npos)
                 {
-                    double mhz = strtod(line.c_str() + colon + 1, NULL);
+                    double mhz = strtod(line.c_str() + colon + 1, nullptr);
                     if (mhz > maxMhz)
                         maxMhz = mhz;
                 }

@@ -149,7 +149,7 @@ public:
 
     Event()
     {
-        this->handle = CreateEvent(NULL, FALSE, FALSE, NULL);
+        this->handle = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     }
 
     ~Event()
@@ -268,7 +268,7 @@ protected:
 class NamedSemaphore
 {
 public:
-    NamedSemaphore() : m_sem(NULL)
+    NamedSemaphore() : m_sem(nullptr)
     {
     }
 
@@ -280,14 +280,14 @@ public:
     {
         if(!m_sem)
         {
-            m_sem = CreateSemaphoreA(NULL, initcnt, maxcnt, name);
+            m_sem = CreateSemaphoreA(nullptr, initcnt, maxcnt, name);
         }
-        return m_sem != NULL;
+        return m_sem != nullptr;
     }
 
     bool give(const int32_t cnt)
     {
-        return ReleaseSemaphore(m_sem, (LONG)cnt, NULL) != FALSE;
+        return ReleaseSemaphore(m_sem, (LONG)cnt, nullptr) != FALSE;
     }
 
     bool take(const uint32_t time_out = INFINITE)
@@ -299,7 +299,7 @@ public:
     void release()
     {
         CloseHandle(m_sem);
-        m_sem = NULL;
+        m_sem = nullptr;
     }
 
 private:
@@ -316,7 +316,7 @@ public:
 
     Lock()
     {
-        pthread_mutex_init(&this->handle, NULL);
+        pthread_mutex_init(&this->handle, nullptr);
     }
 
     ~Lock()
@@ -346,10 +346,10 @@ public:
     Event()
     {
         m_counter = 0;
-        if (pthread_mutex_init(&m_mutex, NULL) ||
-            pthread_cond_init(&m_cond, NULL))
+        if (pthread_mutex_init(&m_mutex, nullptr) ||
+            pthread_cond_init(&m_cond, nullptr))
         {
-            x265_log(NULL, X265_LOG_ERROR, "fatal: unable to initialize conditional variable\n");
+            x265_log(nullptr, X265_LOG_ERROR, "fatal: unable to initialize conditional variable\n");
         }
     }
 
@@ -381,7 +381,7 @@ public:
         {
             struct timeval tv;
             struct timespec ts;
-            gettimeofday(&tv, NULL);
+            gettimeofday(&tv, nullptr);
             /* convert current time from (sec, usec) to (sec, nsec) */
             ts.tv_sec = tv.tv_sec;
             ts.tv_nsec = tv.tv_usec * 1000;
@@ -434,10 +434,10 @@ public:
     ThreadSafeInteger()
     {
         m_val = 0;
-        if (pthread_mutex_init(&m_mutex, NULL) ||
-            pthread_cond_init(&m_cond, NULL))
+        if (pthread_mutex_init(&m_mutex, nullptr) ||
+            pthread_cond_init(&m_cond, nullptr))
         {
-            x265_log(NULL, X265_LOG_ERROR, "fatal: unable to initialize conditional variable\n");
+            x265_log(nullptr, X265_LOG_ERROR, "fatal: unable to initialize conditional variable\n");
         }
     }
 
@@ -518,9 +518,9 @@ class NamedSemaphore
 {
 public:
     NamedSemaphore() 
-        : m_sem(NULL)
+        : m_sem(nullptr)
 #ifndef __APPLE__
-        , m_name(NULL)
+        , m_name(nullptr)
 #endif //__APPLE__
     {
     }
@@ -541,7 +541,7 @@ public:
 #ifdef __APPLE__
         do
         {
-            int32_t pshared = name != NULL ? PTHREAD_PROCESS_SHARED : PTHREAD_PROCESS_PRIVATE;
+            int32_t pshared = name != nullptr ? PTHREAD_PROCESS_SHARED : PTHREAD_PROCESS_PRIVATE;
 
             m_sem = (mac_sem_t *)malloc(sizeof(mac_sem_t));
             if (!m_sem)
@@ -759,13 +759,13 @@ public:
             pthread_mutex_destroy(&m_sem->mutex);
             pthread_cond_destroy(&m_sem->cond);
             free(m_sem);
-            m_sem = NULL;
+            m_sem = nullptr;
 #else //__APPLE__
             sem_close(m_sem);
             sem_unlink(m_name);
-            m_sem = NULL;
+            m_sem = nullptr;
             free(m_name);
-            m_name = NULL;
+            m_name = nullptr;
 #endif //__APPLE__
         }
     }

@@ -37,8 +37,8 @@ const char *PPACpuAndGroup[] =
 #undef PPA_REGISTER_CPU_EVENT2GROUP
 
 extern "C" {
-typedef ppa::Base *(FUNC_PPALibInit)(const char **, int);
-typedef void (FUNC_PPALibRelease)(ppa::Base* &);
+using FUNC_PPALibInit = ppa::Base *(const char **, int);
+using FUNC_PPALibRelease = void (ppa::Base* &);
 }
 
 using namespace ppa;

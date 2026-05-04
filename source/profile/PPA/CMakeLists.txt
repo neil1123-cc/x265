@@ -1,1 +1,5 @@
 add_library(PPA ppa.h ppaApi.h ppa.cpp ../cpuEvents.h)
+target_compile_definitions(PPA PRIVATE ENABLE_PPA)
+if(X265_CXX20_WARNING_OPTIONS)
+    target_compile_options(PPA PRIVATE ${X265_CXX20_WARNING_TARGET_OPTIONS})
+endif()

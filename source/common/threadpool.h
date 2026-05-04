@@ -27,6 +27,8 @@
 #include "common.h"
 #include "threading.h"
 
+#include <atomic>
+
 namespace X265_NS {
 // x265 private namespace
 
@@ -54,11 +56,11 @@ public:
     sleepbitmap_t m_ownerBitmap;
     int           m_jpId;
     int           m_sliceType;
-    bool          m_helpWanted;
+    std::atomic<bool> m_helpWanted;
     bool          m_isFrameEncoder; /* rather ugly hack, but nothing better presents itself */
 
     JobProvider()
-        : m_pool(NULL)
+        : m_pool(nullptr)
         , m_ownerBitmap(0)
         , m_jpId(-1)
         , m_sliceType(INVALID_SLICE_PRIORITY)
@@ -87,7 +89,7 @@ public:
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 
     GROUP_AFFINITY m_groupAffinity;
 #endif
-    bool          m_isActive;
+    std::atomic<bool> m_isActive;
 
     JobProvider** m_jpTable;
     WorkerThread* m_workers;

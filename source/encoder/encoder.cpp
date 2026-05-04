@@ -630,7 +630,7 @@ void Encoder::stopJobs()
         if (m_frameEncoder[i])
         {
             m_frameEncoder[i]->getEncodedPicture(m_nalList);
-            m_frameEncoder[i]->m_threadActive = false;
+            m_frameEncoder[i]->m_threadActive.store(false);
             m_frameEncoder[i]->m_enable.trigger();
             m_frameEncoder[i]->stop();
         }
@@ -641,6 +641,9 @@ void Encoder::stopJobs()
         for (int i = 0; i < m_numPools; i++)
             m_threadPool[i].stopWorkers();
     }
+
+    if (m_threadedME)
+        m_threadedME->stop();
 }
 
 int Encoder::copySlicetypePocAndSceneCut(int *slicetype, int *poc, int *sceneCut, int sLayer)
@@ -916,7 +919,7 @@ void Encoder::destroy()
     {
         if (m_exportedPic[layer])
         {
-            ATOMIC_DEC(&m_exportedPic[layer]->m_countRefEncoders);
+            m_exportedPic[layer]->m_countRefEncoders.fetch_sub(1);
             m_exportedPic[layer] = NULL;
         }
     }
@@ -1480,7 +1483,7 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
 
         for (int i = 0; i < m_param->numLayers; i++)
         {
-            ATOMIC_DEC(&m_exportedPic[i]->m_countRefEncoders);
+            m_exportedPic[i]->m_countRefEncoders.fetch_sub(1);
             m_exportedPic[i] = NULL;
         }
         m_dpb->recycleUnreferenced();
@@ -1751,7 +1754,7 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
                 inFrame[layer]->m_fieldNum = inputPic[0]->fieldNum;
 
             /* Encoder holds a reference count until stats collection is finished */
-            ATOMIC_INC(&inFrame[layer]->m_countRefEncoders);
+            inFrame[layer]->m_countRefEncoders.fetch_add(1);
         }
         copyUserSEIMessages(inFrame[0], inputPic[0]);
 
@@ -2201,7 +2204,7 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
                 /* Allow this frame to be recycled if no frame encoders are using it for reference */
                 if (!pic_out)
                 {
-                    ATOMIC_DEC(&outFrame->m_countRefEncoders);
+                    outFrame->m_countRefEncoders.fetch_sub(1);
                     m_dpb->recycleUnreferenced();
                     if (m_param->bEnableTemporalFilter)
                         m_lookahead->m_origPicBuf->recycleOrigPicList();
@@ -3233,14 +3236,16 @@ void Encoder::finishFrameStats(Frame* curFrame, FrameEncoder *curEncoder, x265_f
             frameStats->stallTime = ELAPSED_MSEC(0, curEncoder->m_totalNoWorkerTime[layer]);
             frameStats->totalFrameTime = ELAPSED_MSEC(curFrame->m_encodeStartTime, x265_mdate());
 
-            frameStats->tmeTime = curEncoder->m_totalThreadedMETime[layer];
-            frameStats->tmeWaitTime = curEncoder->m_totalThreadedMEWait[layer];
+            frameStats->tmeTime = curEncoder->m_totalThreadedMETime[layer].load(std::memory_order_relaxed);
+            frameStats->tmeWaitTime = curEncoder->m_totalThreadedMEWait[layer].load(std::memory_order_relaxed);
 
-            if (curEncoder->m_totalActiveWorkerCount)
-                frameStats->avgWPP = (double)curEncoder->m_totalActiveWorkerCount / curEncoder->m_activeWorkerCountSamples;
+            const int totalActiveWorkerCount = curEncoder->m_totalActiveWorkerCount.load(std::memory_order_relaxed);
+            const int activeWorkerCountSamples = curEncoder->m_activeWorkerCountSamples.load(std::memory_order_relaxed);
+            if (totalActiveWorkerCount)
+                frameStats->avgWPP = (double)totalActiveWorkerCount / activeWorkerCountSamples;
             else
                 frameStats->avgWPP = 1;
-            frameStats->countRowBlocks = curEncoder->m_countRowBlocks;
+            frameStats->countRowBlocks = curEncoder->m_countRowBlocks.load(std::memory_order_relaxed);
 
             frameStats->avgChromaDistortion = curFrame->m_encData->m_frameStats.avgChromaDistortion;
             frameStats->avgLumaDistortion = curFrame->m_encData->m_frameStats.avgLumaDistortion;

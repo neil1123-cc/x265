@@ -1,14 +1,10 @@
 # vim: syntax=cmake
 
 if(GCC)
-    x265_add_definitions(-Wno-uninitialized)
     if(CC_HAS_NO_STRICT_OVERFLOW)
         # GCC 4.9.2 gives warnings we know we can ignore in this file
         set_source_files_properties(slicetype.cpp PROPERTIES COMPILE_FLAGS -Wno-strict-overflow)
     endif(CC_HAS_NO_STRICT_OVERFLOW)
-endif()
-if(MSVC)
-   x265_add_definitions(/wd4701) # potentially uninitialized local variable 'foo' used
 endif()
 
 if(EXTRA_LIB)
@@ -45,3 +41,10 @@ add_library(encoder OBJECT ../x265.h
     api.cpp
     weightPrediction.cpp svt.h
     threadedme.h threadedme.cpp)
+
+if(GCC)
+    target_compile_options(encoder PRIVATE -Wno-uninitialized)
+endif()
+if(MSVC)
+    target_compile_options(encoder PRIVATE /wd4701)
+endif()

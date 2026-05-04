@@ -35,11 +35,11 @@ class IPFilterHarness : public TestHarness
 protected:
 
     // Assuming max_height = max_width = max_srcStride = max_dstStride = 100
-    enum { TEST_BUF_SIZE = 200 * 200 };
-    enum { ITERS = 100 };
-    enum { TEST_CASES = 3 };
-    enum { SMAX = 1 << 12 };
-    enum { SMIN = (unsigned)-1 << 12 };
+    static constexpr int TEST_BUF_SIZE = 200 * 200;
+    static constexpr int ITERS = 100;
+    static constexpr int TEST_CASES = 3;
+    static constexpr int SMAX = 1 << 12;
+    static constexpr unsigned SMIN = static_cast<unsigned>(-1) << 12;
     ALIGN_VAR_64(pixel, pixel_buff[TEST_BUF_SIZE]);
     ALIGN_VAR_64(int16_t, short_buff[TEST_BUF_SIZE]);
     ALIGN_VAR_64(int16_t, IPF_vec_output_s[TEST_BUF_SIZE]);

@@ -8,6 +8,8 @@
 
 #include "input.h"
 #include "threading.h"
+#include <cstddef>
+#include <cstdint>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>

@@ -27,6 +27,8 @@
 #include "wavefront.h"
 #include "common.h"
 
+#include <new>
+
 namespace X265_NS {
 // x265 private namespace
 
@@ -35,13 +37,15 @@ bool WaveFront::init(int numRows)
     m_numRows = numRows;
 
     m_numWords = (numRows + 31) >> 5;
-    m_internalDependencyBitmap = X265_MALLOC(uint32_t, m_numWords);
+    m_internalDependencyBitmap = new (std::nothrow) std::atomic<uint32_t>[m_numWords];
     if (m_internalDependencyBitmap)
-        memset((void*)m_internalDependencyBitmap, 0, sizeof(uint32_t) * m_numWords);
+        for (int w = 0; w < m_numWords; w++)
+            m_internalDependencyBitmap[w].store(0);
 
-    m_externalDependencyBitmap = X265_MALLOC(uint32_t, m_numWords);
+    m_externalDependencyBitmap = new (std::nothrow) std::atomic<uint32_t>[m_numWords];
     if (m_externalDependencyBitmap)
-        memset((void*)m_externalDependencyBitmap, 0, sizeof(uint32_t) * m_numWords);
+        for (int w = 0; w < m_numWords; w++)
+            m_externalDependencyBitmap[w].store(0);
 
     m_row_to_idx = X265_MALLOC(uint32_t, m_numRows);
     m_idx_to_row = X265_MALLOC(uint32_t, m_numRows);
@@ -54,8 +58,8 @@ WaveFront::~WaveFront()
     x265_free((void*)m_row_to_idx);
     x265_free((void*)m_idx_to_row);
 
-    x265_free((void*)m_internalDependencyBitmap);
-    x265_free((void*)m_externalDependencyBitmap);
+    delete[] m_internalDependencyBitmap;
+    delete[] m_externalDependencyBitmap;
 }
 
 void WaveFront::setLayerId(int layer)
@@ -65,31 +69,35 @@ void WaveFront::setLayerId(int layer)
 
 void WaveFront::clearEnabledRowMask()
 {
-    memset((void*)m_externalDependencyBitmap, 0, sizeof(uint32_t) * m_numWords);
-    memset((void*)m_internalDependencyBitmap, 0, sizeof(uint32_t) * m_numWords);
+    for (int w = 0; w < m_numWords; w++)
+    {
+        m_externalDependencyBitmap[w].store(0);
+        m_internalDependencyBitmap[w].store(0);
+    }
 }
 
 void WaveFront::enqueueRow(int row)
 {
     uint32_t bit = 1 << (row & 31);
-    ATOMIC_OR(&m_internalDependencyBitmap[row >> 5], bit);
+    m_internalDependencyBitmap[row >> 5].fetch_or(bit);
 }
 
 void WaveFront::enableRow(int row)
 {
     uint32_t bit = 1 << (row & 31);
-    ATOMIC_OR(&m_externalDependencyBitmap[row >> 5], bit);
+    m_externalDependencyBitmap[row >> 5].fetch_or(bit);
 }
 
 void WaveFront::enableAllRows()
 {
-    memset((void*)m_externalDependencyBitmap, ~0, sizeof(uint32_t) * m_numWords);
+    for (int w = 0; w < m_numWords; w++)
+        m_externalDependencyBitmap[w].store(~0U);
 }
 
 bool WaveFront::dequeueRow(int row)
 {
     uint32_t bit = 1 << (row & 31);
-    return !!(ATOMIC_AND(&m_internalDependencyBitmap[row >> 5], ~bit) & bit);
+    return !!(m_internalDependencyBitmap[row >> 5].fetch_and(~bit) & bit);
 }
 
 void WaveFront::findJob(int threadId)
@@ -99,24 +107,24 @@ void WaveFront::findJob(int threadId)
     /* Loop over each word until all available rows are finished */
     for (int w = 0; w < m_numWords; w++)
     {
-        uint32_t oldval = m_internalDependencyBitmap[w] & m_externalDependencyBitmap[w];
+        uint32_t oldval = m_internalDependencyBitmap[w].load() & m_externalDependencyBitmap[w].load();
         while (oldval)
         {
             BSF(id, oldval);
 
             uint32_t bit = 1 << id;
-            if (ATOMIC_AND(&m_internalDependencyBitmap[w], ~bit) & bit)
+            if (m_internalDependencyBitmap[w].fetch_and(~bit) & bit)
             {
                 /* we cleared the bit, we get to process the row */
                 processRow(w * 32 + id, threadId, m_sLayerId);
-                m_helpWanted = true;
+                m_helpWanted.store(true);
                 return; /* check for a higher priority task */
             }
 
-            oldval = m_internalDependencyBitmap[w] & m_externalDependencyBitmap[w];
+            oldval = m_internalDependencyBitmap[w].load() & m_externalDependencyBitmap[w].load();
         }
     }
 
-    m_helpWanted = false;
+    m_helpWanted.store(false);
 }
 }

@@ -31,18 +31,18 @@ using namespace X265_NS;
 
 PicYuv::PicYuv()
 {
-    m_picBuf[0] = NULL;
-    m_picBuf[1] = NULL;
-    m_picBuf[2] = NULL;
+    m_picBuf[0] = nullptr;
+    m_picBuf[1] = nullptr;
+    m_picBuf[2] = nullptr;
 
-    m_picOrg[0] = NULL;
-    m_picOrg[1] = NULL;
-    m_picOrg[2] = NULL;
+    m_picOrg[0] = nullptr;
+    m_picOrg[1] = nullptr;
+    m_picOrg[2] = nullptr;
 
-    m_cuOffsetY = NULL;
-    m_cuOffsetC = NULL;
-    m_buOffsetY = NULL;
-    m_buOffsetC = NULL;
+    m_cuOffsetY = nullptr;
+    m_cuOffsetC = nullptr;
+    m_buOffsetY = nullptr;
+    m_buOffsetC = nullptr;
 
     m_maxLumaLevel = 0;
     m_avgLumaLevel = 0;
@@ -116,8 +116,8 @@ bool PicYuv::create(x265_param* param, bool picAlloc, pixel *pixelbuf)
     }
     else
     {
-        m_picBuf[1] = m_picBuf[2] = NULL;
-        m_picOrg[1] = m_picOrg[2] = NULL;
+        m_picBuf[1] = m_picBuf[2] = nullptr;
+        m_picOrg[1] = m_picOrg[2] = nullptr;
     }
     return true;
 
@@ -145,8 +145,8 @@ void PicYuv::copyFromFrame(PicYuv* source)
     }
     else
     {
-        m_picBuf[1] = m_picBuf[2] = NULL;
-        m_picOrg[1] = m_picOrg[2] = NULL;
+        m_picBuf[1] = m_picBuf[2] = nullptr;
+        m_picOrg[1] = m_picOrg[2] = nullptr;
     }
 }
 
@@ -174,8 +174,8 @@ bool PicYuv::createScaledPicYUV(x265_param* param, uint8_t scaleFactor)
     int maxHeight = numCuInHeight * param->maxCUSize;
     CHECKED_MALLOC_ZERO(m_picBuf[0], pixel, m_stride * (maxHeight + (m_lumaMarginY * 2)));
     m_picOrg[0] = m_picBuf[0] + m_lumaMarginY * m_stride + m_lumaMarginX;
-    m_picBuf[1] = m_picBuf[2] = NULL;
-    m_picOrg[1] = m_picOrg[2] = NULL;
+    m_picBuf[1] = m_picBuf[2] = nullptr;
+    m_picOrg[1] = m_picOrg[2] = nullptr;
     return true;
 
 fail:
@@ -261,7 +261,7 @@ void PicYuv::destroy()
         if (m_picBuf[i])
         {
             x265_free(m_picBuf[i]);
-            m_picBuf[i] = NULL;
+            m_picBuf[i] = nullptr;
         }
     }
 }
@@ -722,7 +722,7 @@ void checksumFinish(uint32_t checksum, uint8_t digest[16])
 void updateMD5Plane(MD5Context& md5, const pixel* plane, uint32_t width, uint32_t height, intptr_t stride)
 {
     /* choose an md5_plane packing function based on the system bitdepth */
-    typedef void(*MD5PlaneFunc)(MD5Context&, const pixel*, uint32_t, uint32_t, intptr_t);
+    using MD5PlaneFunc = void (*)(MD5Context&, const pixel*, uint32_t, uint32_t, intptr_t);
     MD5PlaneFunc md5_plane_func;
     md5_plane_func = X265_DEPTH <= 8 ? (MD5PlaneFunc)md5_plane<1> : (MD5PlaneFunc)md5_plane<2>;
 

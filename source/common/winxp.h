@@ -26,6 +26,8 @@
 
 #if defined(_WIN32) && (_WIN32_WINNT < 0x0600) // _WIN32_WINNT_VISTA
 
+#include <windows.h>
+
 #ifdef _MSC_VER
 #include <intrin.h> // _InterlockedCompareExchange64
 #endif
@@ -38,8 +40,8 @@ typedef struct
     CRITICAL_SECTION waiterCountMutex;
     HANDLE semaphore;
     HANDLE waitersDone;
-    volatile int waiterCount;
-    volatile int bIsBroadcast;
+    int waiterCount;
+    bool bIsBroadcast;
 } ConditionVariable;
 
 int WINAPI cond_init(ConditionVariable *cond);

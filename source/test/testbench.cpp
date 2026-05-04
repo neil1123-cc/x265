@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 {
     bool enableavx512 = true;
     int cpuid = X265_NS::cpu_detect(enableavx512);
-    const char *testname = 0;
+    const char *testname = nullptr;
     bool run_benchmarks = true;
 
     for (int i = 1; i < argc; )
@@ -203,7 +203,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    int seed = (int)time(NULL);
+    int seed = (int)time(nullptr);
     printf("Using random seed %X %dbit\n", seed, X265_DEPTH);
     srand(seed);
 

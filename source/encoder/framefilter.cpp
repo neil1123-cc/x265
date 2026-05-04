@@ -713,7 +713,7 @@ void FrameFilter::processPostRow(int row, int layer)
         m_frameEncoder->initDecodedPictureHashSEI(row, cuAddr, height, layer);
     } // end of (m_param->maxSlices == 1)
 
-    if (ATOMIC_INC(&m_frameEncoder->m_completionCount) == 2 * (int)m_frameEncoder->m_numRows)
+    if (m_frameEncoder->m_completionCount.fetch_add(1) + 1 == 2 * (int)m_frameEncoder->m_numRows)
     {
         m_frameEncoder->m_completionEvent.trigger();
     }

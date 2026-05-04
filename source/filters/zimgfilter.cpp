@@ -64,9 +64,9 @@ ZimgFilter::ZimgFilter(char* paramString)
     resizer = -1;
     param1 = param2 = NAN;
     bFail = false;
-    graph = NULL;
-    planes[0] = NULL;
-    temp = NULL;
+    graph = nullptr;
+    planes[0] = nullptr;
+    temp = nullptr;
 
     char* begin = paramString;
     char* end = paramString + strlen(paramString);
