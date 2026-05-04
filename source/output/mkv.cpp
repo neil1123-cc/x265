@@ -35,7 +35,7 @@ using namespace std;
 #define X265_OUTPUT_BITS "32bit"
 #endif
 
-#define ERR(...) general_log(NULL, "mkv", X265_LOG_ERROR, __VA_ARGS__)
+#define ERR(...) general_log(nullptr, "mkv", X265_LOG_ERROR, __VA_ARGS__)
 
 /*******************/
 
@@ -99,7 +99,8 @@ void MKVOutput::setPS(x265_encoder* encoder)
 {
     Encoder* enc = static_cast<Encoder*>(encoder);
     m_ptl = enc->m_vps.ptl;
-    m_sps = enc->m_sps;
+    m_chromaFormatIdc = enc->m_sps.chromaFormatIdc;
+    m_maxTempSubLayers = enc->m_sps.maxTempSubLayers;
 }
 
 int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
@@ -118,7 +119,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     uint8_t *vps = p_nal[0].payload + 4;
     uint8_t *sps = p_nal[1].payload + 4;
     uint8_t *pps = p_nal[2].payload + 4;
-    uint8_t *sei = nalcount >= 4 ? p_nal[3].payload + 4 : NULL;
+    uint8_t *sei = nalcount >= 4 ? p_nal[3].payload + 4 : nullptr;
 
     int ret;
     int hevcC_len;
@@ -178,7 +179,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     *(phc++) = (bEnableWavefront ? 3 : 0) | 0xfc; // According to mkvtoolnix, FIXME
     // reserved                            6     Reserved field, value '111111'b
     // chroma_format_idc                   2     See table 6-1, HEVC
-    *(phc++) = (m_sps.chromaFormatIdc & 0x3) | 0xfc;
+    *(phc++) = (m_chromaFormatIdc & 0x3) | 0xfc;
     // reserved                            5     Reserved Field, value '11111'b
     // bit_depth_luma_minus8               3     Bit depth luma minus 8
     *(phc++) = (X265_DEPTH - 8) | 0xf8;
@@ -192,8 +193,8 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     // max_sub_layers                      3     maximum number of temporal sub-layers
     // temporal_id_nesting_flag            1     Specifies whether inter prediction is additionally restricted. see [2] for interpretation.
     // size_nalu_minus_one                 2     Size of field NALU Length – 1
-    *(phc++) = ((m_sps.maxTempSubLayers - 1) & 7) << 3
-        | (m_sps.maxTempSubLayers == 1 ? 1 : 0) << 2
+    *(phc++) = ((m_maxTempSubLayers - 1) & 7) << 3
+        | (m_maxTempSubLayers == 1 ? 1 : 0) << 2
         | 3;
     // num_parameter_sets                  8     Number of parameter sets
     *(phc++) = nalcount;

@@ -26,15 +26,14 @@
 #include "encoder.h"
 #include "frameencoder.h"
 
-#include <iostream>
 #include <sstream>
 
 namespace X265_NS {
-int g_puStartIdx[128][8] = {{0}};
+int g_puStartIdx[TME_PU_START_IDX_SIZE][8] = {{0}};
 
 bool ThreadedME::create()
 {
-    m_active = true;
+    m_active.store(true, std::memory_order_release);
     m_tldCount = m_pool->m_numWorkers;
     m_tld = new ThreadLocalData[m_tldCount];
     for (int i = 0; i < m_tldCount; i++)
@@ -46,7 +45,7 @@ bool ThreadedME::create()
     initPuStartIdx();
 
     /* start sequence at zero */
-    m_enqueueSeq = 0ULL;
+    m_enqueueSeq.store(0, std::memory_order_relaxed);
 
     return true;
 }
@@ -82,7 +81,7 @@ void ThreadedME::enqueueCTUBlock(int row, int col, int width, int height, int la
     Frame* frame = frameEnc->m_frame[layer];
 
     CTUTask task;
-    task.seq = ATOMIC_ADD(&m_enqueueSeq, 1ULL);
+    task.seq = m_enqueueSeq.fetch_add(1, std::memory_order_relaxed);
     task.row = row;
     task.col = col;
     task.width = width;
@@ -129,7 +128,7 @@ void ThreadedME::enqueueReadyRows(int row, int layer, FrameEncoder* frameEnc)
 
 void ThreadedME::threadMain()
 {
-    while (m_active)
+    while (m_active.load(std::memory_order_acquire))
     {
         int newCTUsPushed = 0;
 
@@ -164,12 +163,12 @@ void ThreadedME::findJob(int workerThreadId)
     m_taskQueueLock.acquire();
     if (m_taskQueue.empty())
     {
-        m_helpWanted = false;
+        m_helpWanted.store(false);
         m_taskQueueLock.release();
         return;
     }
     
-    m_helpWanted = true;
+    m_helpWanted.store(true);
     int64_t stime = x265_mdate();
 
 #ifdef DETAILED_CU_STATS
@@ -209,7 +208,7 @@ void ThreadedME::findJob(int workerThreadId)
     if (m_param->csvLogLevel >= 2)
     {
         int64_t etime = x265_mdate();
-        ATOMIC_ADD(&task.frameEnc->m_totalThreadedMETime[task.layer], etime - stime);
+        task.frameEnc->m_totalThreadedMETime[task.layer].fetch_add(etime - stime, std::memory_order_relaxed);
     }
 
     m_taskEvent.trigger();
@@ -218,7 +217,7 @@ void ThreadedME::findJob(int workerThreadId)
 
 void ThreadedME::stopJobs()
 {
-    this->m_active = false;
+    m_active.store(false, std::memory_order_release);
     m_taskEvent.trigger();
 }
 

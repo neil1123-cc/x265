@@ -25,7 +25,6 @@
 #include "y4m.h"
 #include "common.h"
 
-#include <iostream>
 
 #define ENABLE_THREADING 1
 
@@ -44,7 +43,7 @@ static const char header[] = {'F','R','A','M','E'};
 Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
 {
     for (int i = 0; i < QUEUE_SIZE; i++)
-        buf[i] = NULL;
+        buf[i] = nullptr;
 
     threadActive = false;
     colorSpace = info.csp;
@@ -58,7 +57,7 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
     depth = info.depth;
     framesize = 0;
 
-    ifs = NULL;
+    ifs = nullptr;
     if (!strcmp(info.filename, "-"))
     {
         ifs = stdin;
@@ -85,7 +84,7 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
             buf[q] = X265_MALLOC(char, framesize);
             if (!buf[q])
             {
-                x265_log(NULL, X265_LOG_ERROR, "y4m: buffer allocation failure, aborting");
+                x265_log(nullptr, X265_LOG_ERROR, "y4m: buffer allocation failure, aborting");
                 threadActive = false;
                 break;
             }
@@ -95,7 +94,7 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
     {
         if (ifs && ifs != stdin)
             fclose(ifs);
-        ifs = NULL;
+        ifs = nullptr;
         return;
     }
 
@@ -350,7 +349,7 @@ bool Y4MInput::populateFrameQueue()
     if (fread(hbuf, sizeof(hbuf), 1, ifs) != 1 || memcmp(hbuf, header, sizeof(header)))
     {
         if (!feof(ifs))
-            x265_log(NULL, X265_LOG_ERROR, "y4m: frame header missing\n");
+            x265_log(nullptr, X265_LOG_ERROR, "y4m: frame header missing\n");
         return false;
     }
     /* consume bytes up to line feed */

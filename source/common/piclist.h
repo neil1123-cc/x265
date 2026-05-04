@@ -42,8 +42,8 @@ public:
 
     PicList()
     {
-        m_start = NULL;
-        m_end   = NULL;
+        m_start = nullptr;
+        m_end   = nullptr;
         m_count = 0;
     }
 

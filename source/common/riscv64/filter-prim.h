@@ -21,6 +21,8 @@
  * For more information, contact us at license @ x265.com.
  *****************************************************************************/
 
+#include <cstddef>
+#include <cstdint>
 #include <riscv_vector.h>
 #include "primitives.h"
 

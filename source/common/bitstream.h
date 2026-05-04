@@ -141,7 +141,7 @@ public:
 
     BitInterface* m_bitIf;
 
-    SyntaxElementWriter() : m_bitIf(NULL) {}
+    SyntaxElementWriter() : m_bitIf(nullptr) {}
 
     /* silently discard the name of the syntax element */
     inline void WRITE_CODE(uint32_t code, uint32_t length, const char *) { writeCode(code, length); }

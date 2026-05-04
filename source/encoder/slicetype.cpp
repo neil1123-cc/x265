@@ -1291,7 +1291,10 @@ void Lookahead::findJob(int /*workerThreadID*/)
     if (m_inputQueue.size() >= m_fullQueueSize && !m_sliceTypeBusy && m_isActive)
         doDecide = m_sliceTypeBusy = true;
     else
-        doDecide = m_helpWanted = false;
+    {
+        doDecide = false;
+        m_helpWanted.store(false);
+    }
     m_inputLock.release();
 
     if (!doDecide)
@@ -1304,7 +1307,7 @@ void Lookahead::findJob(int /*workerThreadID*/)
 
     m_inputLock.acquire();
     m_sliceTypeBusy = false;
-    m_helpWanted = true;
+    m_helpWanted.store(true);
 
     if (m_outputSignalRequired && m_outputQueue.size())
     {

@@ -30,7 +30,7 @@
 #define FAIL_IF_ERROR( cond, ... )\
 if( cond )\
 {\
-    general_log( NULL, "lavf", X265_LOG_ERROR, __VA_ARGS__ );\
+    general_log( nullptr, "lavf", X265_LOG_ERROR, __VA_ARGS__ );\
     b_fail = true;\
     return;\
 }
@@ -92,7 +92,7 @@ void LavfInput::fill_buffer(x265_picture& pic, uint8_t** planes, int* stride) {
 
 bool LavfInput::readPicture(x265_picture& p_pic)
 {
-    return readPicture(p_pic, NULL);
+    return readPicture(p_pic, nullptr);
 }
 
 bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
@@ -110,7 +110,7 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
         p_pic.width = _info.width;
         p_pic.height = _info.height;
         free(h->first_pic);
-        h->first_pic = NULL;
+        h->first_pic = nullptr;
         return true;
     }
 
@@ -124,7 +124,7 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
         const AVCodec *codec = avcodec_find_decoder(stream->codecpar->codec_id);
         h->cocon = avcodec_alloc_context3(codec);
         avcodec_parameters_to_context(h->cocon, stream->codecpar);
-        avcodec_open2(h->cocon, codec, NULL);
+        avcodec_open2(h->cocon, codec, nullptr);
     }
 
     AVPacket* pkt;
@@ -159,11 +159,11 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
             codec_ret = avcodec_send_packet(h->cocon, pkt);
             // AVERROR(EAGAIN): not possible
             // AVERROR(EINVAL): fvcked up
-            // AVERROR_EOF && pkt->data = NULL: continue
+            // AVERROR_EOF && pkt->data = nullptr: continue
             // 0: continue
             if(codec_ret == AVERROR(EINVAL))
             {
-                general_log(NULL, "lavf", X265_LOG_WARNING, "feeding input to decoder failed on frame %d\n", h->next_frame);
+                general_log(nullptr, "lavf", X265_LOG_WARNING, "feeding input to decoder failed on frame %d\n", h->next_frame);
                 fail = 1;
             }
             else
@@ -175,7 +175,7 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
                 // 0: leave the loop
                 if(codec_ret == AVERROR(EINVAL))
                 {
-                    general_log(NULL, "lavf", X265_LOG_WARNING, "video decoding failed on frame %d\n", h->next_frame);
+                    general_log(nullptr, "lavf", X265_LOG_WARNING, "video decoding failed on frame %d\n", h->next_frame);
                     fail = 1;
                 }
                 else if(codec_ret == 0)
@@ -260,7 +260,7 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
             h->vfr_input = 0; //info->vfr = 0;
         }
     }
-    if(info == NULL) info = &_info;
+    if(info == nullptr) info = &_info;
     p_pic.colorSpace = info->csp;
     p_pic.bitDepth = info->depth;
 
@@ -285,8 +285,8 @@ void LavfInput::openfile(InputFileInfo& info)
         return;
     }
 
-    FAIL_IF_ERROR(avformat_open_input(&h->lavf, info.filename, NULL, NULL), "could not open input file\n")
-    FAIL_IF_ERROR(avformat_find_stream_info(h->lavf, NULL) < 0, "could not find input stream info\n")
+    FAIL_IF_ERROR(avformat_open_input(&h->lavf, info.filename, nullptr, nullptr), "could not open input file\n")
+    FAIL_IF_ERROR(avformat_find_stream_info(h->lavf, nullptr) < 0, "could not find input stream info\n")
 
     unsigned int i = 0;
     while(i < h->lavf->nb_streams && h->lavf->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
@@ -312,9 +312,9 @@ void LavfInput::openfile(InputFileInfo& info)
     const AVCodec *codec = avcodec_find_decoder(cp->codec_id);
     h->cocon = avcodec_alloc_context3(codec);
     avcodec_parameters_to_context(h->cocon, cp);
-    avcodec_open2(h->cocon, codec, NULL);
+    avcodec_open2(h->cocon, codec, nullptr);
 
-    AVDictionary *avcodec_opts = NULL;
+    AVDictionary *avcodec_opts = nullptr;
     av_dict_set(&avcodec_opts, "strict", "-2", 0);
     FAIL_IF_ERROR(avcodec_open2(h->cocon, codec, &avcodec_opts),
                   "could not find decoder for video stream\n")
@@ -340,7 +340,7 @@ void LavfInput::openfile(InputFileInfo& info)
 
     if (!s->nb_frames) {
         // Matroska store frame count in metadata
-        AVDictionaryEntry *entry = av_dict_get(s->metadata, "NUMBER_OF_FRAMES", NULL, AV_DICT_MATCH_CASE);
+        AVDictionaryEntry *entry = av_dict_get(s->metadata, "NUMBER_OF_FRAMES", nullptr, AV_DICT_MATCH_CASE);
         if (entry) {
             info.frameCount = atoi(entry->value);
         }
@@ -351,7 +351,7 @@ void LavfInput::openfile(InputFileInfo& info)
     if(duration < 0.)
         duration = 0.;
     const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get((AVPixelFormat)cp->format);
-    general_log(NULL, "lavf", X265_LOG_INFO,
+    general_log(nullptr, "lavf", X265_LOG_INFO,
                 "\n Format    : %s"
                 "\n Codec     : %s ( %s )"
                 "\n PixFmt    : %s"

@@ -30,6 +30,8 @@
 #include "threading.h"
 #include "temporalfilter.h"
 
+#include <atomic>
+
 namespace X265_NS {
 // private namespace
 
@@ -115,7 +117,7 @@ public:
     ThreadSafeInteger*     m_reconColCount;      // count of CTU cols completely reconstructed and extended for motion reference
     ThreadSafeInteger*     m_ctuMEFlags;         // Flag to indicate if threaded me has completed processsing for CTUs
     int32_t                m_numRows;
-    volatile uint32_t      m_countRefEncoders;   // count of FrameEncoder threads monitoring m_reconRowCount
+    std::atomic<uint32_t>   m_countRefEncoders;  // count of FrameEncoder threads monitoring m_reconRowCount
 
     Frame*                 m_next;               // PicList doubly linked list pointers
     Frame*                 m_prev;

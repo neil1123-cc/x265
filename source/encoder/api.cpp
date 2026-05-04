@@ -75,7 +75,7 @@ static const char* summaryCSVHeader =
 x265_encoder *x265_encoder_open(x265_param *p)
 {
     if (!p)
-        return NULL;
+        return nullptr;
 
 #if _MSC_VER
 #pragma warning(disable: 4127) // conditional expression is constant, yes I know
@@ -88,7 +88,7 @@ x265_encoder *x265_encoder_open(x265_param *p)
 #endif
     {
         x265_log(p, X265_LOG_ERROR, "Build error, internal bit depth mismatch\n");
-        return NULL;
+        return nullptr;
     }
 
     Encoder* encoder = new Encoder;
@@ -237,7 +237,7 @@ fail:
     PARAM_NS::x265_param_free(param);
     PARAM_NS::x265_param_free(latestParam);
     PARAM_NS::x265_param_free(zoneParam);
-    return NULL;
+    return nullptr;
 }
 
 int x265_encoder_headers(x265_encoder *enc, x265_nal **pp_nal, uint32_t *pi_nal)
@@ -311,7 +311,7 @@ int x265_encoder_reconfig(x265_encoder* enc, x265_param* param_in)
         return -1;
     x265_param save = {};
     Encoder* encoder = static_cast<Encoder*>(enc);
-    if (strlen(encoder->m_param->csvfn) && param_in->csvfpt != NULL)
+    if (strlen(encoder->m_param->csvfn) && param_in->csvfpt != nullptr)
          encoder->m_param->csvfpt = param_in->csvfpt;
     if (encoder->m_latestParam->forceFlush != param_in->forceFlush)
         return encoder->reconfigureParam(encoder->m_latestParam, param_in);
@@ -456,9 +456,9 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                 inputData->cbStride = encoder->m_param->sourceWidth >> 1;
                 inputData->crStride = encoder->m_param->sourceWidth >> 1;
 
-                inputData->lumaExt = NULL;
-                inputData->cbExt = NULL;
-                inputData->crExt = NULL;
+                inputData->lumaExt = nullptr;
+                inputData->cbExt = nullptr;
+                inputData->crExt = nullptr;
 
                 if (pic_in->rpu.payloadSize)
                 {
@@ -469,7 +469,7 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                 }
                 else
                 {
-                    inputData->dolbyVisionRpu.payload = NULL;
+                    inputData->dolbyVisionRpu.payload = nullptr;
                     inputData->dolbyVisionRpu.payloadSize = 0;
                 }
 
@@ -497,9 +497,9 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
             inputPtrLast.nAllocLen = 0;
             inputPtrLast.nFilledLen = 0;
             inputPtrLast.nTickCount = 0;
-            inputPtrLast.pAppPrivate = NULL;
+            inputPtrLast.pAppPrivate = nullptr;
             inputPtrLast.nFlags = EB_BUFFERFLAG_EOS;
-            inputPtrLast.pBuffer = NULL;
+            inputPtrLast.pBuffer = nullptr;
 
             return_error = EbH265EncSendPicture(encoder->m_svtAppData->svtEncoderHandle, &inputPtrLast);
             if (return_error != EB_ErrorNone)
@@ -577,7 +577,7 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
         else if (pi_nal)
             *pi_nal = 0;
 
-        pic_out = NULL;
+        pic_out = nullptr;
 
 fail:
         if (numEncoded < 0)
@@ -600,10 +600,10 @@ fail:
     // encoder now owns these analysisData buffers.
     if (pic_in)
     {
-        pic_in->analysisData.wt = NULL;
-        pic_in->analysisData.intraData = NULL;
-        pic_in->analysisData.interData = NULL;
-        pic_in->analysisData.distortionData = NULL;
+        pic_in->analysisData.wt = nullptr;
+        pic_in->analysisData.intraData = nullptr;
+        pic_in->analysisData.interData = nullptr;
+        pic_in->analysisData.distortionData = nullptr;
     }
 
     if (pp_nal && numEncoded > 0 && encoder->m_outputCount >= encoder->m_latestParam->chunkStart)
@@ -791,9 +791,9 @@ int x265_set_analysis_data(x265_encoder *enc, x265_analysis_data *analysis_data,
 
 void x265_alloc_analysis_data(x265_param *param, x265_analysis_data* analysis)
 {
-    x265_analysis_inter_data *interData = analysis->interData = NULL;
-    x265_analysis_intra_data *intraData = analysis->intraData = NULL;
-    x265_analysis_distortion_data *distortionData = analysis->distortionData = NULL;
+    x265_analysis_inter_data *interData = analysis->interData = nullptr;
+    x265_analysis_intra_data *intraData = analysis->intraData = nullptr;
+    x265_analysis_distortion_data *distortionData = analysis->distortionData = nullptr;
 
     bool isVbv = param->rc.vbvMaxBitrate > 0 && param->rc.vbvBufferSize > 0;
     int numDir = 2; //irrespective of P or B slices set direction as 2
@@ -948,7 +948,7 @@ void x265_free_analysis_data(x265_param *param, x265_analysis_data* analysis)
                 X265_FREE((analysis->intraData)->cuQPOff);
         }
         X265_FREE(analysis->intraData);
-        analysis->intraData = NULL;
+        analysis->intraData = nullptr;
     }
 
     //Free interData pointers
@@ -976,17 +976,17 @@ void x265_free_analysis_data(x265_param *param, x265_analysis_data* analysis)
             for (int dir = 0; dir < numDir; dir++)
             {
                 X265_FREE((analysis->interData)->refIdx[dir]);
-                if (analysis->modeFlag[dir] != NULL)
+                if (analysis->modeFlag[dir] != nullptr)
                 { 
                     X265_FREE(analysis->modeFlag[dir]);
-                    analysis->modeFlag[dir] = NULL;
+                    analysis->modeFlag[dir] = nullptr;
                 }
             }
         }
         if (((minReuseLevel >= 2) && (minReuseLevel <= 6)) || isMultiPassOpt)
             X265_FREE((analysis->interData)->ref);
         X265_FREE(analysis->interData);
-        analysis->interData = NULL;
+        analysis->interData = nullptr;
     }
 }
 
@@ -1006,11 +1006,11 @@ void x265_picture_init(x265_param *param, x265_picture *pic)
     pic->bitDepth = param->internalBitDepth;
     pic->colorSpace = param->internalCsp;
     pic->forceqp = X265_QP_AUTO;
-    pic->quantOffsets = NULL;
-    pic->userSEI.payloads = NULL;
+    pic->quantOffsets = nullptr;
+    pic->userSEI.payloads = nullptr;
     pic->userSEI.numPayloads = 0;
     pic->rpu.payloadSize = 0;
-    pic->rpu.payload = NULL;
+    pic->rpu.payload = nullptr;
     pic->picStruct = 0;
     pic->vbvEndFlag = 0;
 
@@ -1106,8 +1106,8 @@ static const x265_api libapi =
     &PARAM_NS::x265_zone_param_parse
 };
 
-typedef const x265_api* (*api_get_func)(int bitDepth);
-typedef const x265_api* (*api_query_func)(int bitDepth, int apiVersion, int* err);
+using api_get_func = const x265_api* (*)(int bitDepth);
+using api_query_func = const x265_api* (*)(int bitDepth, int apiVersion, int* err);
 
 #define xstr(s) str(s)
 #define str(s) #s
@@ -1140,7 +1140,7 @@ const x265_api* x265_api_get(int bitDepth)
         if (bitDepth == 12) return x265_12bit::x265_api_get(0);
 #endif
 
-        const char* libname = NULL;
+        const char* libname = nullptr;
         const char* method = "x265_api_get_" xstr(X265_BUILD);
         const char* multilibname = "libx265" ext;
 
@@ -1151,13 +1151,13 @@ const x265_api* x265_api_get(int bitDepth)
         else if (bitDepth == 8)
             libname = "libx265_main" ext;
         else
-            return NULL;
+            return nullptr;
 
-        const x265_api* api = NULL;
+        const x265_api* api = nullptr;
         int reqDepth = 0;
 
         if (g_recursion > 1)
-            return NULL;
+            return nullptr;
         else
             g_recursion++;
 
@@ -1193,8 +1193,8 @@ const x265_api* x265_api_get(int bitDepth)
 
         if (api && bitDepth != api->bit_depth)
         {
-            x265_log(NULL, X265_LOG_WARNING, "%s does not support requested bitDepth %d\n", libname, bitDepth);
-            return NULL;
+            x265_log(nullptr, X265_LOG_WARNING, "%s does not support requested bitDepth %d\n", libname, bitDepth);
+            return nullptr;
         }
 
         return api;
@@ -1209,7 +1209,7 @@ const x265_api* x265_api_query(int bitDepth, int apiVersion, int* err)
     {
         /* builds before 1.6 had re-ordered public structs */
         if (err) *err = X265_API_QUERY_ERR_VER_REFUSED;
-        return NULL;
+        return nullptr;
     }
 
     if (err) *err = X265_API_QUERY_ERR_NONE;
@@ -1226,7 +1226,7 @@ const x265_api* x265_api_query(int bitDepth, int apiVersion, int* err)
         if (bitDepth == 12) return x265_12bit::x265_api_query(0, apiVersion, err);
 #endif
 
-        const char* libname = NULL;
+        const char* libname = nullptr;
         const char* method = "x265_api_query";
         const char* multilibname = "libx265" ext;
 
@@ -1239,17 +1239,17 @@ const x265_api* x265_api_query(int bitDepth, int apiVersion, int* err)
         else
         {
             if (err) *err = X265_API_QUERY_ERR_LIB_NOT_FOUND;
-            return NULL;
+            return nullptr;
         }
 
-        const x265_api* api = NULL;
+        const x265_api* api = nullptr;
         int reqDepth = 0;
         int e = X265_API_QUERY_ERR_LIB_NOT_FOUND;
 
         if (g_recursion > 1)
         {
             if (err) *err = X265_API_QUERY_ERR_LIB_NOT_FOUND;
-            return NULL;
+            return nullptr;
         }
         else
             g_recursion++;
@@ -1288,9 +1288,9 @@ const x265_api* x265_api_query(int bitDepth, int apiVersion, int* err)
 
         if (api && bitDepth != api->bit_depth)
         {
-            x265_log(NULL, X265_LOG_WARNING, "%s does not support requested bitDepth %d\n", libname, bitDepth);
+            x265_log(nullptr, X265_LOG_WARNING, "%s does not support requested bitDepth %d\n", libname, bitDepth);
             if (err) *err = X265_API_QUERY_ERR_WRONG_BITDEPTH;
-            return NULL;
+            return nullptr;
         }
 
         if (err) *err = api ? X265_API_QUERY_ERR_NONE : e;
@@ -1957,8 +1957,8 @@ int compute_vmaf(double* vmaf_score, char* fmt, int width, int height, int bitde
 		.flags = flags,
 	};
 
-	VmafModel *model = NULL;
-	VmafModelCollection *model_collection = NULL;
+	VmafModel *model = nullptr;
+	VmafModelCollection *model_collection = nullptr;
 
     int stride = width * sizeof(float);
     float *ref_data = new float[height * stride];
@@ -1978,19 +1978,19 @@ int compute_vmaf(double* vmaf_score, char* fmt, int width, int height, int bitde
 	}
 
 	if (do_psnr) {
-		VmafFeatureDictionary *d = NULL;
+		VmafFeatureDictionary *d = nullptr;
 		vmaf_feature_dictionary_set(&d, "enable_chroma", "false");
 		err = load_feature(vmaf, "psnr", d);
 		if (err) goto end;
 	}
 
 	if (do_ssim) {
-		err = load_feature(vmaf, "float_ssim", NULL);
+		err = load_feature(vmaf, "float_ssim", nullptr);
 		if (err) goto end;
 	}
 
 	if (do_ms_ssim) {
-		err = load_feature(vmaf, "float_ms_ssim", NULL);
+		err = load_feature(vmaf, "float_ms_ssim", nullptr);
 		if (err) goto end;
 	}
 
@@ -2029,7 +2029,7 @@ int compute_vmaf(double* vmaf_score, char* fmt, int width, int height, int bitde
 		}
 	}
 
-	err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+	err = vmaf_read_pictures(vmaf, nullptr, nullptr, 0);
 	if (err) {
 		printf("problem flushing context\n");
 		return err;
@@ -2080,7 +2080,7 @@ int read_frame(float *reference_data, float *distorted_data, float *temp_data, i
     }
     else
     {
-        x265_log(NULL, X265_LOG_ERROR, "Invalid bitdepth\n");
+        x265_log(nullptr, X265_LOG_ERROR, "Invalid bitdepth\n");
         return 1;
     }
     if (ret)
@@ -2103,7 +2103,7 @@ int read_frame(float *reference_data, float *distorted_data, float *temp_data, i
     }
     else
     {
-        x265_log(NULL, X265_LOG_ERROR, "Invalid bitdepth\n");
+        x265_log(nullptr, X265_LOG_ERROR, "Invalid bitdepth\n");
         return 1;
     }
     if (ret)
@@ -2120,7 +2120,7 @@ int read_frame(float *reference_data, float *distorted_data, float *temp_data, i
     {
         if (fread(temp_data, 1, user_data->offset, user_data->reference_file) != (size_t)user_data->offset)
         {
-            x265_log(NULL, X265_LOG_ERROR, "reference fread to skip u and v failed.\n");
+            x265_log(nullptr, X265_LOG_ERROR, "reference fread to skip u and v failed.\n");
             goto fail_or_end;
         }
     }
@@ -2128,13 +2128,13 @@ int read_frame(float *reference_data, float *distorted_data, float *temp_data, i
     {
         if (fread(temp_data, 2, user_data->offset, user_data->reference_file) != (size_t)user_data->offset)
         {
-            x265_log(NULL, X265_LOG_ERROR, "reference fread to skip u and v failed.\n");
+            x265_log(nullptr, X265_LOG_ERROR, "reference fread to skip u and v failed.\n");
             goto fail_or_end;
         }
     }
     else
     {
-        x265_log(NULL, X265_LOG_ERROR, "Invalid format\n");
+        x265_log(nullptr, X265_LOG_ERROR, "Invalid format\n");
         goto fail_or_end;
     }
 
@@ -2143,7 +2143,7 @@ int read_frame(float *reference_data, float *distorted_data, float *temp_data, i
     {
         if (fread(temp_data, 1, user_data->offset, user_data->distorted_file) != (size_t)user_data->offset)
         {
-            x265_log(NULL, X265_LOG_ERROR, "distorted fread to skip u and v failed.\n");
+            x265_log(nullptr, X265_LOG_ERROR, "distorted fread to skip u and v failed.\n");
             goto fail_or_end;
         }
     }
@@ -2151,13 +2151,13 @@ int read_frame(float *reference_data, float *distorted_data, float *temp_data, i
     {
         if (fread(temp_data, 2, user_data->offset, user_data->distorted_file) != (size_t)user_data->offset)
         {
-            x265_log(NULL, X265_LOG_ERROR, "distorted fread to skip u and v failed.\n");
+            x265_log(nullptr, X265_LOG_ERROR, "distorted fread to skip u and v failed.\n");
             goto fail_or_end;
         }
     }
     else
     {
-        x265_log(NULL, X265_LOG_ERROR, "Invalid format\n");
+        x265_log(nullptr, X265_LOG_ERROR, "Invalid format\n");
         goto fail_or_end;
     }
 
@@ -2178,7 +2178,7 @@ double x265_calculate_vmafscore(x265_param *param, x265_vmaf_data *data)
     if (param->internalCsp == X265_CSP_I420)
     {
         if ((param->sourceWidth * param->sourceHeight) % 2 != 0)
-            x265_log(NULL, X265_LOG_ERROR, "Invalid file size\n");
+            x265_log(nullptr, X265_LOG_ERROR, "Invalid file size\n");
         data->offset = param->sourceWidth * param->sourceHeight / 2;
         pix_format = "yuv420p";
     }
@@ -2193,7 +2193,7 @@ double x265_calculate_vmafscore(x265_param *param, x265_vmaf_data *data)
         pix_format = "yuv444p10le";
     }
     else
-        x265_log(NULL, X265_LOG_ERROR, "Invalid format\n");
+        x265_log(nullptr, X265_LOG_ERROR, "Invalid format\n");
 
     compute_vmaf(&score, (char*)pix_format, data->width, data->height, param->sourceBitDepth, read_frame, data, vcd->model_path, vcd->log_path, vcd->log_fmt, vcd->disable_clip, vcd->disable_avx, vcd->enable_transform, vcd->phone_model, vcd->psnr, vcd->ssim, vcd->ms_ssim, vcd->pool, vcd->thread, vcd->subsample);
 
@@ -2338,7 +2338,7 @@ int svt_initialise_input_buffer(x265_encoder *enc)
     inputPtr->pBuffer = (unsigned char*)x265_malloc(sizeof(EB_H265_ENC_INPUT));
 
     EB_H265_ENC_INPUT *inputData = (EB_H265_ENC_INPUT*)inputPtr->pBuffer;
-    inputData->dolbyVisionRpu.payload = NULL;
+    inputData->dolbyVisionRpu.payload = nullptr;
     inputData->dolbyVisionRpu.payloadSize = 0;
 
 
@@ -2346,7 +2346,7 @@ int svt_initialise_input_buffer(x265_encoder *enc)
         return 0;
 
     inputPtr->nSize = sizeof(EB_BUFFERHEADERTYPE);
-    inputPtr->pAppPrivate = NULL;
+    inputPtr->pAppPrivate = nullptr;
     return 1;
 }
 #endif // ifdef SVT_HEVC

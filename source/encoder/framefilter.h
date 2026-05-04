@@ -81,9 +81,9 @@ public:
             : m_rowHeight(0)
             , m_row(0)
             , m_rowAddr(0)
-            , m_frameFilter(NULL)
-            , m_encData(NULL)
-            , m_prevRow(NULL)
+            , m_frameFilter(nullptr)
+            , m_encData(nullptr)
+            , m_prevRow(nullptr)
         {
         }
 
@@ -110,11 +110,11 @@ public:
     ParallelFilter*     m_parallelFilter;
 
     FrameFilter()
-        : m_param(NULL)
-        , m_frame(NULL)
-        , m_frameEncoder(NULL)
-        , m_ssimBuf(NULL)
-        , m_parallelFilter(NULL)
+        : m_param(nullptr)
+        , m_frame(nullptr)
+        , m_frameEncoder(nullptr)
+        , m_ssimBuf(nullptr)
+        , m_parallelFilter(nullptr)
     {
     }
 

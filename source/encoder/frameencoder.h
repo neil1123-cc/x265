@@ -42,7 +42,9 @@
 #include "nal.h"
 #include "temporalfilter.h"
 #include "threadedme.h"
+#include <atomic>
 #include <queue>
+#include <vector>
 
 namespace X265_NS {
 // private x265 namespace
@@ -89,26 +91,26 @@ struct CTURow
      * external dependencies (reference frame pixels) that prevent it from being
      * processed, so it may stay with m_active=true for some time before it is
      * encoded by a worker thread. */
-    volatile bool     active;
+    bool              active;
 
     /* row is being processed by a worker thread.  This flag is only true when a
      * worker thread is within the context of FrameEncoder::processRow(). This
      * flag is used to detect multiple possible wavefront problems. */
-    volatile bool     busy;
+    bool              busy;
 
     /* count of completed CUs in this row */
-    volatile uint32_t completed;
-    volatile uint32_t avgQPComputed;
+    std::atomic<uint32_t> completed;
+    bool              avgQPComputed;
 
-    volatile int      reEncode;
+    int               reEncode;
 
     /* called at the start of each frame to initialize state */
     void init(Entropy& initContext, unsigned int sid)
     {
         active = false;
         busy = false;
-        completed = 0;
-        avgQPComputed = 0;
+        completed.store(0);
+        avgQPComputed = false;
         sliceId = sid;
         reEncode = 0;
         memset(&rowStats, 0, sizeof(rowStats));
@@ -200,11 +202,11 @@ public:
     Event                    m_completionEvent;
     int                      m_localTldIdx;
     bool                     m_reconfigure; /* reconfigure in progress */
-    volatile bool            m_threadActive;
-    volatile bool            *m_bAllRowsStop;
-    volatile int             m_completionCount;
-    volatile int             *m_vbvResetTriggerRow;
-    volatile int             m_sliceCnt;
+    std::atomic<bool>        m_threadActive;
+    std::atomic<bool>*       m_bAllRowsStop;
+    std::atomic<int>         m_completionCount;
+    std::atomic<int>*        m_vbvResetTriggerRow;
+    std::atomic<int>         m_sliceCnt;
 
     uint32_t                 m_numRows;
     uint32_t                 m_numCols;
@@ -229,10 +231,10 @@ public:
     uint64_t                 m_accessUnitBits[MAX_LAYERS];
     uint32_t                 m_ssimCnt[MAX_LAYERS];
 
-    volatile int             m_activeWorkerCount;        // count of workers currently encoding or filtering CTUs
-    volatile int             m_totalActiveWorkerCount;   // sum of m_activeWorkerCount sampled at end of each CTU
-    volatile int             m_activeWorkerCountSamples; // count of times m_activeWorkerCount was sampled (think vbv restarts)
-    volatile int             m_countRowBlocks;           // count of workers forced to abandon a row because of top dependency
+    std::atomic<int>         m_activeWorkerCount;        // count of workers currently encoding or filtering CTUs
+    std::atomic<int>         m_totalActiveWorkerCount;   // sum of m_activeWorkerCount sampled at end of each CTU
+    std::atomic<int>         m_activeWorkerCountSamples; // count of times m_activeWorkerCount was sampled (think vbv restarts)
+    std::atomic<int>         m_countRowBlocks;           // count of workers forced to abandon a row because of top dependency
     int64_t                  m_startCompressTime[MAX_LAYERS];        // timestamp when frame encoder is given a frame
     int64_t                  m_row0WaitTime[MAX_LAYERS];             // timestamp when row 0 is allowed to start
     int64_t                  m_allRowsAvailableTime[MAX_LAYERS];     // timestamp when all reference dependencies are resolved
@@ -243,8 +245,8 @@ public:
     int64_t                  m_slicetypeWaitTime[MAX_LAYERS];        // total elapsed time waiting for decided frame
     int64_t                  m_totalWorkerElapsedTime[MAX_LAYERS];   // total elapsed time spent by worker threads processing CTUs
     int64_t                  m_totalNoWorkerTime[MAX_LAYERS];        // total elapsed time without any active worker threads
-    int64_t                  m_totalThreadedMEWait[MAX_LAYERS];      // total time spent waiting by CTUs for ThreadedME
-    int64_t                  m_totalThreadedMETime[MAX_LAYERS];      // total time spent processing by ThreadedME
+    std::atomic<int64_t>     m_totalThreadedMEWait[MAX_LAYERS];      // total time spent waiting by CTUs for ThreadedME
+    std::atomic<int64_t>     m_totalThreadedMETime[MAX_LAYERS];      // total time spent processing by ThreadedME
 
 #if DETAILED_CU_STATS
     CUStats                  m_cuStats;

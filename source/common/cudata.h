@@ -131,8 +131,8 @@ struct IBC
     MV              m_lastIntraBCMv[2];
 };
 
-typedef void(*cucopy_t)(uint8_t* dst, uint8_t* src); // dst and src are aligned to MIN(size, 32)
-typedef void(*cubcast_t)(uint8_t* dst, uint8_t val); // dst is aligned to MIN(size, 32)
+using cucopy_t = void(*)(uint8_t* dst, uint8_t* src); // dst and src are aligned to MIN(size, 32)
+using cubcast_t = void(*)(uint8_t* dst, uint8_t val); // dst is aligned to MIN(size, 32)
 
 // Partition count table, index represents partitioning mode.
 const uint32_t nbPartsTable[8] = { 1, 2, 2, 4, 2, 2, 2, 2 };
