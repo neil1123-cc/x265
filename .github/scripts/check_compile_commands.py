@@ -4,17 +4,17 @@ import json
 import shlex
 from pathlib import Path
 
-ACCEPTED_STANDARD_FLAGS = ('-std=gnu++20', '/std:c++20')
-GNU_DIALECT_DRIFT_FLAGS = ('-std=c++20',)
+ACCEPTED_STANDARD_FLAGS = ('-std=gnu++20', '--std=gnu++20', '/std:c++20')
+GNU_DIALECT_DRIFT_FLAGS = ('-std=c++20', '--std=c++20')
 OLD_STANDARD_FLAGS = (
-    '-std=c++11', '-std=gnu++11',
-    '-std=c++14', '-std=gnu++14',
-    '-std=c++17', '-std=gnu++17',
-    '-std=c++1z', '-std=gnu++1z',
-    '-std=c++2a', '-std=gnu++2a',
+    '-std=c++11', '-std=gnu++11', '--std=c++11', '--std=gnu++11',
+    '-std=c++14', '-std=gnu++14', '--std=c++14', '--std=gnu++14',
+    '-std=c++17', '-std=gnu++17', '--std=c++17', '--std=gnu++17',
+    '-std=c++1z', '-std=gnu++1z', '--std=c++1z', '--std=gnu++1z',
+    '-std=c++2a', '-std=gnu++2a', '--std=c++2a', '--std=gnu++2a',
     '/std:c++14', '/std:c++17', '/std:c++latest',
 )
-STANDARD_PREFIXES = ('-std=', '/std:')
+STANDARD_PREFIXES = ('-std=', '--std=', '/std:')
 DEPTH_DEFINE_PREFIX = '-DX265_DEPTH='
 CXX_SUFFIXES = ('.cpp', '.cc', '.cxx')
 
@@ -194,7 +194,17 @@ def main():
     if not commands_path.is_file():
         fail(f'missing compile_commands.json: {commands_path}')
 
-    commands = json.loads(commands_path.read_text())
+    try:
+        commands = json.loads(commands_path.read_text())
+    except json.JSONDecodeError as exc:
+        fail(f'invalid compile_commands.json: {exc.msg}', commands_path)
+    if not isinstance(commands, list):
+        fail(f'compile_commands.json must contain a list: {commands_path}', commands_path)
+    for index, entry in enumerate(commands, 1):
+        if not isinstance(entry, dict):
+            fail(f'compile command entry #{index} must be an object', commands_path)
+        if 'file' not in entry:
+            fail(f'compile command entry #{index} is missing file field', commands_path)
     cpp = [entry for entry in commands if entry_file_path(entry).lower().endswith(CXX_SUFFIXES)]
     if not cpp:
         fail(f'no C++ compile commands: {commands_path}')

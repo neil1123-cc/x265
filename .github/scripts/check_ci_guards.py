@@ -29,23 +29,52 @@ UPDATE_DEPS_ANCHORS = (
 REQUIRED_BUILD_SNIPPETS = (
     'python .github/scripts/check_ci_guards.py',
     'python .github/scripts/test_check_ci_guards.py',
+    'python .github/scripts/check_cmake_cxx20_contract.py source',
     'python .github/scripts/test_check_cmake_cxx20_contract.py',
     'python .github/scripts/test_check_compile_commands.py',
+    'python .github/scripts/check_dependency_patch_suffixes.py --before "$before" --after "$after"',
     'python .github/scripts/test_check_dependency_patch_suffixes.py',
     'python .github/scripts/check_release_needs.py',
     'python .github/scripts/test_check_pgo_consume_chain.py',
     'No numeric version tag found; using $version as CI fallback',
+    'check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"',
+    '--threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress',
     'frame threads / pool features       : 1 / threaded-me',
+    "! grep -Fq 'disabling --threaded-me'",
+    'nb_read_frames=16',
     'encoded 1 frames',
     'build/cxx20-linux-gcc-compile-commands/x265 --input',
+    'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc',
     'smoke_linux_gcc.hevc',
 )
 REQUIRED_BUILD_PROFILING_SNIPPETS = (
     'No numeric version tag found; using $version as CI fallback',
     'version="${{ steps.tag.outputs.version }}-g${head_hash}"',
+    'test -s "$LLVM_PROFILE_FILE"',
+    'test -s profile-smoke-8b.profdata',
+    'test -s profile-smoke-12b.profdata',
+    'test -s profile-smoke-all.profdata',
+    'mp4_roundtrip_frames',
+    'enable-lsmash: \'ON\'',
+    './profdata-dist/llvm-profdata.exe show profile-smoke-8b.profdata >/dev/null',
+    './profdata-dist/llvm-profdata.exe show profile-smoke-12b.profdata >/dev/null',
+    './profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null',
+    'echo "- standard: gnu++20"',
 )
 REQUIRED_UPDATE_DEPS_SNIPPETS = (
     'python .github/scripts/check_ci_guards.py',
+    'python .github/scripts/check_dependency_patch_suffixes.py',
+    'for anchor in ffmpeg-ref mimalloc-ref obuparse-ref lsmash-ref lsmash-cache-suffix gop-muxer-ref gop-muxer-cache-suffix; do',
+    'Unexpected dependency update diff paths:',
+)
+REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS = (
+    'echo "=== Dependency provenance ==="',
+    'lsmash=${{ inputs.lsmash-repository }}@${{ inputs.lsmash-ref }} suffix=${{ inputs.lsmash-cache-suffix }} patch=${{ inputs.lsmash-patch-path }}',
+    'gop_muxer=${{ inputs.gop-muxer-repository }}@${{ inputs.gop-muxer-ref }} suffix=${{ inputs.gop-muxer-cache-suffix }} patch=${{ inputs.gop-muxer-patch-path }}',
+    'git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}',
+    'git -c core.autocrlf=false reset --hard HEAD',
+    'git apply ${{ inputs.gop-muxer-patch-path }}',
+    'c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o',
 )
 GITHUB_EXPR = re.compile(r'\$\{\{.*?\}\}', re.DOTALL)
 RUN_LINE = re.compile(r'^(?P<indent>\s*)run:\s*(?P<value>.*)$')
@@ -280,6 +309,11 @@ def validate_required_snippets(repo_root):
     for snippet in REQUIRED_UPDATE_DEPS_SNIPPETS:
         if snippet not in update_deps_text:
             fail(f'missing required update-deps guard snippet: {snippet}', repo_root / UPDATE_DEPS_WORKFLOW)
+
+    windows_deps_text = read_text(repo_root / WINDOWS_DEPS_ACTION)
+    for snippet in REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS:
+        if snippet not in windows_deps_text:
+            fail(f'missing required setup-windows-deps guard snippet: {snippet}', repo_root / WINDOWS_DEPS_ACTION)
     print('Required CI guard snippets validated')
 
 

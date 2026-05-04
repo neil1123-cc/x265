@@ -160,6 +160,49 @@ def main():
         ''')
         expect_pass(run_checker(included_generator_source))
 
+        wrapped_flags_pass_source = write_source(root / 'wrapped-flags-pass')
+        wrapped_flags_pass_nested = wrapped_flags_pass_source / 'cmake'
+        wrapped_flags_pass_nested.mkdir()
+        (wrapped_flags_pass_nested / 'flags.cmake').write_text('''
+        set(X265_COMPILE_OPTIONS -Wall -Wextra)
+        list(APPEND X265_COMPILE_OPTIONS -Wshadow)
+        list(APPEND X265_LINK_OPTIONS -static)
+        x265_add_option(-Wextra)
+        x265_add_definitions(-DENABLE_LAVF)
+        custom_note("-std=gnu++17 appears in docs only")
+        ''')
+        expect_pass(run_checker(wrapped_flags_pass_source))
+
+        wrapped_compile_option_source = write_source(root / 'wrapped-compile-option')
+        wrapped_compile_option_nested = wrapped_compile_option_source / 'cmake'
+        wrapped_compile_option_nested.mkdir()
+        (wrapped_compile_option_nested / 'flags.cmake').write_text('x265_add_option(-std=gnu++17)\n')
+        expect_fail(run_checker(wrapped_compile_option_source), 'manual C++ standard flag in CMake')
+
+        wrapped_compile_definitions_source = write_source(root / 'wrapped-compile-definitions')
+        wrapped_compile_definitions_nested = wrapped_compile_definitions_source / 'cmake'
+        wrapped_compile_definitions_nested.mkdir()
+        (wrapped_compile_definitions_nested / 'flags.cmake').write_text('x265_add_definitions(/std:c++17)\n')
+        expect_fail(run_checker(wrapped_compile_definitions_source), 'manual C++ standard flag in CMake')
+
+        list_compile_options_source = write_source(root / 'list-compile-options')
+        list_compile_options_nested = list_compile_options_source / 'cmake'
+        list_compile_options_nested.mkdir()
+        (list_compile_options_nested / 'flags.cmake').write_text('list(APPEND X265_COMPILE_OPTIONS -std=gnu++17)\n')
+        expect_fail(run_checker(list_compile_options_source), 'manual C++ standard flag in CMake')
+
+        set_compile_options_source = write_source(root / 'set-compile-options')
+        set_compile_options_nested = set_compile_options_source / 'cmake'
+        set_compile_options_nested.mkdir()
+        (set_compile_options_nested / 'flags.cmake').write_text('set(X265_CXX_FLAGS "${X265_CXX_FLAGS} -std=c++20")\n')
+        expect_fail(run_checker(set_compile_options_source), 'manual C++ standard flag in CMake')
+
+        toolchain_list_source = write_source(root / 'toolchain-list-flags')
+        toolchain_list_nested = toolchain_list_source / 'cmake'
+        toolchain_list_nested.mkdir()
+        (toolchain_list_nested / 'toolchain.cmake').write_text('list(PREPEND PROJECT_CXX_FLAGS -std=gnu++17)\n')
+        expect_fail(run_checker(toolchain_list_source), 'manual C++ standard flag in CMake')
+
         included_manual_standard_source = write_source(root / 'included-manual-standard', BASE_CMAKELISTS + 'include(cmake/flags.cmake)\n')
         included_manual_standard_nested = included_manual_standard_source / 'cmake'
         included_manual_standard_nested.mkdir()
@@ -378,6 +421,36 @@ def main():
         workflow.mkdir(parents=True)
         (workflow / 'build.yml').write_text('run: cmake -DCMAKE_CXX_STANDARD_REQUIRED=OFF source\n')
         expect_fail(run_checker(source), 'manual C++ standard flag in workflow/helper')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        action = root / '.github' / 'actions' / 'setup-windows-deps'
+        action.mkdir(parents=True)
+        (action / 'action.yml').write_text('''
+        name: action
+        runs:
+          using: composite
+          steps:
+            - shell: bash
+              run: c++ --std=c++20 -c probe.cpp
+        ''')
+        expect_fail(run_checker(source), 'manual C++ standard flag in workflow/helper')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        action = root / '.github' / 'actions' / 'setup-windows-deps'
+        action.mkdir(parents=True)
+        (action / 'action.yml').write_text('''
+        name: action
+        runs:
+          using: composite
+          steps:
+            - shell: bash
+              run: c++ --std=gnu++20 -c probe.cpp
+        ''')
+        expect_pass(run_checker(source))
 
     print('CMake GNU++20 contract guardrails validated')
 

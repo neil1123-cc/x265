@@ -8,7 +8,7 @@ REQUIRED_TOP_LEVEL_LINES = (
     'set(CMAKE_CXX_STANDARD_REQUIRED ON)',
     'set(CMAKE_CXX_EXTENSIONS ON)',
 )
-MANUAL_STANDARD_MARKERS = ('-std=c++', '-std=gnu++', '/std:c++')
+MANUAL_STANDARD_MARKERS = ('-std=c++', '-std=gnu++', '--std=c++', '--std=gnu++', '/std:c++')
 SCRIPT_STANDARD_MARKERS = (*MANUAL_STANDARD_MARKERS, 'CXX_STANDARD=', 'CXX_STANDARD_REQUIRED=', 'CXX_EXTENSIONS=')
 REQUIRED_TOP_LEVEL_CONTRACT = {
     'CMAKE_CXX_STANDARD': '20',
@@ -19,12 +19,21 @@ TARGET_PROPERTY_MARKERS = {'CXX_STANDARD', 'CXX_STANDARD_REQUIRED', 'CXX_EXTENSI
 COMPILE_FLAG_COMMANDS = {'add_compile_options', 'target_compile_options', 'add_definitions'}
 COMPILE_FLAG_PROPERTY_COMMANDS = {'set_property', 'set_source_files_properties', 'set_target_properties'}
 COMPILE_FLAG_PROPERTIES = {'COMPILE_FLAGS', 'COMPILE_OPTIONS', 'INTERFACE_COMPILE_OPTIONS'}
+LIST_COMPILE_FLAG_SUBCOMMANDS = {'append', 'prepend', 'insert'}
+COMPILE_FLAG_VARIABLE_MARKERS = ('COMPILE_FLAGS', 'COMPILE_OPTIONS', 'CXX_FLAGS', 'CXX_OPTIONS')
+WRAPPED_FLAG_COMMAND_MARKERS = ('compile', 'cxx', 'flag', 'option', 'definition')
+WRAPPED_FLAG_COMMAND_ALLOWLIST = {
+    'add_subdirectory', 'cmake_minimum_required', 'else', 'elseif', 'endforeach',
+    'endfunction', 'endif', 'endmacro', 'foreach', 'function', 'if', 'include',
+    'list', 'macro', 'message', 'option', 'project', 'set', 'string', 'while',
+}
 CXX_FLAG_VARIABLE_RE = re.compile(r'^CMAKE_CXX_FLAGS($|_)')
 BRACKET_COMMENT_RE = re.compile(r'#\[(=*)\[')
 CMAKE_TOKEN_RE = re.compile(r'"(?:[^"\\]|\\.)*"|\$<[^>]*>|[^\s()]+')
 SCRIPT_SCAN_GLOBS = (
     '.github/workflows/*.yml',
     '.github/workflows/*.yaml',
+    '.github/actions/*/action.yml',
     '.github/scripts/*.sh',
     '.github/scripts/*.py',
 )
@@ -49,8 +58,11 @@ SCRIPT_STANDARD_ALLOWLIST = (
     "'-std=c++2a', '-std=gnu++2a',",
     "'/std:c++14', '/std:c++17', '/std:c++latest',",
     "STANDARD_PREFIXES = ('-std=', '/std:')",
-    "ACCEPTED_STANDARD_FLAGS = ('-std=gnu++20', '/std:c++20')",
-    "GNU_DIALECT_DRIFT_FLAGS = ('-std=c++20',)",
+    "ACCEPTED_STANDARD_FLAGS = ('-std=gnu++20', '--std=gnu++20', '/std:c++20')",
+    "GNU_DIALECT_DRIFT_FLAGS = ('-std=c++20', '--std=c++20')",
+    "'--std=gnu++20',",
+    '--std=gnu++20',
+    "STANDARD_PREFIXES = ('-std=', '--std=', '/std:')",
 )
 
 
@@ -163,28 +175,40 @@ def has_target_property_override(command):
     return False
 
 
+def contains_manual_standard_flag(parts):
+    return any(marker in part for part in parts for marker in MANUAL_STANDARD_MARKERS)
+
+
 def has_manual_standard_flag(command):
     name = cmake_command_name(command)
     parts = tokenize_cmake_body(command)
     if parts is None:
         return False
-    if name == 'set' and parts and CXX_FLAG_VARIABLE_RE.search(parts[0]):
-        return any(marker in part for part in parts[1:] for marker in MANUAL_STANDARD_MARKERS)
+    if name == 'set' and parts:
+        variable = parts[0]
+        if CXX_FLAG_VARIABLE_RE.search(variable) or any(marker in variable for marker in COMPILE_FLAG_VARIABLE_MARKERS):
+            return contains_manual_standard_flag(parts[1:])
+    if name == 'list' and len(parts) >= 3 and parts[0].lower() in LIST_COMPILE_FLAG_SUBCOMMANDS:
+        variable = parts[1]
+        if any(marker in variable for marker in COMPILE_FLAG_VARIABLE_MARKERS):
+            return contains_manual_standard_flag(parts[2:])
     if name in COMPILE_FLAG_COMMANDS:
-        return any(marker in part for part in parts for marker in MANUAL_STANDARD_MARKERS)
+        return contains_manual_standard_flag(parts)
     if name in COMPILE_FLAG_PROPERTY_COMMANDS:
         property_indices = [index for index, part in enumerate(parts) if part in ('PROPERTIES', 'PROPERTY')]
         for property_index in property_indices:
             index = property_index + 1
             while index < len(parts):
                 if parts[index] in COMPILE_FLAG_PROPERTIES:
-                    if index + 1 < len(parts) and any(marker in parts[index + 1] for marker in MANUAL_STANDARD_MARKERS):
+                    if index + 1 < len(parts) and contains_manual_standard_flag([parts[index + 1]]):
                         return True
                     if parts[property_index] == 'PROPERTY':
                         break
                     index += 2
                 else:
                     index += 2
+    if name not in WRAPPED_FLAG_COMMAND_ALLOWLIST and any(marker in name for marker in WRAPPED_FLAG_COMMAND_MARKERS):
+        return contains_manual_standard_flag(parts)
     return False
 
 

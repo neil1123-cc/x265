@@ -40,6 +40,70 @@ def run_checker(build_dir, *args):
     )
 
 
+def ci_shape_records(build_dir, root, overrides=None):
+    overrides = overrides or {}
+    entries = (
+        ('source/common/x86/asm-primitives.cpp', ['-DX265_ARCH_X86=1', '-DX265_DEPTH=8']),
+        ('CMakeFiles/common.dir/Unity/unity_0_cxx.cxx', ['-DX265_DEPTH=8']),
+        ('source/encoder/api.cpp', ['-DEXPORT_C_API=1', '-DX265_DEPTH=8']),
+        ('source/output/output.cpp', ['-DLINKED_8BIT=1', '-DLINKED_12BIT=1', '-DX265_DEPTH=10']),
+        ('source/common/winxp.cpp', ['-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '-DX265_DEPTH=8']),
+        ('source/common/cpu.cpp', ['-march=znver5', '-DX265_DEPTH=8']),
+    )
+    records = []
+    for file_path, flags in entries:
+        override = overrides.get(file_path, {})
+        command_flags = override.get('command_flags', flags)
+        argument_flags = override.get('argument_flags', flags)
+        records.append({
+            'directory': str(build_dir),
+            'command': f"c++ -std=gnu++20 {' '.join(command_flags)} -c {file_path}",
+            'arguments': ['c++', '-std=gnu++20', *argument_flags, '-c', file_path],
+            'file': str(root / file_path),
+        })
+    return records
+
+
+CI_SHAPE_ARGS = (
+    '--min-cpp-commands=6',
+    '--required-file-substring=source/common/x86/asm-primitives.cpp',
+    '--required-file-substring=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx',
+    '--required-file-substring=source/encoder/api.cpp',
+    '--required-file-substring=source/output/output.cpp',
+    '--required-file-substring=source/common/winxp.cpp',
+    '--required-file-substring=source/common/cpu.cpp',
+    '--required-file-flag=source/common/x86/asm-primitives.cpp=-DX265_ARCH_X86=1',
+    '--required-file-flag=source/common/x86/asm-primitives.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx=-DX265_DEPTH=8',
+    '--required-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1',
+    '--required-file-flag=source/encoder/api.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1',
+    '--required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1',
+    '--required-file-flag=source/output/output.cpp=-DX265_DEPTH=10',
+    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP',
+    '--required-file-flag=source/common/winxp.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=source/common/cpu.cpp=-march=znver5',
+    '--required-file-flag=source/common/cpu.cpp=-DX265_DEPTH=8',
+    '--forbidden-file-flag=source/common/x86/asm-primitives.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/common/x86/asm-primitives.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx=-DX265_DEPTH=10',
+    '--forbidden-file-flag=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/encoder/api.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/encoder/api.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7',
+    '--forbidden-file-flag=source/common/winxp.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/common/winxp.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/common/cpu.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/common/cpu.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/output/output.cpp=-DX265_DEPTH=8',
+    '--forbidden-file-flag=source/output/output.cpp=-DX265_DEPTH=12',
+)
+
+
+def run_ci_shape_checker(build_dir):
+    return run_checker(build_dir, *CI_SHAPE_ARGS)
+
+
 def expect_pass(result):
     if result.returncode != 0:
         raise AssertionError(result.stdout)
@@ -61,6 +125,75 @@ def main():
         missing_commands_dir = root / 'missing-compile-commands'
         missing_commands_dir.mkdir()
         expect_fail(run_checker(missing_commands_dir), 'missing compile_commands.json')
+
+        invalid_json_dir = root / 'invalid-json'
+        invalid_json_dir.mkdir()
+        (invalid_json_dir / 'compile_commands.json').write_text('{')
+        expect_fail(run_checker(invalid_json_dir), 'invalid compile_commands.json')
+
+        object_json_dir = root / 'object-json'
+        object_json_dir.mkdir()
+        (object_json_dir / 'compile_commands.json').write_text('{}')
+        expect_fail(run_checker(object_json_dir), 'compile_commands.json must contain a list')
+
+        missing_file_field_dir = root / 'missing-file-field'
+        write_compile_commands_records(missing_file_field_dir, [{
+            'directory': str(missing_file_field_dir),
+            'command': 'c++ -std=gnu++20 -c source/common/common.cpp',
+        }])
+        expect_fail(run_checker(missing_file_field_dir), 'compile command entry #1 is missing file field')
+
+        ci_shape_dir = root / 'ci-shape-dual-field-pass'
+        write_compile_commands_records(ci_shape_dir, ci_shape_records(ci_shape_dir, root))
+        expect_pass(run_ci_shape_checker(ci_shape_dir))
+
+        asm_shape_missing_dir = root / 'ci-shape-asm-arguments-missing-arch'
+        write_compile_commands_records(asm_shape_missing_dir, ci_shape_records(asm_shape_missing_dir, root, {
+            'source/common/x86/asm-primitives.cpp': {
+                'argument_flags': ['-DX265_DEPTH=8'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(asm_shape_missing_dir), 'missing required flag -DX265_ARCH_X86=1 for file substring source/common/x86/asm-primitives.cpp')
+
+        unity_shape_missing_dir = root / 'ci-shape-unity-command-missing-depth'
+        write_compile_commands_records(unity_shape_missing_dir, ci_shape_records(unity_shape_missing_dir, root, {
+            'CMakeFiles/common.dir/Unity/unity_0_cxx.cxx': {
+                'command_flags': [],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(unity_shape_missing_dir), 'missing required flag -DX265_DEPTH=8 for file substring CMakeFiles/common.dir/Unity/unity_0_cxx.cxx')
+
+        shared_api_missing_dir = root / 'ci-shape-shared-api-command-missing-export'
+        write_compile_commands_records(shared_api_missing_dir, ci_shape_records(shared_api_missing_dir, root, {
+            'source/encoder/api.cpp': {
+                'command_flags': ['-DX265_DEPTH=8'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(shared_api_missing_dir), 'missing required flag -DEXPORT_C_API=1 for file substring source/encoder/api.cpp')
+
+        all_depth_forbidden_dir = root / 'ci-shape-all-bit-depth-arguments-forbidden-depth'
+        write_compile_commands_records(all_depth_forbidden_dir, ci_shape_records(all_depth_forbidden_dir, root, {
+            'source/output/output.cpp': {
+                'argument_flags': ['-DLINKED_8BIT=1', '-DLINKED_12BIT=1', '-DX265_DEPTH=10', '-DX265_DEPTH=8'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(all_depth_forbidden_dir), 'forbidden flag -DX265_DEPTH=8 for file substring source/output/output.cpp')
+
+        winxp_forbidden_dir = root / 'ci-shape-winxp-arguments-forbidden-target'
+        write_compile_commands_records(winxp_forbidden_dir, ci_shape_records(winxp_forbidden_dir, root, {
+            'source/common/winxp.cpp': {
+                'argument_flags': ['-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '-DX265_DEPTH=8'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(winxp_forbidden_dir), 'forbidden flag -D_WIN32_WINNT=_WIN32_WINNT_WIN7 for file substring source/common/winxp.cpp')
+
+        cpu_target_missing_dir = root / 'ci-shape-cpu-target-command-missing-march'
+        write_compile_commands_records(cpu_target_missing_dir, ci_shape_records(cpu_target_missing_dir, root, {
+            'source/common/cpu.cpp': {
+                'command_flags': ['-DX265_DEPTH=8'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(cpu_target_missing_dir), 'missing required flag -march=znver5 for file substring source/common/cpu.cpp')
 
         write_compile_commands(root / 'profiling-flags', 'c++ -std=gnu++20 -fprofile-instr-generate -fprofile-update=atomic -c source/common/common.cpp')
         expect_pass(run_checker(root / 'profiling-flags', '--required-flag=-fprofile-instr-generate', '--required-flag=-fprofile-update=atomic'))
@@ -253,6 +386,15 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_pass(run_checker(arguments_dir, '--required-flag=-Wdeprecated', '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8', '--min-cpp-commands=1'))
+
+        write_compile_commands(root / 'gnu20-double-dash', 'c++ --std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
+        expect_pass(run_checker(root / 'gnu20-double-dash', '--min-cpp-commands=1'))
+
+        write_compile_commands(root / 'plain-cxx20-double-dash', 'c++ --std=c++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
+        expect_fail(run_checker(root / 'plain-cxx20-double-dash'), 'non-GNU C++20 dialect flag --std=c++20')
+
+        write_compile_commands(root / 'old-gnu17-double-dash', 'c++ --std=gnu++17 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
+        expect_fail(run_checker(root / 'old-gnu17-double-dash'), 'old standard flag --std=gnu++17')
 
         write_compile_commands(root / 'old-gnu', 'c++ -std=gnu++17 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
         expect_fail(run_checker(root / 'old-gnu'), 'old standard flag -std=gnu++17')
