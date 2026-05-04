@@ -34,6 +34,7 @@
 #include "svt.h"
 #include "temporalfilter.h"
 #include "threadedme.h"
+#include <atomic>
 
 #ifdef ENABLE_HDR10_PLUS
     #include "dynamicHDR10/hdr10plus.h"
@@ -236,7 +237,7 @@ public:
     Window             m_conformanceWindow;
 
     bool               m_bZeroLatency;     // x265_encoder_encode() returns NALs for the input picture, zero lag
-    bool               m_aborted;          // fatal error detected
+    std::atomic<bool> m_aborted;          // fatal error detected
     bool               m_reconfigure;      // Encoder reconfigure in progress
     bool               m_reconfigureRc;
     bool               m_reconfigureZone;
