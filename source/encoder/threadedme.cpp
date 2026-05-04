@@ -30,7 +30,7 @@
 #include <sstream>
 
 namespace X265_NS {
-int g_puStartIdx[TME_PU_START_IDX_SIZE][8] = {{0}};
+int g_puStartIdx[TME_PU_START_IDX_SIZE][NUM_PART_SIZES] = {{0}};
 
 bool ThreadedME::create()
 {

@@ -42,7 +42,7 @@
 namespace X265_NS {
 
 enum { TME_PU_START_IDX_SIZE = 2 * MAX_CU_SIZE + 1 };
-extern int g_puStartIdx[TME_PU_START_IDX_SIZE][8];
+extern int g_puStartIdx[TME_PU_START_IDX_SIZE][NUM_PART_SIZES];
 
 class Encoder;
 class Analysis;
