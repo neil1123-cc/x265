@@ -1,0 +1,249 @@
+name: Setup Windows dependencies
+description: Install shared Windows CI dependencies and build cached third-party libraries
+
+inputs:
+  ffmpeg-ref:
+    description: FFmpeg ref to checkout
+    required: false
+    default: n8.1
+  ffmpeg-cache-suffix:
+    description: Cache suffix appended after the FFmpeg ref
+    required: false
+    default: full-v3-clang
+  ffmpeg-configure:
+    description: Shell snippet that configures FFmpeg before building
+    required: true
+  mimalloc-ref:
+    description: mimalloc ref to checkout
+    required: false
+    default: v3.3.1
+  use-mimalloc:
+    description: Whether to build and install mimalloc
+    required: false
+    default: 'true'
+  obuparse-ref:
+    description: obuparse ref to checkout
+    required: false
+    default: v2.0.2
+  obuparse-cache-suffix:
+    description: Cache suffix appended after the obuparse ref
+    required: false
+    default: clang-v1
+  lsmash-repository:
+    description: L-SMASH repository to checkout
+    required: false
+    default: vimeo/l-smash
+  lsmash-ref:
+    description: L-SMASH ref to checkout
+    required: false
+    default: 04e39f1fb232c332d4b04a1043c02c7c2d282d00
+  lsmash-cache-suffix:
+    description: Cache suffix appended after the L-SMASH ref
+    required: false
+    default: clang-coff-refptr-v2
+  lsmash-path:
+    description: L-SMASH checkout path
+    required: false
+    default: l-smash
+  lsmash-patch-path:
+    description: Patch path relative to the checked-out L-SMASH directory
+    required: false
+    default: ../x265/.github/patches/l-smash-clang-coff-refptr.patch
+  lsmash-patch-check-paths:
+    description: Paths passed to git diff --check --cached after applying the L-SMASH patch
+    required: false
+    default: codecs/av1_obu.c codecs/description.c codecs/hevc.c codecs/mp4a.c codecs/mp4sys.c codecs/nalu.c core/box.c core/box_default.c core/box_default.h core/isom.c core/print.c core/read.c core/write.c
+  lsmash-extra-cflags:
+    description: Extra CFLAGS passed to L-SMASH configure
+    required: false
+    default: -I/usr/local/include -O3 -DNDEBUG -fno-lto -fno-pic -fno-pie
+  lsmash-extra-ldflags:
+    description: Extra LDFLAGS passed to L-SMASH configure
+    required: false
+    default: -L/usr/local/lib -fno-lto -fno-pic
+  lsmash-install-prefix:
+    description: Install prefix passed to L-SMASH configure
+    required: false
+    default: /usr/local
+  lsmash-cc:
+    description: C compiler passed to L-SMASH configure
+    required: false
+    default: clang
+  extra-msys2-packages:
+    description: Extra MSYS2 packages to install
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Cache FFmpeg
+      id: cache-ffmpeg
+      uses: actions/cache@v5
+      with:
+        path: ffmpeg
+        key: ffmpeg-${{ inputs.ffmpeg-ref }}-${{ inputs.ffmpeg-cache-suffix }}
+
+    - name: Cache Obuparse
+      id: cache-obuparse
+      uses: actions/cache@v5
+      with:
+        path: obuparse-install
+        key: obuparse-${{ inputs.obuparse-ref }}-${{ inputs.obuparse-cache-suffix }}
+
+    - name: Cache L-SMASH
+      id: cache-lsmash
+      uses: actions/cache@v5
+      with:
+        path: lsmash-install
+        key: lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}
+
+    - name: Checkout FFmpeg
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+      uses: actions/checkout@v6
+      with:
+        path: ffmpeg
+        repository: FFmpeg/FFmpeg
+        ref: ${{ inputs.ffmpeg-ref }}
+
+    - name: Checkout mimalloc
+      if: inputs.use-mimalloc == 'true'
+      uses: actions/checkout@v6
+      with:
+        path: mimalloc
+        repository: microsoft/mimalloc
+        ref: ${{ inputs.mimalloc-ref }}
+
+    - name: Checkout Obuparse
+      if: steps.cache-obuparse.outputs.cache-hit != 'true'
+      uses: actions/checkout@v6
+      with:
+        path: obuparse
+        repository: dwbuiten/obuparse
+        ref: ${{ inputs.obuparse-ref }}
+
+    - name: Checkout L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+      uses: actions/checkout@v6
+      with:
+        path: ${{ inputs.lsmash-path }}
+        repository: ${{ inputs.lsmash-repository }}
+        ref: ${{ inputs.lsmash-ref }}
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: CLANG64
+        update: true
+        install: >-
+          p7zip
+          base-devel
+          git
+          libtool
+          mingw-w64-clang-x86_64-nasm
+          mingw-w64-clang-x86_64-clang
+          mingw-w64-clang-x86_64-compiler-rt
+          mingw-w64-clang-x86_64-lld
+          mingw-w64-clang-x86_64-crt
+          mingw-w64-clang-x86_64-headers
+          mingw-w64-clang-x86_64-libc++
+          mingw-w64-clang-x86_64-libwinpthread
+          mingw-w64-clang-x86_64-make
+          mingw-w64-clang-x86_64-pkgconf
+          mingw-w64-clang-x86_64-cmake
+          mingw-w64-clang-x86_64-ninja
+          mingw-w64-clang-x86_64-llvm
+          ${{ inputs.extra-msys2-packages }}
+
+    - name: Compile FFmpeg
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+      shell: msys2 {0}
+      working-directory: ffmpeg
+      run: |
+        ${{ inputs.ffmpeg-configure }}
+        make -j$(nproc)
+
+    - name: Remove .dll.a Import Libraries
+      shell: msys2 {0}
+      run: find /*64/ /usr/ -type f -name "*.dll.a" -print -delete
+
+    - name: Install FFmpeg
+      shell: msys2 {0}
+      working-directory: ffmpeg
+      run: make install
+
+    - name: Compile mimalloc
+      if: inputs.use-mimalloc == 'true'
+      shell: msys2 {0}
+      working-directory: mimalloc
+      run: |
+        mkdir build
+        cd build
+        cmake -GNinja .. -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+          -DMI_BUILD_SHARED=OFF -DMI_BUILD_STATIC=ON -DMI_BUILD_OBJECT=OFF \
+          -DMI_BUILD_TESTS=OFF -DMI_USE_CXX=ON
+        ninja
+        ninja install
+        shopt -s nullglob
+        for dir in /usr/local/lib/cmake/mimalloc-*; do
+          ln -s "$dir" /usr/local/lib/cmake/mimalloc
+          break
+        done
+
+    - name: Compile Obuparse
+      if: steps.cache-obuparse.outputs.cache-hit != 'true'
+      shell: msys2 {0}
+      working-directory: obuparse
+      run: |
+        make CC=cc libobuparse.a
+        install -v obuparse.h /usr/local/include
+        install -v libobuparse.a /usr/local/lib
+        mkdir -p obuparse-install/include obuparse-install/lib
+        cp /usr/local/include/obuparse.h obuparse-install/include/
+        cp /usr/local/lib/libobuparse.a obuparse-install/lib/
+        mv obuparse-install "$GITHUB_WORKSPACE/"
+
+    - name: Install Cached Obuparse
+      if: steps.cache-obuparse.outputs.cache-hit == 'true'
+      shell: msys2 {0}
+      run: |
+        cp -R obuparse-install/include/. /usr/local/include/
+        cp -R obuparse-install/lib/. /usr/local/lib/
+
+    - name: Compile L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit != 'true'
+      working-directory: ${{ inputs.lsmash-path }}
+      env:
+        MSYSTEM: CLANG64
+      shell: msys2 {0}
+      run: |
+        set -x
+        export PATH="/clang64/bin:/usr/bin:/mingw64/bin"
+        hash -r
+        clang --version
+
+        git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
+        git diff --check --cached -- ${{ inputs.lsmash-patch-check-paths }}
+
+        LSMASH_CFLAGS="${{ inputs.lsmash-extra-cflags }}"
+        LSMASH_LDFLAGS="${{ inputs.lsmash-extra-ldflags }}"
+        ./configure --prefix=${{ inputs.lsmash-install-prefix }} --cc=${{ inputs.lsmash-cc }} --extra-cflags="$LSMASH_CFLAGS" --extra-ldflags="$LSMASH_LDFLAGS"
+        make clean
+        make lib -j$(nproc)
+        make install-lib
+
+        mkdir -p lsmash-install/include lsmash-install/lib/pkgconfig
+        cp /usr/local/include/lsmash.h lsmash-install/include/
+        cp /usr/local/lib/liblsmash.a lsmash-install/lib/
+        if [ -d /usr/local/lib/pkgconfig ]; then
+          cp -R /usr/local/lib/pkgconfig/. lsmash-install/lib/pkgconfig/
+        fi
+        mv lsmash-install "$GITHUB_WORKSPACE/"
+
+    - name: Install Cached L-SMASH
+      if: steps.cache-lsmash.outputs.cache-hit == 'true'
+      shell: msys2 {0}
+      run: |
+        cp -R lsmash-install/include/. /usr/local/include/
+        cp -R lsmash-install/lib/. /usr/local/lib/

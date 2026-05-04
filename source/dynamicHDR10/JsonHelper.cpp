@@ -26,7 +26,12 @@
 #include "sys/stat.h"
 #include <fstream>
 #include <iostream>
-using namespace std;
+using std::ofstream;
+using std::ifstream;
+using std::string;
+using std::size_t;
+using json11::Json;
+using json11::JsonParse;
 
 JsonObject JsonHelper::add(string key, string value, JsonObject &json)
 {

@@ -169,6 +169,10 @@ else()
 endif()
 
 # formatting based on distance from tag
+if(X265_TAG_DISTANCE STREQUAL "")
+    set(X265_TAG_DISTANCE "0")
+endif()
+
 if(X265_TAG_DISTANCE STREQUAL "0")
     set(X265_VERSION "${X265_LATEST_TAG}")
 elseif(X265_TAG_DISTANCE STRGREATER "0")

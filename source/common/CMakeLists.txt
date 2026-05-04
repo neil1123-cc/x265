@@ -1,6 +1,6 @@
 # vim: syntax=cmake
 
-list(APPEND VFLAGS "-DX265_VERSION=${X265_VERSION}")
+list(APPEND VFLAGS "-DX265_VERSION=${X265_VERSION} -DMOD_BUILD=${MOD_BUILD}")
 if(EXTRA_LIB)
     if(LINKED_8BIT)
         list(APPEND VFLAGS "-DLINKED_8BIT=1")
@@ -27,11 +27,11 @@ if(ENABLE_ASSEMBLY AND X86)
         set(PRIMITIVES ${SSE3} ${SSSE3} ${SSE41})
         set(WARNDISABLE "/wd4100") # unreferenced formal parameter
         if(INTEL_CXX)
-            add_definitions(/Qwd111) # statement is unreachable
-            add_definitions(/Qwd128) # loop is unreachable
-            add_definitions(/Qwd177) # declared function is unused
-            add_definitions(/Qwd185) # dynamic initialization in unreachable code
-            add_definitions(/Qwd280) # conditional expression is constant
+            x265_add_definitions(/Qwd111) # statement is unreachable
+            x265_add_definitions(/Qwd128) # loop is unreachable
+            x265_add_definitions(/Qwd177) # declared function is unused
+            x265_add_definitions(/Qwd185) # dynamic initialization in unreachable code
+            x265_add_definitions(/Qwd280) # conditional expression is constant
         endif()
         if(X64)
             set_source_files_properties(${SSE3} ${SSSE3} ${SSE41} PROPERTIES COMPILE_FLAGS "${WARNDISABLE}")
@@ -100,7 +100,7 @@ endif(ENABLE_ASSEMBLY AND (ARM OR CROSS_COMPILE_ARM))
 if(ENABLE_ASSEMBLY AND (ARM64 OR CROSS_COMPILE_ARM64))
     if(GCC AND (CMAKE_CXX_FLAGS_RELEASE MATCHES "-O3"))
         message(STATUS "Detected CXX compiler using -O3 optimization level")
-        add_definitions(-DAUTO_VECTORIZE=1)
+        x265_add_definitions(-DAUTO_VECTORIZE=1)
     endif()
 
     # Add Arm intrinsics files here.
@@ -167,7 +167,7 @@ endif(ENABLE_ASSEMBLY AND (ARM64 OR CROSS_COMPILE_ARM64))
 if(ENABLE_ASSEMBLY AND (RISCV64 OR CROSS_COMPILE_RISCV64))
     if(GCC AND (CMAKE_CXX_FLAGS_RELEASE MATCHES "-O3"))
         message(STATUS "Detected CXX compiler using -O3 optimization level")
-        add_definitions(-DAUTO_VECTORIZE=1)
+        x265_add_definitions(-DAUTO_VECTORIZE=1)
     endif()
 
     set(ASM_PRIMITIVES ${ASM_PRIMITIVES} riscv64/asm-primitives.cpp)

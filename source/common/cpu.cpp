@@ -443,6 +443,7 @@ uint32_t cpu_detect(bool benableavx512)
 
 uint32_t cpu_detect(bool benableavx512)
 {
+    (void)benableavx512;
     return 0;
 }
 

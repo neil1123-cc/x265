@@ -33,6 +33,8 @@
 #include "BasicStructures.h"
 #include "SeiMetadataDictionary.h"
 using namespace SeiMetadataDictionary;
+using json11::Json;
+using json11::JsonParse;
 class metadataFromJson::DynamicMetaIO
 {
 public:

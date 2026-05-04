@@ -204,7 +204,7 @@ bool ScalingList::checkDefaultScalingList() const
                 ((s < BLOCK_16x16) || (m_scalingListDC[s][l] == 16)))
                 defaultCounter++;
 
-    return defaultCounter != (NUM_LISTS * NUM_SIZES - 4); // -4 for 32x32
+    return defaultCounter != ((int)NUM_LISTS * (int)NUM_SIZES - 4); // -4 for 32x32
 }
 
 /* get address of default quantization matrix */
