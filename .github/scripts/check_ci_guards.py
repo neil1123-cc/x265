@@ -16,6 +16,7 @@ WINDOWS_DEPS_ACTION = Path('.github/actions/setup-windows-deps/action.yml')
 UPDATE_DEPS_WORKFLOW = Path('.github/workflows/update-deps.yml')
 BUILD_WORKFLOW = Path('.github/workflows/build.yml')
 BUILD_PROFILING_WORKFLOW = Path('.github/workflows/build-profiling.yml')
+BUILD_PROFILING_ACTION = Path('.github/actions/build-x265-profiling/action.yml')
 
 UPDATE_DEPS_ANCHORS = (
     'ffmpeg-ref',
@@ -48,6 +49,11 @@ REQUIRED_BUILD_SNIPPETS = (
     'smoke_linux_gcc.hevc',
 )
 REQUIRED_BUILD_PROFILING_SNIPPETS = (
+    'validate-guardrails:',
+    'needs: validate-guardrails',
+    'needs: [build, validate-guardrails]',
+    'python .github/scripts/check_ci_guards.py',
+    'python .github/scripts/test_check_ci_guards.py',
     'No numeric version tag found; using $version as CI fallback',
     'version="${{ steps.tag.outputs.version }}-g${head_hash}"',
     'test -s "$LLVM_PROFILE_FILE"',
@@ -60,6 +66,16 @@ REQUIRED_BUILD_PROFILING_SNIPPETS = (
     './profdata-dist/llvm-profdata.exe show profile-smoke-12b.profdata >/dev/null',
     './profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null',
     'echo "- standard: gnu++20"',
+)
+REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS = (
+    'CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"',
+    '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+    'check_cxx20_commands_profiling build/8b',
+    'check_cxx20_commands_profiling build/12b',
+    'check_cxx20_commands_profiling .',
+    'enable-lsmash',
+    "if [ \"${{ inputs.enable-lsmash }}\" = 'true' ] || [ \"${{ inputs.enable-lsmash }}\" = 'ON' ]; then",
+    'lsmash_args=(-DENABLE_LSMASH=ON)',
 )
 REQUIRED_UPDATE_DEPS_SNIPPETS = (
     'python .github/scripts/check_ci_guards.py',
@@ -304,6 +320,11 @@ def validate_required_snippets(repo_root):
     for snippet in REQUIRED_BUILD_PROFILING_SNIPPETS:
         if snippet not in build_profiling_text:
             fail(f'missing required Build Profiling workflow guard snippet: {snippet}', repo_root / BUILD_PROFILING_WORKFLOW)
+
+    build_profiling_action_text = read_text(repo_root / BUILD_PROFILING_ACTION)
+    for snippet in REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS:
+        if snippet not in build_profiling_action_text:
+            fail(f'missing required Build Profiling action guard snippet: {snippet}', repo_root / BUILD_PROFILING_ACTION)
 
     update_deps_text = read_text(repo_root / UPDATE_DEPS_WORKFLOW)
     for snippet in REQUIRED_UPDATE_DEPS_SNIPPETS:

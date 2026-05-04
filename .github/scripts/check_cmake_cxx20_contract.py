@@ -124,6 +124,31 @@ def cmake_command_body(command):
     return command.split('(', 1)[1][:-1].split()
 
 
+def update_paren_balance(line, balance):
+    in_quote = False
+    escaped = False
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if escaped:
+            escaped = False
+        elif char == '\\':
+            escaped = in_quote
+        elif char == '"':
+            in_quote = not in_quote
+        elif not in_quote:
+            if line.startswith('$<', index):
+                end = line.find('>', index + 2)
+                if end != -1:
+                    index = end
+            elif char == '(':
+                balance += 1
+            elif char == ')':
+                balance -= 1
+        index += 1
+    return balance
+
+
 def cmake_commands(path):
     pending = []
     start_line = None
@@ -136,7 +161,7 @@ def cmake_commands(path):
         if not pending:
             start_line = index
         pending.append(stripped)
-        balance += stripped.count('(') - stripped.count(')')
+        balance = update_paren_balance(stripped, balance)
         if balance <= 0:
             command = ' '.join(pending).strip()
             if command:

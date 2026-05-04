@@ -15,7 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-guardrails:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout X265
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Check CI guardrails
+      shell: bash
+      run: |
+        set -euo pipefail
+        python .github/scripts/check_ci_guards.py
+        python .github/scripts/test_check_ci_guards.py
+
   build:
+    needs: validate-guardrails
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -356,7 +373,7 @@ jobs:
         retention-days: 7
 
   publish-release:
-    needs: build
+    needs: [build, validate-guardrails]
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
     steps:

@@ -26,6 +26,12 @@ jobs:
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
+      - name: Check CI guardrails
+        run: |
+          set -euo pipefail
+          python .github/scripts/check_ci_guards.py
+          python .github/scripts/check_dependency_patch_suffixes.py
+
       - name: Get Latest FFmpeg Release
         id: ffmpeg
         run: |
@@ -183,8 +189,6 @@ jobs:
         run: |
           set -euo pipefail
           action=.github/actions/setup-windows-deps/action.yml
-          python .github/scripts/check_ci_guards.py
-          python .github/scripts/check_dependency_patch_suffixes.py
           for anchor in ffmpeg-ref mimalloc-ref obuparse-ref lsmash-ref lsmash-cache-suffix gop-muxer-ref gop-muxer-cache-suffix; do
             if ! grep -Fq "${anchor}:" "$action"; then
               echo "Missing dependency update anchor in $action: ${anchor}:" >&2
