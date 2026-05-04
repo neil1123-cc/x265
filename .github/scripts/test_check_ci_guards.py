@@ -20,12 +20,21 @@ jobs:
           set -euo pipefail
           python .github/scripts/check_ci_guards.py
           python .github/scripts/test_check_ci_guards.py
+      - name: Check CMake contract
+        shell: bash
+        run: python .github/scripts/check_cmake_cxx20_contract.py source
       - name: Check CMake guardrails
         shell: bash
         run: python .github/scripts/test_check_cmake_cxx20_contract.py
       - name: Check compile command guardrails
         shell: bash
         run: python .github/scripts/test_check_compile_commands.py
+      - name: Check dependency suffixes
+        shell: bash
+        run: |
+          before="${{ github.event.before }}"
+          after="${{ github.sha }}"
+          python .github/scripts/check_dependency_patch_suffixes.py --before "$before" --after "$after"
       - name: Check dependency suffix guardrails
         shell: bash
         run: python .github/scripts/test_check_dependency_patch_suffixes.py
@@ -49,15 +58,28 @@ jobs:
         run: |
           set -euo pipefail
           build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output smoke_linux_gcc.hevc 2>&1 | tee smoke_linux_gcc.log
+          test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
           grep -Fq 'encoded 1 frames' smoke_linux_gcc.log
   build:
     runs-on: windows-latest
     steps:
+      - name: Build
+        shell: bash
+        run: |
+          check_pgo_consume_commands() {
+            local build_dir="$1"
+            local pgo_flag="$2"
+            local min_cpp_commands="$3"
+            [ -n "$pgo_flag" ] || return 0
+            check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"
+          }
       - name: Threaded ME Smoke
         shell: bash
         run: |
-          build/all/x265.exe --threaded-me --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
+          build/all/x265.exe --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
           grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt
+          ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
+          grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
 
 '''
 
@@ -73,6 +95,21 @@ jobs:
         run: |
           set -euo pipefail
           python .github/scripts/check_ci_guards.py
+          python .github/scripts/check_dependency_patch_suffixes.py
+          for anchor in ffmpeg-ref mimalloc-ref obuparse-ref lsmash-ref lsmash-cache-suffix gop-muxer-ref gop-muxer-cache-suffix; do
+            if ! grep -Fq "${anchor}:" .github/actions/setup-windows-deps/action.yml; then
+              exit 1
+            fi
+          done
+      - name: Validate Dependency Ref Diff
+        shell: bash
+        run: |
+          unexpected=$(git diff --name-only | grep -Ev '^(\\.github/actions/setup-windows-deps/action\\.yml|\\.github/deps-cache\\.json)$' || true)
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected dependency update diff paths:"
+            printf '%s\\n' "$unexpected"
+            exit 1
+          fi
 '''
 
 BUILD_PROFILING_YML = '''
@@ -94,6 +131,34 @@ jobs:
           head_hash=$(git rev-parse --short HEAD)
           version="${{ steps.tag.outputs.version }}-g${head_hash}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Setup Windows deps
+        uses: ./.github/actions/setup-windows-deps
+        with:
+          enable-lsmash: 'ON'
+      - name: Smoke, Package, and Verify 8b-lib
+        shell: bash
+        run: |
+          test -s "$LLVM_PROFILE_FILE"
+          test -s profile-smoke-8b.profdata
+          ./profdata-dist/llvm-profdata.exe show profile-smoke-8b.profdata >/dev/null
+          echo "- standard: gnu++20"
+          echo "- mp4_roundtrip_frames: 12"
+      - name: Smoke, Package, and Verify 12b-lib
+        shell: bash
+        run: |
+          test -s "$LLVM_PROFILE_FILE"
+          test -s profile-smoke-12b.profdata
+          ./profdata-dist/llvm-profdata.exe show profile-smoke-12b.profdata >/dev/null
+          echo "- standard: gnu++20"
+          echo "- mp4_roundtrip_frames: 12"
+      - name: Smoke, Package, and Verify All
+        shell: bash
+        run: |
+          test -s "$LLVM_PROFILE_FILE"
+          test -s profile-smoke-all.profdata
+          ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null
+          echo "- standard: gnu++20"
+          echo "- mp4_roundtrip_frames: 12"
 '''
 
 ACTION_YML = '''
@@ -120,11 +185,24 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Probe
-      shell: bash
+    - name: Verify MSYS2 Toolchain
+      shell: msys2 {0}
       run: |
         set -euo pipefail
-        echo ok
+        echo "=== Dependency provenance ==="
+        echo "lsmash=${{ inputs.lsmash-repository }}@${{ inputs.lsmash-ref }} suffix=${{ inputs.lsmash-cache-suffix }} patch=${{ inputs.lsmash-patch-path }}"
+        echo "gop_muxer=${{ inputs.gop-muxer-repository }}@${{ inputs.gop-muxer-ref }} suffix=${{ inputs.gop-muxer-cache-suffix }} patch=${{ inputs.gop-muxer-patch-path }}"
+    - name: Compile L-SMASH
+      shell: msys2 {0}
+      run: |
+        git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}
+    - name: Compile GOP muxer
+      shell: msys2 {0}
+      run: |
+        git -c core.autocrlf=false reset --hard HEAD
+        git apply --check ${{ inputs.gop-muxer-patch-path }}
+        git apply ${{ inputs.gop-muxer-patch-path }}
+        c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o
 '''
 
 PROFILING_ACTION_YML = '''
@@ -216,6 +294,24 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml', 'gop-muxer-cache-suffix:', 'gop-muxer-cache-label:')
         expect_fail(run_checker(repo), 'missing dependency update anchor: gop-muxer-cache-suffix:')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'enable-lsmash: \'ON\'', 'enable-lsmash: \'OFF\'')
+        expect_fail(run_checker(repo), "missing required Build Profiling workflow guard snippet: enable-lsmash: 'ON'")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', './profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null', 'test -s profile-smoke-all.profdata')
+        expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml', 'c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o', 'c++ -O2 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
+        expect_fail(run_checker(repo), 'missing required setup-windows-deps guard snippet: c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
 
     print('CI guard script guardrails validated')
 

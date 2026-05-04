@@ -83,9 +83,9 @@ int64_t no_atomic_add64(int64_t* ptr, int64_t val);
 #define BSF64(id, x)          (id) = ((unsigned long)__builtin_ctzll(x))
 #define ATOMIC_OR(ptr, mask)  __sync_fetch_and_or(ptr, mask)
 #define ATOMIC_AND(ptr, mask) __sync_fetch_and_and(ptr, mask)
-#define ATOMIC_INC(ptr)       __sync_add_and_fetch((volatile int32_t*)ptr, 1)
-#define ATOMIC_DEC(ptr)       __sync_add_and_fetch((volatile int32_t*)ptr, -1)
-#define ATOMIC_ADD(ptr, val)  __sync_fetch_and_add((volatile __typeof__(*(ptr))*)ptr, (__typeof__(*(ptr) + 0))(val))
+#define ATOMIC_INC(ptr)       __sync_add_and_fetch((int32_t*)ptr, 1)
+#define ATOMIC_DEC(ptr)       __sync_add_and_fetch((int32_t*)ptr, -1)
+#define ATOMIC_ADD(ptr, val)  __sync_fetch_and_add((__typeof__(*(ptr))*)ptr, (__typeof__(*(ptr) + 0))(val))
 #define GIVE_UP_TIME()        usleep(0)
 
 #elif defined(_MSC_VER)       /* Windows atomic intrinsics */
