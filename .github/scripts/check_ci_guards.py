@@ -15,6 +15,7 @@ DEPENDENCY_SUFFIX_CHECK = Path('.github/scripts/check_dependency_patch_suffixes.
 WINDOWS_DEPS_ACTION = Path('.github/actions/setup-windows-deps/action.yml')
 UPDATE_DEPS_WORKFLOW = Path('.github/workflows/update-deps.yml')
 BUILD_WORKFLOW = Path('.github/workflows/build.yml')
+BUILD_PROFILING_WORKFLOW = Path('.github/workflows/build-profiling.yml')
 
 UPDATE_DEPS_ANCHORS = (
     'ffmpeg-ref',
@@ -32,9 +33,16 @@ REQUIRED_BUILD_SNIPPETS = (
     'python .github/scripts/test_check_compile_commands.py',
     'python .github/scripts/test_check_dependency_patch_suffixes.py',
     'python .github/scripts/check_release_needs.py',
-    '--no-progress --output smoke_threaded_me.hevc',
+    'python .github/scripts/test_check_pgo_consume_chain.py',
+    'No numeric version tag found; using $version as CI fallback',
+    'frame threads / pool features       : 1 / threaded-me',
+    'encoded 1 frames',
     'build/cxx20-linux-gcc-compile-commands/x265 --input',
     'smoke_linux_gcc.hevc',
+)
+REQUIRED_BUILD_PROFILING_SNIPPETS = (
+    'No numeric version tag found; using $version as CI fallback',
+    'version="${{ steps.tag.outputs.version }}-g${head_hash}"',
 )
 REQUIRED_UPDATE_DEPS_SNIPPETS = (
     'python .github/scripts/check_ci_guards.py',
@@ -262,6 +270,11 @@ def validate_required_snippets(repo_root):
     for snippet in REQUIRED_BUILD_SNIPPETS:
         if snippet not in build_text:
             fail(f'missing required Build workflow guard snippet: {snippet}', repo_root / BUILD_WORKFLOW)
+
+    build_profiling_text = read_text(repo_root / BUILD_PROFILING_WORKFLOW)
+    for snippet in REQUIRED_BUILD_PROFILING_SNIPPETS:
+        if snippet not in build_profiling_text:
+            fail(f'missing required Build Profiling workflow guard snippet: {snippet}', repo_root / BUILD_PROFILING_WORKFLOW)
 
     update_deps_text = read_text(repo_root / UPDATE_DEPS_WORKFLOW)
     for snippet in REQUIRED_UPDATE_DEPS_SNIPPETS:

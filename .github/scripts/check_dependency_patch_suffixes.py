@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import subprocess
 from pathlib import Path
 
 ACTION_PATH = Path('.github/actions/setup-windows-deps/action.yml')
+DEPS_CACHE_PATH = Path('.github/deps-cache.json')
+DEPS_CACHE_REF_RULES = (
+    ('obuparse', 'obuparse-ref'),
+    ('lsmash', 'lsmash-ref'),
+    ('gop_muxer', 'gop-muxer-ref'),
+)
 PATCH_SUFFIX_RULES = (
     {
         'name': 'L-SMASH',
@@ -91,6 +98,25 @@ def validate_current_mapping(repo_root):
             fail(f"{rule['name']} patch file is missing", patch_file)
 
 
+def validate_deps_cache_refs(repo_root):
+    cache_path = repo_root / DEPS_CACHE_PATH
+    if not cache_path.is_file():
+        print(f'::warning::{DEPS_CACHE_PATH.as_posix()} is missing; skipping dependency cache ref provenance check')
+        return
+
+    action_text = action_text_at(repo_root)
+    cache = json.loads(cache_path.read_text())
+    for cache_key, action_field in DEPS_CACHE_REF_RULES:
+        expected = action_default(action_text, action_field)
+        actual = cache.get(cache_key)
+        if actual != expected:
+            fail(
+                f'{DEPS_CACHE_PATH.as_posix()} {cache_key}={actual!r} does not match {action_field} default {expected!r}',
+                cache_path,
+            )
+    print('Dependency cache ref provenance validated')
+
+
 def validate_diff(repo_root, before, after):
     changed = changed_paths(repo_root, before, after)
     if not changed:
@@ -118,6 +144,7 @@ def main():
 
     repo_root = args.repo_root.resolve()
     validate_current_mapping(repo_root)
+    validate_deps_cache_refs(repo_root)
     if bool(args.before) != bool(args.after):
         fail('--before and --after must be provided together')
     if args.before and args.after:

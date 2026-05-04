@@ -50,7 +50,7 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
     height = info.height;
     colorSpace = info.csp;
     alphaAvailable = alpha;
-    threadActive = false;
+    threadActive.store(false);
     ifs = NULL;
 
     if (colorSpace < 0 || colorSpace >= X265_CSP_MAX)
@@ -82,7 +82,7 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
     else
         ifs = x265_fopen(info.filename, "rb");
     if (ifs && !ferror(ifs))
-        threadActive = true;
+        threadActive.store(true);
     else
     {
         if (ifs && ifs != stdin)
@@ -97,7 +97,7 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
         if (buf[i] == NULL)
         {
             x265_log(NULL, X265_LOG_ERROR, "yuv: buffer allocation failure, aborting\n");
-            threadActive = false;
+            threadActive.store(false);
             return;
         }
     }
@@ -144,7 +144,7 @@ YUVInput::~YUVInput()
 
 void YUVInput::release()
 {
-    threadActive = false;
+    threadActive.store(false);
     readCount.poke();
     stop();
     delete this;
@@ -153,7 +153,7 @@ void YUVInput::release()
 void YUVInput::startReader()
 {
 #if ENABLE_THREADING
-    if (threadActive)
+    if (threadActive.load())
         start();
 #endif
 }
@@ -161,13 +161,13 @@ void YUVInput::startReader()
 void YUVInput::threadMain()
 {
     THREAD_NAME("YUVRead", 0);
-    while (threadActive)
+    while (threadActive.load())
     {
         if (!populateFrameQueue())
             break;
     }
 
-    threadActive = false;
+    threadActive.store(false);
     writeCount.poke();
 }
 bool YUVInput::populateFrameQueue()
@@ -180,7 +180,7 @@ bool YUVInput::populateFrameQueue()
     while (written - read > QUEUE_SIZE - 2)
     {
         read = readCount.waitForChange(read);
-        if (!threadActive)
+        if (!threadActive.load())
             // release() has been called
             return false;
     }
@@ -202,7 +202,7 @@ bool YUVInput::readPicture(x265_picture& pic)
 #if ENABLE_THREADING
 
     /* only wait if the read thread is still active */
-    while (threadActive && read == written)
+    while (threadActive.load() && read == written)
         written = writeCount.waitForChange(written);
 
 #else

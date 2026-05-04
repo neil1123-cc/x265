@@ -590,8 +590,9 @@ jobs:
           frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
           Path('build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv').write_bytes(frame)
           PY
-          build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
+          build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc 2>&1 | tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
+          grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
 
           configure_cxx20_scan x265/source build/cxx20-linux-gcc-compile-commands-12bit \
             --cxx-compiler=g++ \
@@ -651,10 +652,15 @@ jobs:
       shell: bash
       working-directory: x265
       run: |
+        version=""
         if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then
           version="${GITHUB_REF_NAME:-}"
         else
           version=$(git tag --list '[0-9].[0-9]*' --sort=-v:refname | head -n1)
+        fi
+        if [ -z "$version" ]; then
+          version="0.0"
+          echo "::warning::No numeric version tag found; using $version as CI fallback"
         fi
         test -n "$version"
         echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -667,8 +673,7 @@ jobs:
         head_tag=$(git describe --tags --match='[0-9].[0-9]*' HEAD 2>/dev/null || true)
         head_hash=$(git rev-parse --short HEAD)
         if [ -z "$head_tag" ]; then
-          # No version tag on this commit, use tag step's raw value as fallback
-          version="${{ steps.tag.outputs.version }}"
+          version="${{ steps.tag.outputs.version }}-g${head_hash}"
         elif [[ "$head_tag" != *-* ]]; then
           version="${head_tag#M}-g${head_hash}"
         else
@@ -677,6 +682,7 @@ jobs:
           distance=${rest%%-*}
           version="${orig_tag#M}+${distance}-g${head_hash}"
         fi
+        test -n "$version"
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Setup Shared Dependencies
@@ -1307,7 +1313,7 @@ jobs:
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_threaded_me.y4m
         build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
         test -s smoke_threaded_me.hevc
-        grep -Fq 'threaded-me' smoke_threaded_me_log.txt
+        grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt
         ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
         grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt

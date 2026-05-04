@@ -89,6 +89,15 @@ def main():
         write_compile_commands(root / 'pgo-consume-generate-leak', 'c++ -std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata -fprofile-instr-generate -fprofile-update=atomic -c source/common/common.cpp')
         expect_fail(run_checker(root / 'pgo-consume-generate-leak', '--required-flag-prefix=-fprofile-instr-use=', '--forbidden-flag=-fprofile-instr-generate', '--forbidden-flag=-fprofile-update=atomic'), 'forbidden flag -fprofile-instr-generate')
 
+        pgo_consume_arguments_leak_dir = root / 'pgo-consume-arguments-generate-leak'
+        write_compile_commands_records(pgo_consume_arguments_leak_dir, [{
+            'directory': str(pgo_consume_arguments_leak_dir),
+            'command': 'c++ -std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-fprofile-instr-use=/tmp/x265.profdata', '-fprofile-update=atomic', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(pgo_consume_arguments_leak_dir, '--required-flag-prefix=-fprofile-instr-use=', '--forbidden-flag=-fprofile-update=atomic'), 'forbidden flag -fprofile-update=atomic')
+
         pgo_consume_response_dir = root / 'pgo-consume-response-file'
         pgo_consume_response_dir.mkdir()
         (pgo_consume_response_dir / 'pgo.rsp').write_text('-std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata')
@@ -378,6 +387,29 @@ def main():
         (quoted_response_dir / 'args file.rsp').write_text('"-std=gnu++20" "-Wdeprecated" "-Werror=deprecated" "-DX265_DEPTH=8"')
         write_compile_commands(quoted_response_dir, 'c++ @"args file.rsp" -c "source/common/common.cpp"')
         expect_pass(run_checker(quoted_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        quoted_arguments_response_dir = root / 'quoted-response-file-arguments'
+        quoted_arguments_response_dir.mkdir()
+        (quoted_arguments_response_dir / 'args file.rsp').write_text('"-std=gnu++20" "-Wdeprecated" "-Werror=deprecated" "-DX265_DEPTH=8"')
+        write_compile_commands_records(quoted_arguments_response_dir, [{
+            'directory': str(quoted_arguments_response_dir),
+            'arguments': ['c++', '@args file.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(quoted_arguments_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        missing_response_dir = root / 'missing-response-file'
+        missing_response_dir.mkdir()
+        write_compile_commands(missing_response_dir, 'c++ @missing.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(missing_response_dir), 'missing GNU++20 dialect')
+
+        uppercase_suffix_dir = root / 'uppercase-cpp-suffix'
+        write_compile_commands_records(uppercase_suffix_dir, [{
+            'directory': str(uppercase_suffix_dir),
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/COMMON.CPP'],
+            'file': str(root / 'source/common/COMMON.CPP'),
+        }])
+        expect_pass(run_checker(uppercase_suffix_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
         nested_response_dir = root / 'nested-response-file'
         nested_response_dir.mkdir()

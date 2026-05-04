@@ -26,6 +26,7 @@
 
 #include "input.h"
 #include "threading.h"
+#include <atomic>
 #include <fstream>
 #include <stdio.h>
 
@@ -50,7 +51,7 @@ protected:
 
     bool alphaAvailable;
 
-    bool threadActive;
+    std::atomic<bool> threadActive;
 
     ThreadSafeInteger readCount;
 
@@ -69,7 +70,7 @@ public:
     virtual ~YUVInput();
     void release();
     bool isEof() const                            { return ifs && feof(ifs); }
-    bool isFail()                                 { return !(ifs && !ferror(ifs) && threadActive); }
+    bool isFail()                                 { return !(ifs && !ferror(ifs) && threadActive.load()); }
     void startReader();
 
     bool readPicture(x265_picture&);

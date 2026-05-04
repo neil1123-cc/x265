@@ -49,6 +49,11 @@ def write_compile_commands(build_dir, flag):
     ]))
 
 
+def write_compile_commands_records(build_dir, records):
+    build_dir.mkdir(parents=True, exist_ok=True)
+    (build_dir / 'compile_commands.json').write_text(json.dumps(records))
+
+
 def write_chain(root, consume_flag):
     metadata = root / 'metadata.json'
     profdata = root / 'x265.profdata'
@@ -62,25 +67,27 @@ def write_chain(root, consume_flag):
     return metadata, profdata, build
 
 
-def run_checker(metadata, profdata, build, *extra_args):
+def run_checker(metadata, profdata, build, *extra_args, require_dependency_fields=True):
+    command = [
+        sys.executable,
+        str(CHECKER),
+        '--metadata',
+        str(metadata),
+        '--profdata',
+        str(profdata),
+        '--build-dir',
+        str(build),
+        '--expected-target=8b-lib',
+        '--expected-branch=profdata-x86-64-8b-lib',
+        '--expected-toolchain=llvm-20.1',
+        '--require-fresh-slot',
+        '--min-cpp-commands=1',
+        *extra_args,
+    ]
+    if require_dependency_fields:
+        command.insert(-len(extra_args) if extra_args else len(command), '--require-dependency-fields')
     return subprocess.run(
-        [
-            sys.executable,
-            str(CHECKER),
-            '--metadata',
-            str(metadata),
-            '--profdata',
-            str(profdata),
-            '--build-dir',
-            str(build),
-            '--expected-target=8b-lib',
-            '--expected-branch=profdata-x86-64-8b-lib',
-            '--expected-toolchain=llvm-20.1',
-            '--require-dependency-fields',
-            '--require-fresh-slot',
-            '--min-cpp-commands=1',
-            *extra_args,
-        ],
+        command,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -136,6 +143,42 @@ def main():
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path} -fprofile-instr-generate')
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'forbidden flag -fprofile-instr-generate')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        metadata_without_dependencies = dict(VALID_METADATA)
+        metadata_without_dependencies.pop('dependencies')
+        write_metadata(metadata, metadata_without_dependencies)
+        result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', require_dependency_fields=False)
+        expect_pass(result)
+        if '::warning::' not in result.stdout:
+            raise AssertionError(result.stdout)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        write_compile_commands_records(build, [{
+            'directory': str(build),
+            'command': f'c++ -std=gnu++20 -fprofile-instr-use={profdata_flag_path} -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-fprofile-instr-use=/tmp/stale.profdata', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing required flag -fprofile-instr-use=/tmp/x265.profdata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        write_compile_commands_records(build, [{
+            'directory': str(build),
+            'command': f'c++ -std=gnu++20 -fprofile-instr-use={profdata_flag_path} -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', f'-fprofile-instr-use={profdata_flag_path}', '-fprofile-update=atomic', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'forbidden flag -fprofile-update=atomic')
 
     print('PGO metadata/consume chain guardrails validated')
 

@@ -45,7 +45,7 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
     for (int i = 0; i < QUEUE_SIZE; i++)
         buf[i] = nullptr;
 
-    threadActive = false;
+    threadActive.store(false);
     colorSpace = info.csp;
     alphaAvailable = alpha;
     sarWidth = info.sarWidth;
@@ -78,19 +78,19 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
             framesize += (stride * ((height * (format == 2 ? 2 : 1)) >> x265_cli_csps[colorSpace].height[i]));
         }
 
-        threadActive = true;
+        threadActive.store(true);
         for (int q = 0; q < QUEUE_SIZE; q++)
         {
             buf[q] = X265_MALLOC(char, framesize);
             if (!buf[q])
             {
                 x265_log(nullptr, X265_LOG_ERROR, "y4m: buffer allocation failure, aborting");
-                threadActive = false;
+                threadActive.store(false);
                 break;
             }
         }
     }
-    if (!threadActive)
+    if (!threadActive.load())
     {
         if (ifs && ifs != stdin)
             fclose(ifs);
@@ -149,7 +149,7 @@ Y4MInput::~Y4MInput()
 
 void Y4MInput::release()
 {
-    threadActive = false;
+    threadActive.store(false);
     readCount.poke();
     stop();
     delete this;
@@ -322,7 +322,7 @@ bool Y4MInput::parseHeader()
 void Y4MInput::startReader()
 {
 #if ENABLE_THREADING
-    if (threadActive)
+    if (threadActive.load())
         start();
 #endif
 }
@@ -335,9 +335,9 @@ void Y4MInput::threadMain()
         if (!populateFrameQueue())
             break;
     }
-    while (threadActive);
+    while (threadActive.load());
 
-    threadActive = false;
+    threadActive.store(false);
     writeCount.poke();
 }
 bool Y4MInput::populateFrameQueue()
@@ -363,7 +363,7 @@ bool Y4MInput::populateFrameQueue()
     while (written - read > QUEUE_SIZE - 2)
     {
         read = readCount.waitForChange(read);
-        if (!threadActive)
+        if (!threadActive.load())
             return false;
     }
     ProfileScopeEvent(frameRead);
@@ -384,7 +384,7 @@ bool Y4MInput::readPicture(x265_picture& pic)
 #if ENABLE_THREADING
 
     /* only wait if the read thread is still active */
-    while (threadActive && read == written)
+    while (threadActive.load() && read == written)
         written = writeCount.waitForChange(written);
 
 #else
