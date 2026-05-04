@@ -26,6 +26,7 @@
 #include "encoder.h"
 #include "frameencoder.h"
 
+#include <atomic>
 #include <sstream>
 
 namespace X265_NS {

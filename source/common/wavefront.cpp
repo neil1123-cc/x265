@@ -27,6 +27,7 @@
 #include "wavefront.h"
 #include "common.h"
 
+#include <atomic>
 #include <new>
 
 namespace X265_NS {
