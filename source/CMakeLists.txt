@@ -797,7 +797,7 @@ if(POWER)
     endif()
 endif()
 
-include(Version) # determine X265_VERSION and X265_LATEST_TAG
+include(YuukiVersion) # determine X265_VERSION and X265_LATEST_TAG
 include_directories(. common encoder "${PROJECT_BINARY_DIR}")
 
 option(ENABLE_PPA "Enable PPA profiling instrumentation" OFF)
@@ -1043,7 +1043,20 @@ if(CMAKE_RC_COMPILER)
     list(GET VERSION_LIST 1 X265_VERSION_MINOR)
     set(X265_BRANCH_ID 0) # TODO: 0 - stable, 1 - default or other
     set(X265_RC_FILE "${CMAKE_CURRENT_BINARY_DIR}/x265.rc")
+    set(X265LIB_RC_FILE "${CMAKE_CURRENT_BINARY_DIR}/libx265.rc")
+    set(X265_RC_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/x265res.manifest")
+
+    set(X265_FNAME "libx265.dll")
+    set(CLI_MANIFEST "")
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/x265.rc.in" "${X265LIB_RC_FILE}" @ONLY)
+
+    set(X265_FNAME "265.exe")
+    if(ENABLE_UTF8)
+        set(CLI_MANIFEST "\n1 RT_MANIFEST \"x265res.manifest\"\n")
+    endif()
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/x265.rc.in" "${X265_RC_FILE}" @ONLY)
+
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/x265res.manifest.in" "${X265_RC_MANIFEST}" @ONLY)
 endif()
 
 if(NOT (MSVC_IDE OR XCODE))
@@ -1053,7 +1066,7 @@ option(ENABLE_SHARED "Build shared library" ON)
 if(ENABLE_SHARED)
     if(ENABLE_HDR10_PLUS)
         add_library(x265-shared SHARED "${PROJECT_BINARY_DIR}/x265.def" ${ASM_OBJS}
-                    ${X265_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> $<TARGET_OBJECTS:dynamicHDR10>)
+                    ${X265LIB_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common> $<TARGET_OBJECTS:dynamicHDR10>)
         add_library(hdr10plus-shared SHARED $<TARGET_OBJECTS:dynamicHDR10>)
 
         if(MSVC)
@@ -1063,7 +1076,7 @@ if(ENABLE_SHARED)
         endif()
     else()
         add_library(x265-shared SHARED "${PROJECT_BINARY_DIR}/x265.def" ${ASM_OBJS}
-                   ${X265_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common>)
+                   ${X265LIB_RC_FILE} $<TARGET_OBJECTS:encoder> $<TARGET_OBJECTS:common>)
     endif()
     if(EXTRA_LIB)
         target_link_libraries(x265-shared ${EXTRA_LIB})
