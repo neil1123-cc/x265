@@ -27,6 +27,7 @@
 
 #include <signal.h>
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 using namespace X265_NS;
