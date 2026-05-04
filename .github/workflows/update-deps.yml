@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: '0 0 1-7,15-21 * 0'
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Check and print dependency updates without committing
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write
@@ -65,6 +74,15 @@ jobs:
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "L-SMASH latest commit: $SHA"
 
+      - name: Get Latest GOP muxer Commit
+        id: gop_muxer
+        run: |
+          set -euo pipefail
+          SHA=$(curl -fsSL "https://api.github.com/repos/msg7086/gop_muxer/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          test -n "$SHA"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "GOP muxer latest commit: $SHA"
+
       - name: Get Current Versions
         id: current
         run: |
@@ -73,19 +91,23 @@ jobs:
           OBUPARSE=$(grep -A3 'obuparse-ref:' .github/actions/setup-windows-deps/action.yml | grep -oP 'default: v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+')
           if [ -f .github/deps-cache.json ]; then
             LSMASH_SHA=$(jq -r '.lsmash // ""' .github/deps-cache.json)
+            GOP_MUXER_SHA=$(jq -r '.gop_muxer // ""' .github/deps-cache.json)
           else
             LSMASH_SHA=""
+            GOP_MUXER_SHA=""
           fi
           echo "ffmpeg=$FFMPEG" >> $GITHUB_OUTPUT
           echo "mimalloc=$MIMALLOC" >> $GITHUB_OUTPUT
           echo "obuparse=$OBUPARSE" >> $GITHUB_OUTPUT
           echo "lsmash_sha=$LSMASH_SHA" >> $GITHUB_OUTPUT
+          echo "gop_muxer_sha=$GOP_MUXER_SHA" >> $GITHUB_OUTPUT
 
           echo "=== Current versions ==="
           echo "FFmpeg: $FFMPEG"
           echo "mimalloc: $MIMALLOC"
           echo "obuparse: $OBUPARSE"
           echo "L-SMASH: $LSMASH_SHA"
+          echo "GOP muxer: $GOP_MUXER_SHA"
 
       - name: Check for Changes
         id: check
@@ -118,11 +140,23 @@ jobs:
           fi
 
           if [ -n "${{ steps.current.outputs.lsmash_sha }}" ] && [ "${{ steps.lsmash.outputs.sha }}" != "${{ steps.current.outputs.lsmash_sha }}" ]; then
-            CHANGES="${CHANGES}L-SMASH new commit, "
+            CURRENT_LSMASH_SHORT=$(printf '%s' "${{ steps.current.outputs.lsmash_sha }}" | cut -c1-8)
+            LATEST_LSMASH_SHORT=$(printf '%s' "${{ steps.lsmash.outputs.sha }}" | cut -c1-8)
+            CHANGES="${CHANGES}L-SMASH ${CURRENT_LSMASH_SHORT} -> ${LATEST_LSMASH_SHORT}, "
             NEED_BUILD="true"
             echo "lsmash_changed=true" >> $GITHUB_OUTPUT
           else
             echo "lsmash_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "${{ steps.current.outputs.gop_muxer_sha }}" ] && [ "${{ steps.gop_muxer.outputs.sha }}" != "${{ steps.current.outputs.gop_muxer_sha }}" ]; then
+            CURRENT_GOP_MUXER_SHORT=$(printf '%s' "${{ steps.current.outputs.gop_muxer_sha }}" | cut -c1-8)
+            LATEST_GOP_MUXER_SHORT=$(printf '%s' "${{ steps.gop_muxer.outputs.sha }}" | cut -c1-8)
+            CHANGES="${CHANGES}GOP muxer ${CURRENT_GOP_MUXER_SHORT} -> ${LATEST_GOP_MUXER_SHORT}, "
+            NEED_BUILD="true"
+            echo "gop_muxer_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "gop_muxer_changed=false" >> $GITHUB_OUTPUT
           fi
 
           if [ ! -f .github/deps-cache.json ]; then
@@ -143,26 +177,39 @@ jobs:
           fi
 
       - name: Update Dependency Refs
-        if: steps.check.outputs.ffmpeg_changed == 'true' || steps.check.outputs.mimalloc_changed == 'true' || steps.check.outputs.obuparse_changed == 'true' || steps.check.outputs.lsmash_changed == 'true'
+        if: steps.check.outputs.ffmpeg_changed == 'true' || steps.check.outputs.mimalloc_changed == 'true' || steps.check.outputs.obuparse_changed == 'true' || steps.check.outputs.lsmash_changed == 'true' || steps.check.outputs.gop_muxer_changed == 'true'
         run: |
           sed -i "0,/default: n[0-9]\+\.[0-9]\+/s//default: ${{ steps.ffmpeg.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
           sed -i "0,/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/s//default: ${{ steps.mimalloc.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
           sed -i "/obuparse-ref:/,/extra-msys2-packages:/s/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/default: ${{ steps.obuparse.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
           sed -i "/lsmash-ref:/,/lsmash-cache-suffix:/s/default: [0-9a-f]\{40\}/default: ${{ steps.lsmash.outputs.sha }}/" .github/actions/setup-windows-deps/action.yml
+          sed -i "/gop-muxer-ref:/,/gop-muxer-cache-suffix:/s/default: [0-9a-f]\{40\}/default: ${{ steps.gop_muxer.outputs.sha }}/" .github/actions/setup-windows-deps/action.yml
 
       - name: Update Deps Cache
+        if: steps.check.outputs.need_build == 'true'
         run: |
           cat > .github/deps-cache.json << EOF
           {
             "lsmash": "${{ steps.lsmash.outputs.sha }}",
             "obuparse": "${{ steps.obuparse.outputs.tag }}",
+            "gop_muxer": "${{ steps.gop_muxer.outputs.sha }}",
             "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
           cat .github/deps-cache.json
 
+      - name: Print Dry Run Summary
+        if: github.event_name == 'workflow_dispatch' && inputs['dry-run'] == 'true'
+        run: |
+          if [ "${{ steps.check.outputs.need_build }}" = "true" ]; then
+            echo "Dry run: would update dependencies: ${{ steps.check.outputs.changes }}"
+            git diff -- .github/actions/setup-windows-deps/action.yml .github/deps-cache.json
+          else
+            echo "Dry run: no dependency updates detected"
+          fi
+
       - name: Commit and Push Changes
-        if: steps.check.outputs.need_build == 'true'
+        if: steps.check.outputs.need_build == 'true' && !(github.event_name == 'workflow_dispatch' && inputs['dry-run'] == 'true')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

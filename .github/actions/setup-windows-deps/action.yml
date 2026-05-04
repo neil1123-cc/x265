@@ -16,7 +16,7 @@ inputs:
   mimalloc-ref:
     description: mimalloc ref to checkout
     required: false
-    default: v3.3.1
+    default: v3.3.2
   use-mimalloc:
     description: Whether to build and install mimalloc
     required: false
@@ -69,6 +69,30 @@ inputs:
     description: C compiler passed to L-SMASH configure
     required: false
     default: clang
+  use-gop-muxer:
+    description: Whether to build and install GOP muxer
+    required: false
+    default: 'false'
+  gop-muxer-repository:
+    description: GOP muxer repository to checkout
+    required: false
+    default: msg7086/gop_muxer
+  gop-muxer-ref:
+    description: GOP muxer ref to checkout
+    required: false
+    default: 5677cf5ef905c2412ed31de300cd1a08b341d21d
+  gop-muxer-cache-suffix:
+    description: Cache suffix appended after the GOP muxer ref
+    required: false
+    default: lsmash-add-box-v1-clang
+  gop-muxer-path:
+    description: GOP muxer checkout path
+    required: false
+    default: gop_muxer
+  gop-muxer-patch-path:
+    description: Patch path relative to the checked-out GOP muxer directory
+    required: false
+    default: ../x265/.github/patches/gop-muxer-lsmash-add-box.patch
   extra-msys2-packages:
     description: Extra MSYS2 packages to install
     required: false
@@ -97,6 +121,14 @@ runs:
       with:
         path: lsmash-install
         key: lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}
+
+    - name: Cache GOP muxer
+      if: inputs.use-gop-muxer == 'true'
+      id: cache-gop-muxer
+      uses: actions/cache@v5
+      with:
+        path: gop-muxer-install
+        key: gop-muxer-${{ inputs.gop-muxer-repository }}-${{ inputs.gop-muxer-ref }}-${{ inputs.gop-muxer-cache-suffix }}
 
     - name: Checkout FFmpeg
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -129,6 +161,14 @@ runs:
         path: ${{ inputs.lsmash-path }}
         repository: ${{ inputs.lsmash-repository }}
         ref: ${{ inputs.lsmash-ref }}
+
+    - name: Checkout GOP muxer
+      if: inputs.use-gop-muxer == 'true' && steps.cache-gop-muxer.outputs.cache-hit != 'true'
+      uses: actions/checkout@v6
+      with:
+        path: ${{ inputs.gop-muxer-path }}
+        repository: ${{ inputs.gop-muxer-repository }}
+        ref: ${{ inputs.gop-muxer-ref }}
 
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
@@ -247,3 +287,24 @@ runs:
       run: |
         cp -R lsmash-install/include/. /usr/local/include/
         cp -R lsmash-install/lib/. /usr/local/lib/
+
+    - name: Compile GOP muxer
+      if: inputs.use-gop-muxer == 'true' && steps.cache-gop-muxer.outputs.cache-hit != 'true'
+      shell: msys2 {0}
+      working-directory: ${{ inputs.gop-muxer-path }}
+      run: |
+        git -c core.autocrlf=false reset --hard HEAD
+        git apply ${{ inputs.gop-muxer-patch-path }}
+        git diff --check -- gop_muxer.cpp
+        c++ -O2 --std=c++11 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o
+        c++ -static -static-libgcc -static-libstdc++ -L/usr/local/lib -o gop_muxer.exe gop_muxer.o -llsmash -lobuparse -lm
+        mkdir -p /usr/local/bin gop-muxer-install/bin
+        install -v gop_muxer.exe /usr/local/bin/gop_muxer.exe
+        cp /usr/local/bin/gop_muxer.exe gop-muxer-install/bin/
+        mv gop-muxer-install "$GITHUB_WORKSPACE/"
+
+    - name: Install Cached GOP muxer
+      if: inputs.use-gop-muxer == 'true' && steps.cache-gop-muxer.outputs.cache-hit == 'true'
+      shell: msys2 {0}
+      run: |
+        cp -R gop-muxer-install/bin/. /usr/local/bin/
