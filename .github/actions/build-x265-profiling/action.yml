@@ -42,7 +42,9 @@ runs:
   steps:
     - name: Setup build dir
       shell: msys2 {0}
-      run: mkdir -p build/8b build/10b build/12b
+      run: |
+        mkdir -p build/8b build/10b build/12b
+        cp "${{ github.action_path }}/../../scripts/cxx20_scan_helpers.sh" build/cxx20_scan_helpers.sh
 
     - name: Build 8b-lib profiling CLI
       if: ${{ inputs.profile-class == '8b-lib' }}
@@ -50,6 +52,8 @@ runs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        source build/cxx20_scan_helpers.sh
+        CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"
         lsmash_args=()
         if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
           lsmash_args=(-DENABLE_LSMASH=ON)
@@ -66,6 +70,7 @@ runs:
           -DUSE_MIMALLOC=${{ inputs.use-mimalloc }}
           -DENABLE_UNITY_BUILD=ON
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           "${lsmash_args[@]}"
         )
 
@@ -79,6 +84,7 @@ runs:
           -DENABLE_SHARED=OFF \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        check_cxx20_commands_profiling build/8b
         ninja -C build/8b
         mv build/8b/x265.exe build/8b/${{ inputs.output-name }}
 
@@ -88,6 +94,8 @@ runs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        source build/cxx20_scan_helpers.sh
+        CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"
         lsmash_args=()
         if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
           lsmash_args=(-DENABLE_LSMASH=ON)
@@ -104,6 +112,7 @@ runs:
           -DUSE_MIMALLOC=${{ inputs.use-mimalloc }}
           -DENABLE_UNITY_BUILD=ON
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           "${lsmash_args[@]}"
         )
 
@@ -118,6 +127,7 @@ runs:
           -DENABLE_SHARED=OFF \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        check_cxx20_commands_profiling build/12b
         ninja -C build/12b
         mv build/12b/x265.exe build/12b/${{ inputs.output-name }}
 
@@ -127,6 +137,8 @@ runs:
       env:
         PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
       run: |
+        source build/cxx20_scan_helpers.sh
+        CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"
         lsmash_args=()
         if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
           lsmash_args=(-DENABLE_LSMASH=ON)
@@ -146,6 +158,7 @@ runs:
           -DUSE_MIMALLOC=${{ inputs.use-mimalloc }}
           -DENABLE_UNITY_BUILD=ON
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           "${lsmash_args[@]}"
         )
 
@@ -154,6 +167,7 @@ runs:
           shift
           cmake "${cmake_common_args[@]}" -B "$build_dir" "$@"
         }
+
         NPROC=$(nproc)
         NINJA_JOBS_PAIR=$(( (NPROC + 1) / 2 ))
         echo "Ninja job limit for paired profiling helper builds: ${NINJA_JOBS_PAIR}"
@@ -172,12 +186,14 @@ runs:
 
         configure_x265 build/8b \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}"
+        check_cxx20_commands_profiling build/8b
         ninja -C build/8b -j "$NINJA_JOBS_PAIR" &
         ninja_8b_pid=$!
 
         configure_x265 build/12b \
           -DHIGH_BIT_DEPTH=ON -DMAIN12=ON \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}"
+        check_cxx20_commands_profiling build/12b
         ninja -C build/12b -j "$NINJA_JOBS_PAIR" &
         ninja_12b_pid=$!
 
@@ -204,5 +220,6 @@ runs:
           -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
           -DCMAKE_CXX_FLAGS="${{ inputs.profiling-cxx-flags }}" \
           -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+        check_cxx20_commands_profiling .
         ninja
         mv x265.exe ${{ inputs.output-name }}

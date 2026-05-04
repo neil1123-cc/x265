@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+CHECKER = Path(__file__).with_name('check_pgo_consume_chain.py')
+
+VALID_METADATA = {
+    'profile_target': '8b-lib',
+    'profdata_branch': 'profdata-x86-64-8b-lib',
+    'profdata_toolchain': 'llvm-20.1',
+    'llvm_profdata_version': '20.1.8',
+    'layout': 'per-target-bounded-window',
+    'window': {
+        'slots': 4,
+        'fresh_slot': 'profiles/0.profdata',
+        'weights_newest_to_oldest': [4, 3, 2, 1],
+    },
+    'dependencies': {
+        'ffmpeg_ref': 'n8.1',
+        'ffmpeg_cache_key': 'ffmpeg-n8.1-full-v4-clang',
+        'mimalloc_ref': 'v3.3.2',
+        'obuparse_ref': 'v2.0.2',
+        'obuparse_cache_key': 'obuparse-v2.0.2-clang-v1',
+        'lsmash_repository': 'vimeo/l-smash',
+        'lsmash_ref': '04e39f1fb232c332d4b04a1043c02c7c2d282d00',
+        'lsmash_cache_key': 'lsmash-vimeo/l-smash-04e39f1fb232c332d4b04a1043c02c7c2d282d00-clang-coff-refptr-v2',
+        'gop_muxer_repository': 'msg7086/gop_muxer',
+        'gop_muxer_ref': '5677cf5ef905c2412ed31de300cd1a08b341d21d',
+        'gop_muxer_cache_key': 'gop-muxer-msg7086/gop_muxer-5677cf5ef905c2412ed31de300cd1a08b341d21d-lsmash-add-box-v2-clang-gnu20',
+    },
+}
+
+
+def write_metadata(path, metadata=None):
+    path.write_text(json.dumps(metadata or VALID_METADATA))
+
+
+def write_compile_commands(build_dir, flag):
+    build_dir.mkdir(parents=True, exist_ok=True)
+    (build_dir / 'compile_commands.json').write_text(json.dumps([
+        {
+            'directory': str(build_dir),
+            'command': f'c++ -std=gnu++20 {flag} -c source/common/common.cpp',
+            'file': str(build_dir.parent / 'source/common/common.cpp'),
+        }
+    ]))
+
+
+def write_chain(root, consume_flag):
+    metadata = root / 'metadata.json'
+    profdata = root / 'x265.profdata'
+    profiles = root / 'profiles'
+    build = root / 'build'
+    profiles.mkdir()
+    profdata.write_text('profdata\n')
+    (profiles / '0.profdata').write_text('fresh profdata\n')
+    write_metadata(metadata)
+    write_compile_commands(build, consume_flag)
+    return metadata, profdata, build
+
+
+def run_checker(metadata, profdata, build, *extra_args):
+    return subprocess.run(
+        [
+            sys.executable,
+            str(CHECKER),
+            '--metadata',
+            str(metadata),
+            '--profdata',
+            str(profdata),
+            '--build-dir',
+            str(build),
+            '--expected-target=8b-lib',
+            '--expected-branch=profdata-x86-64-8b-lib',
+            '--expected-toolchain=llvm-20.1',
+            '--require-dependency-fields',
+            '--require-fresh-slot',
+            '--min-cpp-commands=1',
+            *extra_args,
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
+def expect_pass(result):
+    if result.returncode != 0:
+        raise AssertionError(result.stdout)
+
+
+def expect_fail(result, expected):
+    if result.returncode == 0:
+        raise AssertionError(f'expected failure containing {expected!r}')
+    if expected not in result.stdout:
+        raise AssertionError(result.stdout)
+
+
+def main():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        expect_pass(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'))
+
+        stale_metadata = dict(VALID_METADATA)
+        stale_metadata['dependencies'] = dict(VALID_METADATA['dependencies'])
+        stale_metadata['dependencies']['ffmpeg_cache_key'] = 'ffmpeg-stale-full-v4-clang'
+        write_metadata(metadata, stale_metadata)
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profdata dependency cache key mismatch')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        (root / 'profiles' / '0.profdata').unlink()
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing profdata fresh slot')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        profdata.unlink()
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing PGO profdata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        metadata, profdata, build = write_chain(root, '-fprofile-instr-use=/tmp/stale.profdata')
+        expect_fail(run_checker(metadata, profdata, build, '--profdata-flag-path=/tmp/x265.profdata'), 'missing required flag -fprofile-instr-use=/tmp/x265.profdata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path} -fprofile-instr-generate')
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'forbidden flag -fprofile-instr-generate')
+
+    print('PGO metadata/consume chain guardrails validated')
+
+
+if __name__ == '__main__':
+    main()

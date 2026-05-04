@@ -9,7 +9,7 @@ inputs:
   ffmpeg-cache-suffix:
     description: Cache suffix appended after the FFmpeg ref
     required: false
-    default: full-v3-clang
+    default: full-v4-clang
   ffmpeg-configure:
     description: Shell snippet that configures FFmpeg before building
     required: true
@@ -84,7 +84,7 @@ inputs:
   gop-muxer-cache-suffix:
     description: Cache suffix appended after the GOP muxer ref
     required: false
-    default: lsmash-add-box-v1-clang
+    default: lsmash-add-box-v2-clang-gnu20
   gop-muxer-path:
     description: GOP muxer checkout path
     required: false
@@ -195,6 +195,52 @@ runs:
           mingw-w64-clang-x86_64-llvm
           ${{ inputs.extra-msys2-packages }}
 
+    - name: Verify MSYS2 Toolchain
+      shell: msys2 {0}
+      run: |
+        set -euo pipefail
+        case "${MSYSTEM:-}" in
+          CLANG64) ;;
+          *) echo "Unexpected MSYSTEM: ${MSYSTEM:-unset}" >&2; exit 1 ;;
+        esac
+        echo "=== Dependency provenance ==="
+        echo "ffmpeg=${{ inputs.ffmpeg-ref }} cache=ffmpeg-${{ inputs.ffmpeg-ref }}-${{ inputs.ffmpeg-cache-suffix }}"
+        echo "mimalloc=${{ inputs.mimalloc-ref }} enabled=${{ inputs.use-mimalloc }}"
+        echo "obuparse=${{ inputs.obuparse-ref }} cache=obuparse-${{ inputs.obuparse-ref }}-${{ inputs.obuparse-cache-suffix }}"
+        echo "lsmash=${{ inputs.lsmash-repository }}@${{ inputs.lsmash-ref }} suffix=${{ inputs.lsmash-cache-suffix }} patch=${{ inputs.lsmash-patch-path }} cache=lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}"
+        echo "gop_muxer=${{ inputs.gop-muxer-repository }}@${{ inputs.gop-muxer-ref }} suffix=${{ inputs.gop-muxer-cache-suffix }} patch=${{ inputs.gop-muxer-patch-path }} enabled=${{ inputs.use-gop-muxer }} cache=gop-muxer-${{ inputs.gop-muxer-repository }}-${{ inputs.gop-muxer-ref }}-${{ inputs.gop-muxer-cache-suffix }}"
+        echo "=== Toolchain paths and versions ==="
+        for tool in clang c++ ld.lld llvm-ar llvm-ranlib llvm-profdata cmake ninja pkg-config; do
+          tool_path=$(command -v "$tool")
+          case "$tool_path" in
+            /clang64/bin/*|/usr/bin/*) ;;
+            *) echo "Unexpected $tool path: $tool_path" >&2; exit 1 ;;
+          esac
+          printf '%s=%s\n' "$tool" "$tool_path"
+          "$tool" --version | head -1
+        done
+        echo "=== MSYS2 package provenance ==="
+        pacman -Q \
+          mingw-w64-clang-x86_64-clang \
+          mingw-w64-clang-x86_64-lld \
+          mingw-w64-clang-x86_64-llvm \
+          mingw-w64-clang-x86_64-libc++ \
+          mingw-w64-clang-x86_64-compiler-rt
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo "### Windows dependency provenance"
+            echo
+            echo "| dependency | ref | cache | suffix | patch | enabled |"
+            echo "| --- | --- | --- | --- | --- | --- |"
+            echo "| FFmpeg | ${{ inputs.ffmpeg-ref }} | ffmpeg-${{ inputs.ffmpeg-ref }}-${{ inputs.ffmpeg-cache-suffix }} | ${{ inputs.ffmpeg-cache-suffix }} | n/a | true |"
+            echo "| mimalloc | ${{ inputs.mimalloc-ref }} | n/a | n/a | n/a | ${{ inputs.use-mimalloc }} |"
+            echo "| obuparse | ${{ inputs.obuparse-ref }} | obuparse-${{ inputs.obuparse-ref }}-${{ inputs.obuparse-cache-suffix }} | ${{ inputs.obuparse-cache-suffix }} | n/a | true |"
+            echo "| L-SMASH | ${{ inputs.lsmash-repository }}@${{ inputs.lsmash-ref }} | lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }} | ${{ inputs.lsmash-cache-suffix }} | ${{ inputs.lsmash-patch-path }} | true |"
+            echo "| GOP muxer | ${{ inputs.gop-muxer-repository }}@${{ inputs.gop-muxer-ref }} | gop-muxer-${{ inputs.gop-muxer-repository }}-${{ inputs.gop-muxer-ref }}-${{ inputs.gop-muxer-cache-suffix }} | ${{ inputs.gop-muxer-cache-suffix }} | ${{ inputs.gop-muxer-patch-path }} | ${{ inputs.use-gop-muxer }} |"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
     - name: Compile FFmpeg
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
       shell: msys2 {0}
@@ -205,12 +251,40 @@ runs:
 
     - name: Remove .dll.a Import Libraries
       shell: msys2 {0}
-      run: find /*64/ /usr/ -type f -name "*.dll.a" -print -delete
+      run: |
+        deleted=0
+        for root in /clang64 /mingw64 /ucrt64 /clangarm64 /usr/local; do
+          [ -d "$root" ] || continue
+          while IFS= read -r -d '' file; do
+            printf '%s\n' "$file"
+            rm -f "$file"
+            deleted=$((deleted + 1))
+          done < <(find "$root" -type f -name "*.dll.a" -print0)
+        done
+        echo "Removed .dll.a import libraries: $deleted"
 
     - name: Install FFmpeg
       shell: msys2 {0}
       working-directory: ffmpeg
       run: make install
+
+    - name: Verify FFmpeg Install
+      shell: msys2 {0}
+      run: |
+        for file in \
+          /usr/local/lib/libavformat.a \
+          /usr/local/lib/libavcodec.a \
+          /usr/local/lib/libavutil.a \
+          /usr/local/lib/libswscale.a \
+          /usr/local/lib/pkgconfig/libavformat.pc; do
+          test -s "$file"
+          ls -l "$file"
+        done
+        if [ -f /usr/local/lib/pkgconfig/libswscale.pc ]; then
+          ls -l /usr/local/lib/pkgconfig/libswscale.pc
+        else
+          echo "::warning::FFmpeg libswscale.pc is missing; static LAVF discovery may rely on aggregate pkg-config metadata"
+        fi
 
     - name: Compile mimalloc
       if: inputs.use-mimalloc == 'true'
@@ -251,6 +325,12 @@ runs:
         cp -R obuparse-install/include/. /usr/local/include/
         cp -R obuparse-install/lib/. /usr/local/lib/
 
+    - name: Verify Obuparse Install
+      shell: msys2 {0}
+      run: |
+        test -s /usr/local/include/obuparse.h
+        test -s /usr/local/lib/libobuparse.a
+
     - name: Compile L-SMASH
       if: steps.cache-lsmash.outputs.cache-hit != 'true'
       working-directory: ${{ inputs.lsmash-path }}
@@ -259,12 +339,24 @@ runs:
       shell: msys2 {0}
       run: |
         set -x
-        export PATH="/clang64/bin:/usr/bin:/mingw64/bin"
+        export PATH="/clang64/bin:/usr/bin"
         hash -r
         clang --version
 
+        for file in ${{ inputs.lsmash-patch-check-paths }}; do
+          test -f "$file"
+        done
+        echo "Validated L-SMASH patch targets: ${{ inputs.lsmash-patch-check-paths }}"
+        git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}
         git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
-        git diff --check --cached -- ${{ inputs.lsmash-patch-check-paths }}
+        git diff --check -- ${{ inputs.lsmash-patch-check-paths }}
+        grep -Fq 'lsmash_local_isom_box_type' codecs/description.c
+        grep -Fq "LSMASH_4CC( 'h', 'v', 'c', 'C' )" codecs/hevc.c
+        grep -Fq 'lsmash_isom_box_type_value' core/box.c
+        grep -Fq 'lsmash_qtff_box_type_value' core/box.c
+        grep -Fq 'return isom_get_sample_group_description_common( list, ISOM_GROUP_TYPE_PROL );' core/isom.c
+        grep -Fq 'return isom_get_sample_to_group_common( list, ISOM_GROUP_TYPE_PROL );' core/isom.c
+        echo "Validated L-SMASH patch anchors"
 
         LSMASH_CFLAGS="${{ inputs.lsmash-extra-cflags }}"
         LSMASH_LDFLAGS="${{ inputs.lsmash-extra-ldflags }}"
@@ -288,15 +380,26 @@ runs:
         cp -R lsmash-install/include/. /usr/local/include/
         cp -R lsmash-install/lib/. /usr/local/lib/
 
+    - name: Verify L-SMASH Install
+      shell: msys2 {0}
+      run: |
+        test -s /usr/local/include/lsmash.h
+        test -s /usr/local/lib/liblsmash.a
+
     - name: Compile GOP muxer
       if: inputs.use-gop-muxer == 'true' && steps.cache-gop-muxer.outputs.cache-hit != 'true'
       shell: msys2 {0}
       working-directory: ${{ inputs.gop-muxer-path }}
       run: |
         git -c core.autocrlf=false reset --hard HEAD
+        test -f gop_muxer.cpp
+        echo "Validated GOP muxer patch targets: gop_muxer.cpp"
+        git apply --check ${{ inputs.gop-muxer-patch-path }}
         git apply ${{ inputs.gop-muxer-patch-path }}
         git diff --check -- gop_muxer.cpp
-        c++ -O2 --std=c++11 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o
+        grep -Fq 'lsmash_add_box(lsmash_root_as_box(p_root), free_box)' gop_muxer.cpp
+        echo "Validated GOP muxer patch anchors"
+        c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o
         c++ -static -static-libgcc -static-libstdc++ -L/usr/local/lib -o gop_muxer.exe gop_muxer.o -llsmash -lobuparse -lm
         mkdir -p /usr/local/bin gop-muxer-install/bin
         install -v gop_muxer.exe /usr/local/bin/gop_muxer.exe
@@ -308,3 +411,8 @@ runs:
       shell: msys2 {0}
       run: |
         cp -R gop-muxer-install/bin/. /usr/local/bin/
+
+    - name: Verify GOP muxer Install
+      if: inputs.use-gop-muxer == 'true'
+      shell: msys2 {0}
+      run: test -s /usr/local/bin/gop_muxer.exe

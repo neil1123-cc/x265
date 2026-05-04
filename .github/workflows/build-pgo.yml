@@ -48,8 +48,8 @@ jobs:
           done
           ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
             --disable-runtime-cpudetect --disable-all --disable-autodetect \
-            --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
             --disable-everything --disable-network $PGO_OPT \
+            --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
             --enable-demuxer=mpegts,mov,matroska,h264,hevc,rawvideo,yuv4mpegpipe \
             --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
             --enable-encoder=rawvideo,aac,ac3,mp2,pcm_s16le,pcm_s24le,pcm_s32le \
@@ -113,7 +113,9 @@ jobs:
             ;;
         esac
 
+        source x265/.github/scripts/cxx20_scan_helpers.sh
         profile_exe="x265-profiling-win64-x86-64-${{ inputs.profile_target || 'all' }}.exe"
+        check_cxx20_commands_profiling "$profile_build_dir"
         cd "$profile_build_dir"
 
         create_opts() {
@@ -159,6 +161,10 @@ jobs:
           local profraw="${profile_run_id}_${safe_label}.profraw"
           echo ">>> [$label] ./$profile_exe $opt $input -o /dev/null"
           LLVM_PROFILE_FILE="$profraw" ./$profile_exe $opt "$input" -o /dev/null
+          if [ ! -s "$profraw" ]; then
+            echo "PGO workload did not produce profile data: $label -> $profraw" >&2
+            exit 1
+          fi
         }
 
         run_workload_suite() {
@@ -271,8 +277,11 @@ jobs:
       run: |
         set -euo pipefail
 
+        llvm_profdata_version=$(llvm-profdata --version | sed -nE 's/.*LLVM version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
+        test -n "$llvm_profdata_version"
+        profdata_toolchain="llvm-${llvm_profdata_version//[^A-Za-z0-9_.-]/_}"
         profile_target="${{ github.event.inputs.profile_target || 'all' }}"
-        profdata_branch="profdata-x86-64-${profile_target}"
+        profdata_branch="profdata-x86-64-${profile_target}-${profdata_toolchain}"
         profdata_push_dir=$(mktemp -d)
         remote_url="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
         trap 'rm -rf "$profdata_push_dir"' EXIT
@@ -287,8 +296,10 @@ jobs:
         git -C "$profdata_push_dir" remote add origin "$remote_url"
 
         branch_exists=false
+        remote_tip=''
         if git -C "$profdata_push_dir" fetch origin "$profdata_branch" --depth=1; then
           branch_exists=true
+          remote_tip=$(git -C "$profdata_push_dir" rev-parse FETCH_HEAD)
           git -C "$profdata_push_dir" checkout -B "$profdata_branch" FETCH_HEAD
         else
           echo "Branch not found: $profdata_branch; creating it"
@@ -331,11 +342,11 @@ jobs:
         )
 
         if [ "$branch_exists" = true ]; then
-          git -C "$profdata_push_dir" checkout --orphan "$profdata_branch-tmp"
+          find "$profdata_push_dir" -mindepth 1 -maxdepth 1 ! -name .git ! -name .window -exec rm -rf {} +
+          git -C "$profdata_push_dir" rm -rf . >/dev/null 2>&1 || true
+        else
+          find "$profdata_push_dir" -mindepth 1 -maxdepth 1 ! -name .git ! -name .window -exec rm -rf {} +
         fi
-
-        find "$profdata_push_dir" -mindepth 1 -maxdepth 1 ! -name .git ! -name .window -exec rm -rf {} +
-        git -C "$profdata_push_dir" rm -rf . >/dev/null 2>&1 || true
 
         mkdir -p "$profdata_push_dir/profiles"
         cp "$scratch_dir/x265.profdata" "$profdata_push_dir/x265.profdata"
@@ -357,19 +368,27 @@ jobs:
 
         setup_deps_action="$GITHUB_WORKSPACE/x265/.github/actions/setup-windows-deps/action.yml"
         ffmpeg_ref=$(action_default "$setup_deps_action" ffmpeg-ref)
+        ffmpeg_cache_suffix=$(action_default "$setup_deps_action" ffmpeg-cache-suffix)
         mimalloc_ref=$(action_default "$setup_deps_action" mimalloc-ref)
         obuparse_ref=$(action_default "$setup_deps_action" obuparse-ref)
         obuparse_cache_suffix=$(action_default "$setup_deps_action" obuparse-cache-suffix)
         lsmash_repository=$(action_default "$setup_deps_action" lsmash-repository)
         lsmash_ref=$(action_default "$setup_deps_action" lsmash-ref)
         lsmash_cache_suffix=$(action_default "$setup_deps_action" lsmash-cache-suffix)
+        gop_muxer_repository=$(action_default "$setup_deps_action" gop-muxer-repository)
+        gop_muxer_ref=$(action_default "$setup_deps_action" gop-muxer-ref)
+        gop_muxer_cache_suffix=$(action_default "$setup_deps_action" gop-muxer-cache-suffix)
         test -n "$ffmpeg_ref"
+        test -n "$ffmpeg_cache_suffix"
         test -n "$mimalloc_ref"
         test -n "$obuparse_ref"
         test -n "$obuparse_cache_suffix"
         test -n "$lsmash_repository"
         test -n "$lsmash_ref"
         test -n "$lsmash_cache_suffix"
+        test -n "$gop_muxer_repository"
+        test -n "$gop_muxer_ref"
+        test -n "$gop_muxer_cache_suffix"
 
         source_commit=$(git -C "$GITHUB_WORKSPACE/x265" rev-parse HEAD)
         source_ref=$(git -C "$GITHUB_WORKSPACE/x265" rev-parse --abbrev-ref HEAD || true)
@@ -389,6 +408,8 @@ jobs:
           "source_commit": "${source_commit}",
           "profile_target": "${profile_target}",
           "profdata_branch": "${profdata_branch}",
+          "profdata_toolchain": "${profdata_toolchain}",
+          "llvm_profdata_version": "${llvm_profdata_version}",
           "layout": "per-target-bounded-window",
           "window": {
             "slots": 4,
@@ -397,21 +418,25 @@ jobs:
           },
           "dependencies": {
             "ffmpeg_ref": "${ffmpeg_ref}",
+            "ffmpeg_cache_key": "ffmpeg-${ffmpeg_ref}-${ffmpeg_cache_suffix}",
             "mimalloc_ref": "${mimalloc_ref}",
             "obuparse_ref": "${obuparse_ref}",
             "obuparse_cache_key": "obuparse-${obuparse_ref}-${obuparse_cache_suffix}",
             "lsmash_repository": "${lsmash_repository}",
             "lsmash_ref": "${lsmash_ref}",
-            "lsmash_cache_key": "lsmash-${lsmash_repository}-${lsmash_ref}-${lsmash_cache_suffix}"
+            "lsmash_cache_key": "lsmash-${lsmash_repository}-${lsmash_ref}-${lsmash_cache_suffix}",
+            "gop_muxer_repository": "${gop_muxer_repository}",
+            "gop_muxer_ref": "${gop_muxer_ref}",
+            "gop_muxer_cache_key": "gop-muxer-${gop_muxer_repository}-${gop_muxer_ref}-${gop_muxer_cache_suffix}"
           }
         }
         EOF
+        python x265/.github/scripts/check_profdata_metadata.py "$profdata_push_dir/metadata.json" \
+          --expected-target="$profile_target" \
+          --expected-branch="$profdata_branch" \
+          --require-dependency-fields
 
         rm -rf "$scratch_dir"
-        if [ "$branch_exists" = true ]; then
-          git -C "$profdata_push_dir" branch -D "$profdata_branch" || true
-          git -C "$profdata_push_dir" branch -m "$profdata_branch"
-        fi
 
         add_paths=(x265.profdata profiles metadata.json)
         git -C "$profdata_push_dir" add "${add_paths[@]}"
@@ -422,4 +447,17 @@ jobs:
         fi
 
         git -C "$profdata_push_dir" commit -m "Update PGO profdata ($profile_target) - $(date +%Y%m%d-%H%M)"
-        git -C "$profdata_push_dir" push -f origin HEAD:"$profdata_branch"
+
+        if [ "$branch_exists" = true ]; then
+          git -C "$profdata_push_dir" fetch origin "$profdata_branch" --depth=1
+          latest_remote_tip=$(git -C "$profdata_push_dir" rev-parse FETCH_HEAD)
+          if [ "$latest_remote_tip" != "$remote_tip" ]; then
+            echo "Remote profdata branch advanced while this run was publishing: $remote_tip -> $latest_remote_tip" >&2
+            exit 1
+          fi
+        elif git -C "$profdata_push_dir" ls-remote --exit-code --heads origin "$profdata_branch" >/dev/null 2>&1; then
+          echo "Remote profdata branch appeared while this run was publishing: $profdata_branch" >&2
+          exit 1
+        fi
+
+        git -C "$profdata_push_dir" push origin HEAD:"$profdata_branch"

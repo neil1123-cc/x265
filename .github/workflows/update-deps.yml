@@ -172,6 +172,8 @@ jobs:
 
           if [ "$NEED_BUILD" = "true" ]; then
             echo "=== Changes detected: ${CHANGES%,*} ==="
+            echo "L-SMASH cache suffix remains: $(sed -n '/lsmash-cache-suffix:/,/lsmash-path:/p' .github/actions/setup-windows-deps/action.yml | sed -n 's/^ *default: //p' | head -1)"
+            echo "GOP muxer cache suffix remains: $(sed -n '/gop-muxer-cache-suffix:/,/gop-muxer-path:/p' .github/actions/setup-windows-deps/action.yml | sed -n 's/^ *default: //p' | head -1)"
           else
             echo "=== No changes detected ==="
           fi
@@ -179,11 +181,25 @@ jobs:
       - name: Update Dependency Refs
         if: steps.check.outputs.ffmpeg_changed == 'true' || steps.check.outputs.mimalloc_changed == 'true' || steps.check.outputs.obuparse_changed == 'true' || steps.check.outputs.lsmash_changed == 'true' || steps.check.outputs.gop_muxer_changed == 'true'
         run: |
-          sed -i "0,/default: n[0-9]\+\.[0-9]\+/s//default: ${{ steps.ffmpeg.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
-          sed -i "0,/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/s//default: ${{ steps.mimalloc.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
-          sed -i "/obuparse-ref:/,/extra-msys2-packages:/s/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/default: ${{ steps.obuparse.outputs.tag }}/" .github/actions/setup-windows-deps/action.yml
-          sed -i "/lsmash-ref:/,/lsmash-cache-suffix:/s/default: [0-9a-f]\{40\}/default: ${{ steps.lsmash.outputs.sha }}/" .github/actions/setup-windows-deps/action.yml
-          sed -i "/gop-muxer-ref:/,/gop-muxer-cache-suffix:/s/default: [0-9a-f]\{40\}/default: ${{ steps.gop_muxer.outputs.sha }}/" .github/actions/setup-windows-deps/action.yml
+          set -euo pipefail
+          action=.github/actions/setup-windows-deps/action.yml
+          python .github/scripts/check_ci_guards.py
+          python .github/scripts/check_dependency_patch_suffixes.py
+          for anchor in ffmpeg-ref mimalloc-ref obuparse-ref lsmash-ref lsmash-cache-suffix gop-muxer-ref gop-muxer-cache-suffix; do
+            if ! grep -Fq "${anchor}:" "$action"; then
+              echo "Missing dependency update anchor in $action: ${anchor}:" >&2
+              exit 1
+            fi
+          done
+          lsmash_suffix=$(sed -n '/lsmash-cache-suffix:/,/lsmash-path:/p' "$action" | sed -n 's/^ *default: //p' | head -1)
+          gop_muxer_suffix=$(sed -n '/gop-muxer-cache-suffix:/,/gop-muxer-path:/p' "$action" | sed -n 's/^ *default: //p' | head -1)
+          echo "Current L-SMASH cache suffix: ${lsmash_suffix}"
+          echo "Current GOP muxer cache suffix: ${gop_muxer_suffix}"
+          sed -i "0,/default: n[0-9]\+\.[0-9]\+/s//default: ${{ steps.ffmpeg.outputs.tag }}/" "$action"
+          sed -i "0,/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/s//default: ${{ steps.mimalloc.outputs.tag }}/" "$action"
+          sed -i "/obuparse-ref:/,/extra-msys2-packages:/s/default: v[0-9]\+\.[0-9]\+\.[0-9]\+/default: ${{ steps.obuparse.outputs.tag }}/" "$action"
+          sed -i "/lsmash-ref:/,/lsmash-cache-suffix:/s/default: [0-9a-f]\{40\}/default: ${{ steps.lsmash.outputs.sha }}/" "$action"
+          sed -i "/gop-muxer-ref:/,/gop-muxer-cache-suffix:/s/default: [0-9a-f]\{40\}/default: ${{ steps.gop_muxer.outputs.sha }}/" "$action"
 
       - name: Update Deps Cache
         if: steps.check.outputs.need_build == 'true'
@@ -197,6 +213,23 @@ jobs:
           }
           EOF
           cat .github/deps-cache.json
+
+      - name: Validate Dependency Ref Diff
+        if: steps.check.outputs.need_build == 'true'
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only -- .github/actions/setup-windows-deps/action.yml .github/deps-cache.json)
+          unexpected=$(git diff --name-only | grep -Ev '^(\.github/actions/setup-windows-deps/action\.yml|\.github/deps-cache\.json)$' || true)
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected dependency update diff paths:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+          if [ -z "$changed" ]; then
+            echo "Dependency update expected changes but produced no diff" >&2
+            exit 1
+          fi
+          python .github/scripts/check_dependency_patch_suffixes.py
 
       - name: Print Dry Run Summary
         if: github.event_name == 'workflow_dispatch' && inputs['dry-run'] == 'true'

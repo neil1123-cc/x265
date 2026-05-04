@@ -46,7 +46,14 @@ jobs:
       id: tag
       shell: bash
       working-directory: x265
-      run: echo "version=$(git describe --tags --match=[0-9].[0-9]* --abbrev=0)" >> $GITHUB_OUTPUT
+      run: |
+        if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then
+          version="${GITHUB_REF_NAME:-}"
+        else
+          version=$(git tag --list '[0-9].[0-9]*' --sort=-v:refname | head -n1)
+        fi
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Get CI Version
       id: ci_version
@@ -77,8 +84,8 @@ jobs:
           done
           ./configure --prefix=/usr/local --enable-gpl --enable-version3 \
             --disable-runtime-cpudetect --disable-all --disable-autodetect \
-            --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
             --disable-everything --disable-network $PGO_OPT \
+            --enable-avformat --enable-avcodec --enable-swscale --enable-swresample \
             --enable-demuxer=mpegts,mov,matroska,h264,hevc,rawvideo,yuv4mpegpipe \
             --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
             --enable-encoder=rawvideo,aac,ac3,mp2,pcm_s16le,pcm_s24le,pcm_s32le \
@@ -99,6 +106,10 @@ jobs:
         test -n "$llvm_profdata"
         [ -f "$llvm_profdata" ] || llvm_profdata="${llvm_profdata}.exe"
         test -f "$llvm_profdata"
+        case "$llvm_profdata" in
+          /clang64/bin/*) ;;
+          *) echo "Unexpected llvm-profdata path: $llvm_profdata" >&2; exit 1 ;;
+        esac
         version=$("$llvm_profdata" --version | sed -nE 's/.*LLVM version ([0-9]+(\.[0-9]+)+).*/\1/p' | head -1)
         test -n "$version"
         echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -106,6 +117,7 @@ jobs:
 
         declare -A seen
         declare -a queue
+        declare -a missing_dlls
         queue=("$llvm_profdata")
 
         while [ "${#queue[@]}" -gt 0 ]; do
@@ -118,14 +130,23 @@ jobs:
             [ -z "${seen[$dll_key]:-}" ] || continue
 
             dll_path=''
-            for base in /clang64/bin /mingw64/bin /usr/bin; do
+            for base in /clang64/bin /usr/bin; do
               if [ -f "$base/$dll_name" ]; then
                 dll_path="$base/$dll_name"
                 break
               fi
             done
 
-            [ -n "$dll_path" ] || continue
+            if [ -z "$dll_path" ]; then
+              case "$dll_key" in
+                advapi32.dll|bcrypt.dll|kernel32.dll|msvcrt.dll|ntdll.dll|ole32.dll|shell32.dll|user32.dll|ws2_32.dll) ;;
+                *)
+                  seen[$dll_key]=missing
+                  missing_dlls+=("$dll_name")
+                  ;;
+              esac
+              continue
+            fi
 
             seen[$dll_key]="$dll_path"
             cp "$dll_path" profdata-dist/
@@ -133,11 +154,28 @@ jobs:
           done < <(objdump -p "$current" | awk -F': ' '/DLL Name:/ { sub(/\r$/, "", $2); print $2 }')
         done
 
+        if [ "${#missing_dlls[@]}" -gt 0 ]; then
+          printf 'Missing DLL dependency for llvm-profdata package: %s\n' "${missing_dlls[@]}" >&2
+          exit 1
+        fi
+
         strip -s profdata-dist/llvm-profdata.exe
         shopt -s nullglob
+        packaged_dll_count=0
         for dll in profdata-dist/*.dll; do
           strip -s "$dll"
+          packaged_dll_count=$((packaged_dll_count + 1))
         done
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo "### LLVM profdata package"
+            echo
+            echo "| tool | version | packaged_dlls |"
+            echo "| --- | --- | --- |"
+            echo "| $llvm_profdata | $version | $packaged_dll_count |"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
 
     - name: Build 8b-lib Profiling Binaries
       uses: ./x265/.github/actions/build-x265-profiling
@@ -149,21 +187,19 @@ jobs:
 
     - name: Smoke, Package, and Verify 8b-lib
       run: |
-        if [ "${{ matrix.target_cpu }}" != 'x86-64' ]; then
+        if [[ "${{ matrix.target_cpu }}" == 'x86-64' || "${{ matrix.target_cpu }}" == 'alderlake' || "${{ matrix.target_cpu }}" == 'znver4' ]]; then
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 12 -c:v rawvideo -pix_fmt yuv420p -strict -1 smoke_profile_mp4_8b.y4m
+          ./build/8b/x265-profiling.exe --output-depth 8 --crf 28 --preset medium smoke_profile_mp4_8b.y4m -o smoke_profile_8b.mp4
+          test -s smoke_profile_8b.mp4
+          ffmpeg -hide_banner -loglevel error -i smoke_profile_8b.mp4 -c:v rawvideo -pix_fmt yuv420p -strict -1 smoke_profile_roundtrip_8b.y4m
+          test -s smoke_profile_roundtrip_8b.y4m
+          frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_8b.y4m | wc -l || true)
+          echo "8b-lib roundtrip FRAME tokens: ${frame_count:-missing}"
+          test "$frame_count" = "12"
+        else
+          frame_count=skipped
           echo "Skipping runtime smoke for target CPU ${{ matrix.target_cpu }}; GitHub runner host may not support the emitted instructions"
-          strip -s build/8b/x265-profiling.exe
-          cp build/8b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-8b-lib.exe
-          exit 0
         fi
-
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 12 -c:v rawvideo -pix_fmt yuv420p -strict -1 smoke_profile_mp4_8b.y4m
-        ./build/8b/x265-profiling.exe --output-depth 8 --crf 28 --preset medium smoke_profile_mp4_8b.y4m -o smoke_profile_8b.mp4
-        test -s smoke_profile_8b.mp4
-        ffmpeg -hide_banner -loglevel error -i smoke_profile_8b.mp4 -c:v rawvideo -pix_fmt yuv420p -strict -1 smoke_profile_roundtrip_8b.y4m
-        test -s smoke_profile_roundtrip_8b.y4m
-        frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_8b.y4m | wc -l || true)
-        echo "8b-lib roundtrip FRAME tokens: ${frame_count:-missing}"
-        test "$frame_count" = "12"
 
         ./profdata-dist/llvm-profdata.exe --version
         rm -f profile-smoke-8b.profraw profile-smoke-8b.profdata
@@ -174,6 +210,14 @@ jobs:
         ./profdata-dist/llvm-profdata.exe merge -o profile-smoke-8b.profdata "$LLVM_PROFILE_FILE"
         test -s profile-smoke-8b.profdata
         ./profdata-dist/llvm-profdata.exe show profile-smoke-8b.profdata >/dev/null
+        {
+          echo "### 8b-lib profiling smoke"
+          echo "- target_cpu: ${{ matrix.target_cpu }}"
+          echo "- standard: gnu++20"
+          echo "- mp4_roundtrip_frames: $frame_count"
+          echo "- profraw: profile-smoke-8b.profraw"
+          echo "- profdata: profile-smoke-8b.profdata"
+        } >> "$GITHUB_STEP_SUMMARY"
         strip -s build/8b/x265-profiling.exe
         cp build/8b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-8b-lib.exe
 
@@ -187,21 +231,19 @@ jobs:
 
     - name: Smoke, Package, and Verify 12b-lib
       run: |
-        if [ "${{ matrix.target_cpu }}" != 'x86-64' ]; then
+        if [[ "${{ matrix.target_cpu }}" == 'x86-64' || "${{ matrix.target_cpu }}" == 'alderlake' || "${{ matrix.target_cpu }}" == 'znver4' ]]; then
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 12 -c:v rawvideo -pix_fmt yuv420p12le -strict -1 smoke_profile_mp4_12b.y4m
+          ./build/12b/x265-profiling.exe --output-depth 12 --crf 28 --preset medium smoke_profile_mp4_12b.y4m -o smoke_profile_12b.mp4
+          test -s smoke_profile_12b.mp4
+          ffmpeg -hide_banner -loglevel error -i smoke_profile_12b.mp4 -c:v rawvideo -pix_fmt yuv420p12le -strict -1 smoke_profile_roundtrip_12b.y4m
+          test -s smoke_profile_roundtrip_12b.y4m
+          frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_12b.y4m | wc -l || true)
+          echo "12b-lib roundtrip FRAME tokens: ${frame_count:-missing}"
+          test "$frame_count" = "12"
+        else
+          frame_count=skipped
           echo "Skipping runtime smoke for target CPU ${{ matrix.target_cpu }}; GitHub runner host may not support the emitted instructions"
-          strip -s build/12b/x265-profiling.exe
-          cp build/12b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-12b-lib.exe
-          exit 0
         fi
-
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 12 -c:v rawvideo -pix_fmt yuv420p12le -strict -1 smoke_profile_mp4_12b.y4m
-        ./build/12b/x265-profiling.exe --output-depth 12 --crf 28 --preset medium smoke_profile_mp4_12b.y4m -o smoke_profile_12b.mp4
-        test -s smoke_profile_12b.mp4
-        ffmpeg -hide_banner -loglevel error -i smoke_profile_12b.mp4 -c:v rawvideo -pix_fmt yuv420p12le -strict -1 smoke_profile_roundtrip_12b.y4m
-        test -s smoke_profile_roundtrip_12b.y4m
-        frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_12b.y4m | wc -l || true)
-        echo "12b-lib roundtrip FRAME tokens: ${frame_count:-missing}"
-        test "$frame_count" = "12"
 
         ./profdata-dist/llvm-profdata.exe --version
         rm -f profile-smoke-12b.profraw profile-smoke-12b.profdata
@@ -212,6 +254,14 @@ jobs:
         ./profdata-dist/llvm-profdata.exe merge -o profile-smoke-12b.profdata "$LLVM_PROFILE_FILE"
         test -s profile-smoke-12b.profdata
         ./profdata-dist/llvm-profdata.exe show profile-smoke-12b.profdata >/dev/null
+        {
+          echo "### 12b-lib profiling smoke"
+          echo "- target_cpu: ${{ matrix.target_cpu }}"
+          echo "- standard: gnu++20"
+          echo "- mp4_roundtrip_frames: $frame_count"
+          echo "- profraw: profile-smoke-12b.profraw"
+          echo "- profdata: profile-smoke-12b.profdata"
+        } >> "$GITHUB_STEP_SUMMARY"
         strip -s build/12b/x265-profiling.exe
         cp build/12b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-12b-lib.exe
 
@@ -225,21 +275,19 @@ jobs:
 
     - name: Smoke, Package, and Verify All
       run: |
-        if [ "${{ matrix.target_cpu }}" != 'x86-64' ]; then
+        if [[ "${{ matrix.target_cpu }}" == 'x86-64' || "${{ matrix.target_cpu }}" == 'alderlake' || "${{ matrix.target_cpu }}" == 'znver4' ]]; then
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 12 -c:v rawvideo -pix_fmt yuv420p10le -strict -1 smoke_profile_mp4_all.y4m
+          ./build/10b/x265-profiling.exe --output-depth 10 --crf 28 --preset medium smoke_profile_mp4_all.y4m -o smoke_profile_all.mp4
+          test -s smoke_profile_all.mp4
+          ffmpeg -hide_banner -loglevel error -i smoke_profile_all.mp4 -c:v rawvideo -pix_fmt yuv420p10le -strict -1 smoke_profile_roundtrip_all.y4m
+          test -s smoke_profile_roundtrip_all.y4m
+          frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_all.y4m | wc -l || true)
+          echo "all roundtrip FRAME tokens: ${frame_count:-missing}"
+          test "$frame_count" = "12"
+        else
+          frame_count=skipped
           echo "Skipping runtime smoke for target CPU ${{ matrix.target_cpu }}; GitHub runner host may not support the emitted instructions"
-          strip -s build/10b/x265-profiling.exe
-          cp build/10b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-all.exe
-          exit 0
         fi
-
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 12 -c:v rawvideo -pix_fmt yuv420p10le -strict -1 smoke_profile_mp4_all.y4m
-        ./build/10b/x265-profiling.exe --output-depth 10 --crf 28 --preset medium smoke_profile_mp4_all.y4m -o smoke_profile_all.mp4
-        test -s smoke_profile_all.mp4
-        ffmpeg -hide_banner -loglevel error -i smoke_profile_all.mp4 -c:v rawvideo -pix_fmt yuv420p10le -strict -1 smoke_profile_roundtrip_all.y4m
-        test -s smoke_profile_roundtrip_all.y4m
-        frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_all.y4m | wc -l || true)
-        echo "all roundtrip FRAME tokens: ${frame_count:-missing}"
-        test "$frame_count" = "12"
 
         ./profdata-dist/llvm-profdata.exe --version
         rm -f profile-smoke-all.profraw profile-smoke-all.profdata
@@ -250,6 +298,14 @@ jobs:
         ./profdata-dist/llvm-profdata.exe merge -o profile-smoke-all.profdata "$LLVM_PROFILE_FILE"
         test -s profile-smoke-all.profdata
         ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null
+        {
+          echo "### all profiling smoke"
+          echo "- target_cpu: ${{ matrix.target_cpu }}"
+          echo "- standard: gnu++20"
+          echo "- mp4_roundtrip_frames: $frame_count"
+          echo "- profraw: profile-smoke-all.profraw"
+          echo "- profdata: profile-smoke-all.profdata"
+        } >> "$GITHUB_STEP_SUMMARY"
         strip -s build/10b/x265-profiling.exe
         cp build/10b/x265-profiling.exe dist/x265-profiling-win64-${{ matrix.target_cpu }}-all.exe
 
@@ -258,10 +314,12 @@ jobs:
       shell: bash
       run: |
         if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "version=${{ steps.tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+          version="${{ steps.tag.outputs.version }}"
         else
-          echo "version=${{ steps.ci_version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          version="${{ steps.ci_version.outputs.version }}"
         fi
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Compress Profiling Build
       run: |
@@ -280,6 +338,7 @@ jobs:
         name: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}
         path: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z
         compression-level: 0
+        retention-days: 7
 
     - name: Upload LLVM Profdata Artifact
       if: matrix.target_cpu == 'x86-64'
@@ -288,23 +347,43 @@ jobs:
         name: llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}
         path: llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}.7z
         compression-level: 0
+        retention-days: 7
 
-    - name: Release Profiling Archive
+  publish-release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    steps:
+    - name: Checkout X265
+      uses: actions/checkout@v6
+      with:
+        path: x265
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Get Latest Tag
+      id: tag
+      shell: bash
+      working-directory: x265
+      run: |
+        if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then
+          version="${GITHUB_REF_NAME:-}"
+        else
+          version=$(git tag --list '[0-9].[0-9]*' --sort=-v:refname | head -n1)
+        fi
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Download Profiling Artifacts
+      uses: actions/download-artifact@v7
+      with:
+        path: release-assets
+
+    - name: Release Profiling Artifacts
       uses: softprops/action-gh-release@v3
-      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
       with:
         tag_name: ${{ steps.tag.outputs.version }}
-        files: x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z
-        fail_on_unmatched_files: true
-        generate_release_notes: false
-        prerelease: true
-
-    - name: Release LLVM Profdata Archive
-      uses: softprops/action-gh-release@v3
-      if: matrix.target_cpu == 'x86-64' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
-      with:
-        tag_name: ${{ steps.tag.outputs.version }}
-        files: llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}.7z
+        files: release-assets/**/*.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true
