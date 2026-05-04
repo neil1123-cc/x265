@@ -17,7 +17,76 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-deps-cache-suffix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout X265
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check dependency patch cache suffixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          after="${{ github.sha }}"
+
+          if [ "${{ github.event_name }}" != "push" ] || [[ "$before" =~ ^0+$ ]]; then
+            echo "No push diff to validate"
+            exit 0
+          fi
+
+          if ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            echo "Before commit unavailable; skipping patch suffix diff validation"
+            exit 0
+          fi
+
+          python - "$before" "$after" <<'PY'
+          import subprocess
+          import sys
+
+          PATCH_SUFFIX_FIELDS = {
+              '.github/patches/l-smash-clang-coff-refptr.patch': 'lsmash-cache-suffix',
+              '.github/patches/gop-muxer-lsmash-add-box.patch': 'gop-muxer-cache-suffix',
+          }
+
+          def suffix_at(ref, field):
+              text = subprocess.check_output(
+                  ['git', 'show', f'{ref}:.github/actions/setup-windows-deps/action.yml'],
+                  text=True,
+              )
+              lines = text.splitlines()
+              for index, line in enumerate(lines):
+                  if line.strip() == f'{field}:':
+                      for candidate in lines[index + 1:index + 6]:
+                          stripped = candidate.strip()
+                          if stripped.startswith('default:'):
+                              return stripped.partition(':')[2].strip()
+              raise RuntimeError(f'{field} default not found at {ref}')
+
+          before, after = sys.argv[1:]
+          changed = set(subprocess.check_output(
+              ['git', 'diff', '--name-only', before, after, '--', *PATCH_SUFFIX_FIELDS],
+              text=True,
+          ).splitlines())
+
+          if not changed:
+              print('Dependency patches unchanged')
+              raise SystemExit(0)
+
+          for patch, field in PATCH_SUFFIX_FIELDS.items():
+              if patch not in changed:
+                  continue
+              before_suffix = suffix_at(before, field)
+              after_suffix = suffix_at(after, field)
+              if before_suffix == after_suffix:
+                  raise SystemExit(f'{patch} changed without bumping {field}')
+              print(f'{field} changed: {before_suffix} -> {after_suffix}')
+          PY
+
   build:
+    needs: validate-deps-cache-suffix
     runs-on: windows-latest
     defaults:
       run:
@@ -145,6 +214,7 @@ jobs:
             --enable-protocol=file \
             --cc=cc --cxx=c++ --cpu=x86-64
         use-mimalloc: 'true'
+        use-gop-muxer: 'true'
         extra-msys2-packages: >-
           mingw-w64-clang-x86_64-ffmpeg
           mingw-w64-clang-x86_64-lldb
@@ -602,6 +672,42 @@ jobs:
         test -s smoke_recon.hevc
         test -s smoke_recon_out.y4m
         grep -q '^YUV4MPEG2 ' smoke_recon_out.y4m
+
+    - name: GOP Output Smoke (All CLI)
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke gop diagnostics ==="; for f in smoke_gop.gop smoke_gop.options smoke_gop.headers smoke_gop_data_files.txt smoke_gop_mux_format.txt smoke_gop_mux_stream.txt; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
+        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_gop.y4m
+        build/all/x265.exe --input smoke_gop.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --output smoke_gop.gop
+        test -s smoke_gop.gop
+        test -s smoke_gop.options
+        test -s smoke_gop.headers
+        test -s smoke_gop-000000.hevc-gop-data
+        test -s smoke_gop-000008.hevc-gop-data
+        ls smoke_gop-*.hevc-gop-data > smoke_gop_data_files.txt
+        test "$(wc -l < smoke_gop_data_files.txt)" -eq 2
+        grep -Fxq '#options smoke_gop.options' smoke_gop.gop
+        test "$(grep -Fxc '#options smoke_gop.options' smoke_gop.gop)" -eq 1
+        grep -Fxq '#headers smoke_gop.headers' smoke_gop.gop
+        grep -Fxq 'smoke_gop-000000.hevc-gop-data' smoke_gop.gop
+        grep -Fxq 'smoke_gop-000008.hevc-gop-data' smoke_gop.gop
+        grep -Fxq 'b-frames 0' smoke_gop.options
+        grep -Fxq 'b-pyramid 0' smoke_gop.options
+        grep -Fxq 'output-fps-num 24000' smoke_gop.options
+        grep -Fxq 'output-fps-den 1000' smoke_gop.options
+        grep -Fxq 'source-width 128' smoke_gop.options
+        grep -Fxq 'source-height 72' smoke_gop.options
+        grep -Fxq 'sar-width 1' smoke_gop.options
+        grep -Fxq 'sar-height 1' smoke_gop.options
+        gop_muxer.exe smoke_gop.gop
+        test -s smoke_gop.mp4
+        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_format.txt
+        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=codec_name,width,height,nb_read_frames -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_stream.txt
+        grep -q 'format_name=mov,mp4,m4a,3gp,3g2,mj2' smoke_gop_mux_format.txt
+        grep -q 'codec_name=hevc' smoke_gop_mux_stream.txt
+        grep -q 'width=128' smoke_gop_mux_stream.txt
+        grep -q 'height=72' smoke_gop_mux_stream.txt
+        grep -q 'nb_read_frames=16' smoke_gop_mux_stream.txt
 
     - name: Prepare MP4 Smoke Helpers
       if: matrix.target_cpu == 'x86-64'

@@ -57,6 +57,7 @@ protected:
     FILE* gop_file;
     FILE* data_file;
     size_t data_pos;
+    bool options_written;
     string filename_prefix;
     string dir_prefix;
     InputFileInfo info;
@@ -69,6 +70,7 @@ public:
         b_fail = false;
         gop_file = NULL;
         data_file = NULL;
+        options_written = false;
         openFile(fname);
     }
     bool isFail() const

@@ -348,7 +348,7 @@ if(GCC)
     if(NOT INTEL_CXX AND NOT CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 8.0)
         x265_x265_add_definitions(-Wno-class-memaccess)
     endif()
-    # C++17 standard is now set globally via CMAKE_CXX_STANDARD
+    # C++ standard is set globally via CMAKE_CXX_STANDARD
     if(ENABLE_PIC)
          x265_x265_add_definitions(-fPIC)
     endif(ENABLE_PIC)

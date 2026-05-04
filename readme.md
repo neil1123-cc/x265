@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/neil1123-cc/x265?include_prereleases)](https://github.com/neil1123-cc/x265/releases)
 [![License](https://img.shields.io/github/license/neil1123-cc/x265)](COPYING)
 
-这是一个跟随 x265 官方版本演进的增强构建仓库。它面向 Windows/MSYS2 维护预编译发布、现代化 C++17 构建链、常用媒体输入/输出扩展，以及来自 Yuuki / Kyouko 系 mod 的编码功能增强。
+这是一个跟随 x265 官方版本演进的增强构建仓库。它面向 Windows/MSYS2 维护预编译发布、现代化 C++20 构建链、常用媒体输入/输出扩展，以及来自 Yuuki / Kyouko 系 mod 的编码功能增强。
 
 本仓库不是 x265 上游官方发行版；如果只需要官方源码、官方文档或商业授权信息，请优先查看 x265 上游项目。
 
@@ -12,7 +12,7 @@
 
 | 方向 | 内容 |
 | --- | --- |
-| 构建现代化 | 源码构建使用 C++17，最低要求 CMake 4.0，并维护 Ninja / MSYS2 CLANG64 / clang / lld 发布链路。 |
+| 构建现代化 | 源码构建使用 C++20，最低要求 CMake 4.0，并维护 Ninja / MSYS2 CLANG64 / clang / lld 发布链路。 |
 | Windows 发布 | GitHub Actions 自动产出 Windows 64-bit 预编译包，覆盖多个 Intel / AMD CPU 目标。 |
 | 多 bit-depth | 正式包提供 8-bit、10-bit、12-bit 和 all-in-one CLI。 |
 | 输入扩展 | 支持 FFmpeg/LAVF、AviSynth、VapourSynth 输入路径。 |

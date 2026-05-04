@@ -1,0 +1,13 @@
+diff --git a/gop_muxer.cpp b/gop_muxer.cpp
+index 8212ed3..8c41ea1 100644
+--- a/gop_muxer.cpp
++++ b/gop_muxer.cpp
+@@ -305,7 +305,7 @@ void sign() {
+     lsmash_box_t *free_box = lsmash_create_box(type, (uint8_t *)string, length, LSMASH_BOX_PRECEDENCE_N);
+     if(!free_box)
+         return;
+-    if(lsmash_add_box_ex(lsmash_root_as_box(p_root), &free_box) < 0)
++    if(lsmash_add_box(lsmash_root_as_box(p_root), free_box) < 0)
+     {
+         lsmash_destroy_box(free_box);
+         return;

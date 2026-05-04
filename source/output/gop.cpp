@@ -107,12 +107,16 @@ void GOPOutput::setParam(x265_param *p_param)
 {
     p_param->bAnnexB = false;
     p_param->bRepeatHeaders = false;
-    i_numframe = 0;
 
+    i_numframe = 0;
     FILE* opt_file = open_file_for_write(dir_prefix + filename_prefix + ".options", false);
     if(!opt_file) return;
 
-    fprintf(gop_file, "#options %s.options\n", filename_prefix.c_str());
+    if (!options_written)
+    {
+        fprintf(gop_file, "#options %s.options\n", filename_prefix.c_str());
+        options_written = true;
+    }
 
     fprintf(opt_file, "b-frames %d\n",           p_param->bframes);
     fprintf(opt_file, "b-pyramid %d\n",          p_param->bBPyramid);
