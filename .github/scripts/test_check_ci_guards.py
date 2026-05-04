@@ -90,12 +90,16 @@ jobs:
   update-deps:
     runs-on: ubuntu-latest
     steps:
-      - name: Update Dependency Refs
+      - name: Check CI guardrails
         shell: bash
         run: |
           set -euo pipefail
           python .github/scripts/check_ci_guards.py
           python .github/scripts/check_dependency_patch_suffixes.py
+      - name: Update Dependency Refs
+        shell: bash
+        run: |
+          set -euo pipefail
           for anchor in ffmpeg-ref mimalloc-ref obuparse-ref lsmash-ref lsmash-cache-suffix gop-muxer-ref gop-muxer-cache-suffix; do
             if ! grep -Fq "${anchor}:" .github/actions/setup-windows-deps/action.yml; then
               exit 1
@@ -116,7 +120,17 @@ BUILD_PROFILING_YML = '''
 name: Build Profiling
 on: push
 jobs:
+  validate-guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/check_ci_guards.py
+          python .github/scripts/test_check_ci_guards.py
   build:
+    needs: validate-guardrails
     runs-on: windows-latest
     steps:
       - name: Get Latest Tag
@@ -159,6 +173,13 @@ jobs:
           ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null
           echo "- standard: gnu++20"
           echo "- mp4_roundtrip_frames: 12"
+  publish-release:
+    needs: [build, validate-guardrails]
+    runs-on: windows-latest
+    steps:
+      - name: Publish
+        shell: bash
+        run: echo publish
 '''
 
 ACTION_YML = '''
@@ -207,12 +228,37 @@ runs:
 
 PROFILING_ACTION_YML = '''
 name: Build x265 profiling binaries
+inputs:
+  enable-lsmash:
+    default: 'false'
 runs:
   using: composite
   steps:
-    - name: Probe
-      shell: bash
-      run: echo profiling
+    - name: Build 8b-lib profiling CLI
+      shell: msys2 {0}
+      run: |
+        source build/cxx20_scan_helpers.sh
+        CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"
+        lsmash_args=()
+        if [ "${{ inputs.enable-lsmash }}" = 'true' ] || [ "${{ inputs.enable-lsmash }}" = 'ON' ]; then
+          lsmash_args=(-DENABLE_LSMASH=ON)
+        fi
+        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "${lsmash_args[@]}" -B build/8b
+        check_cxx20_commands_profiling build/8b
+    - name: Build 12b-lib profiling CLI
+      shell: msys2 {0}
+      run: |
+        source build/cxx20_scan_helpers.sh
+        CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"
+        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build/12b
+        check_cxx20_commands_profiling build/12b
+    - name: Build all profiling CLI
+      shell: msys2 {0}
+      run: |
+        source build/cxx20_scan_helpers.sh
+        CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"
+        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build/10b
+        check_cxx20_commands_profiling .
 '''
 
 
@@ -298,8 +344,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'enable-lsmash: \'ON\'', 'enable-lsmash: \'OFF\'')
-        expect_fail(run_checker(repo), "missing required Build Profiling workflow guard snippet: enable-lsmash: 'ON'")
+        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'needs: validate-guardrails', '# needs removed')
+        expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: needs: validate-guardrails')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -312,6 +358,12 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml', 'c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o', 'c++ -O2 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
         expect_fail(run_checker(repo), 'missing required setup-windows-deps guard snippet: c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'actions' / 'build-x265-profiling' / 'action.yml', 'check_cxx20_commands_profiling build/12b', 'echo skip-12b-guard')
+        expect_fail(run_checker(repo), 'missing required Build Profiling action guard snippet: check_cxx20_commands_profiling build/12b')
 
     print('CI guard script guardrails validated')
 

@@ -143,6 +143,29 @@ def main():
         }])
         expect_fail(run_checker(missing_file_field_dir), 'compile command entry #1 is missing file field')
 
+        missing_command_fields_dir = root / 'missing-command-fields'
+        write_compile_commands_records(missing_command_fields_dir, [{
+            'directory': str(missing_command_fields_dir),
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(missing_command_fields_dir), 'compile command entry #1 is missing command or arguments field')
+
+        nonstring_command_dir = root / 'nonstring-command-field'
+        write_compile_commands_records(nonstring_command_dir, [{
+            'directory': str(nonstring_command_dir),
+            'command': ['c++', '-std=gnu++20', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(nonstring_command_dir), 'compile command entry #1 command field must be a string')
+
+        nonlist_arguments_dir = root / 'nonlist-arguments-field'
+        write_compile_commands_records(nonlist_arguments_dir, [{
+            'directory': str(nonlist_arguments_dir),
+            'arguments': 'c++ -std=gnu++20 -c source/common/common.cpp',
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(nonlist_arguments_dir), 'compile command entry #1 arguments field must be a list')
+
         ci_shape_dir = root / 'ci-shape-dual-field-pass'
         write_compile_commands_records(ci_shape_dir, ci_shape_records(ci_shape_dir, root))
         expect_pass(run_ci_shape_checker(ci_shape_dir))
@@ -389,6 +412,23 @@ def main():
 
         write_compile_commands(root / 'gnu20-double-dash', 'c++ --std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
         expect_pass(run_checker(root / 'gnu20-double-dash', '--min-cpp-commands=1'))
+
+        write_compile_commands(root / 'gnu20-split-std', 'c++ -std gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
+        expect_pass(run_checker(root / 'gnu20-split-std', '--min-cpp-commands=1'))
+
+        split_std_arguments_dir = root / 'split-std-arguments'
+        write_compile_commands_records(split_std_arguments_dir, [{
+            'directory': str(split_std_arguments_dir),
+            'arguments': ['c++', '--std', 'gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(split_std_arguments_dir, '--min-cpp-commands=1'))
+
+        write_compile_commands(root / 'plain-cxx20-split-std', 'c++ -std c++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
+        expect_fail(run_checker(root / 'plain-cxx20-split-std'), 'non-GNU C++20 dialect flag -std=c++20')
+
+        write_compile_commands(root / 'old-gnu17-split-std', 'c++ --std gnu++17 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
+        expect_fail(run_checker(root / 'old-gnu17-split-std'), 'old standard flag --std=gnu++17')
 
         write_compile_commands(root / 'plain-cxx20-double-dash', 'c++ --std=c++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
         expect_fail(run_checker(root / 'plain-cxx20-double-dash'), 'non-GNU C++20 dialect flag --std=c++20')

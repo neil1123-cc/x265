@@ -173,6 +173,27 @@ def main():
         ''')
         expect_pass(run_checker(wrapped_flags_pass_source))
 
+        quoted_paren_source = write_source(root / 'quoted-paren-command')
+        quoted_paren_nested = quoted_paren_source / 'cmake'
+        quoted_paren_nested.mkdir()
+        (quoted_paren_nested / 'flags.cmake').write_text('''
+        target_compile_options(cli PRIVATE
+                               "$<$<BOOL:1>:-Wmessage=(kept)>")
+        set_property(TARGET cli PROPERTY LABELS "literal ) in label")
+        add_compile_options(-Wextra)
+        ''')
+        expect_pass(run_checker(quoted_paren_source))
+
+        quoted_paren_manual_source = write_source(root / 'quoted-paren-manual-standard')
+        quoted_paren_manual_nested = quoted_paren_manual_source / 'cmake'
+        quoted_paren_manual_nested.mkdir()
+        (quoted_paren_manual_nested / 'flags.cmake').write_text('''
+        target_compile_options(cli PRIVATE
+                               "$<$<BOOL:1>:-Wmessage=(kept)>")
+        add_compile_options(-std=gnu++17)
+        ''')
+        expect_fail(run_checker(quoted_paren_manual_source), 'manual C++ standard flag in CMake')
+
         wrapped_compile_option_source = write_source(root / 'wrapped-compile-option')
         wrapped_compile_option_nested = wrapped_compile_option_source / 'cmake'
         wrapped_compile_option_nested.mkdir()

@@ -103,7 +103,20 @@ def entry_tokens(entry):
 
 
 def standard_flags(tokens):
-    return [token for token in tokens if token.startswith(STANDARD_PREFIXES)]
+    flags = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in ('-std', '--std'):
+            if index + 1 < len(tokens):
+                flags.append(f'{token}={tokens[index + 1]}')
+                index += 2
+                continue
+            flags.append(token)
+        elif token.startswith(STANDARD_PREFIXES):
+            flags.append(token)
+        index += 1
+    return flags
 
 
 def depth_flags(tokens):
@@ -205,6 +218,12 @@ def main():
             fail(f'compile command entry #{index} must be an object', commands_path)
         if 'file' not in entry:
             fail(f'compile command entry #{index} is missing file field', commands_path)
+        if 'command' not in entry and 'arguments' not in entry:
+            fail(f'compile command entry #{index} is missing command or arguments field', commands_path)
+        if 'command' in entry and not isinstance(entry['command'], str):
+            fail(f'compile command entry #{index} command field must be a string', commands_path)
+        if 'arguments' in entry and not isinstance(entry['arguments'], list):
+            fail(f'compile command entry #{index} arguments field must be a list', commands_path)
     cpp = [entry for entry in commands if entry_file_path(entry).lower().endswith(CXX_SUFFIXES)]
     if not cpp:
         fail(f'no C++ compile commands: {commands_path}')
