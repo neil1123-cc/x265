@@ -25,10 +25,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check CI guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/check_ci_guards.py
+          python .github/scripts/test_check_ci_guards.py
+
       - name: Check dependency patch cache suffixes
         shell: bash
         run: |
           set -euo pipefail
+          python .github/scripts/check_dependency_patch_suffixes.py
+
           before="${{ github.event.before }}"
           after="${{ github.sha }}"
 
@@ -42,48 +51,571 @@ jobs:
             exit 0
           fi
 
-          python - "$before" "$after" <<'PY'
-          import subprocess
-          import sys
+          python .github/scripts/check_dependency_patch_suffixes.py --before "$before" --after "$after"
 
-          PATCH_SUFFIX_FIELDS = {
-              '.github/patches/l-smash-clang-coff-refptr.patch': 'lsmash-cache-suffix',
-              '.github/patches/gop-muxer-lsmash-add-box.patch': 'gop-muxer-cache-suffix',
-          }
+      - name: Check CMake C++20 contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/check_cmake_cxx20_contract.py source
 
-          def suffix_at(ref, field):
-              text = subprocess.check_output(
-                  ['git', 'show', f'{ref}:.github/actions/setup-windows-deps/action.yml'],
-                  text=True,
-              )
-              lines = text.splitlines()
-              for index, line in enumerate(lines):
-                  if line.strip() == f'{field}:':
-                      for candidate in lines[index + 1:index + 6]:
-                          stripped = candidate.strip()
-                          if stripped.startswith('default:'):
-                              return stripped.partition(':')[2].strip()
-              raise RuntimeError(f'{field} default not found at {ref}')
+      - name: Check CMake C++20 contract guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/test_check_cmake_cxx20_contract.py
 
-          before, after = sys.argv[1:]
-          changed = set(subprocess.check_output(
-              ['git', 'diff', '--name-only', before, after, '--', *PATCH_SUFFIX_FIELDS],
-              text=True,
-          ).splitlines())
+      - name: Check C++20 compile command guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/test_check_compile_commands.py
 
-          if not changed:
-              print('Dependency patches unchanged')
-              raise SystemExit(0)
+      - name: Check dependency patch suffix guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/test_check_dependency_patch_suffixes.py
 
-          for patch, field in PATCH_SUFFIX_FIELDS.items():
-              if patch not in changed:
-                  continue
-              before_suffix = suffix_at(before, field)
-              after_suffix = suffix_at(after, field)
-              if before_suffix == after_suffix:
-                  raise SystemExit(f'{patch} changed without bumping {field}')
-              print(f'{field} changed: {before_suffix} -> {after_suffix}')
+      - name: Check release needs guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/check_release_needs.py
+
+      - name: Check PGO metadata/consume guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/test_check_pgo_consume_chain.py
+
+  cxx20-warning-scan:
+    needs: validate-deps-cache-suffix
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout X265
+        uses: actions/checkout@v6
+        with:
+          path: x265
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Shared Dependencies
+        uses: ./x265/.github/actions/setup-windows-deps
+        with:
+          ffmpeg-cache-suffix: lavf-v2-clang
+          ffmpeg-configure: |
+            ./configure --prefix=/usr/local --enable-gpl \
+              --disable-runtime-cpudetect --disable-all --disable-autodetect \
+              --disable-everything --disable-network \
+              --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
+              --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf \
+              --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
+              --enable-protocol=file \
+              --cc=cc --cxx=c++ --cpu=x86-64
+          use-mimalloc: 'false'
+          extra-msys2-packages: >-
+            mingw-w64-clang-x86_64-python
+
+      - name: Prepare C++20 warning scan helpers
+        run: cp x265/.github/scripts/cxx20_scan_helpers.sh ./cxx20-scan-helpers.sh
+
+      - name: Check GNU++20 downgrade guardrail
+        run: |
+          set -euo pipefail
+          source cxx20-scan-helpers.sh
+          configure_cxx20_scan x265/source build/cxx20-downgrade-guard \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=OFF
+          check_cxx20_commands_clang build/cxx20-downgrade-guard \
+            --min-cpp-commands=50 \
+            --forbidden-flag-substring=-std=gnu++17 \
+            --forbidden-flag-substring=-std=c++17
+
+      - name: Run C++20 CLI and dependency warning scans
+        env:
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+        run: |
+          source cxx20-scan-helpers.sh
+          configure_cxx20_scan x265/source build/cxx20-warning-scan \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/encoder/ \
+            --required-file-substring=source/common/ \
+            --required-file-substring=source/input/ \
+            --required-file-substring=source/output/ \
+            --required-file-substring=source/abrEncApp.cpp \
+            --required-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/lavf.cpp \
+            --forbidden-file-substring=source/output/mp4.cpp
+          ninja -C build/cxx20-warning-scan cli
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON \
+            -DHIGH_BIT_DEPTH=ON \
+            -DMAIN12=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-12bit \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=12 \
+            --forbidden-flag=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --required-file-substring=source/abrEncApp.cpp
+          ninja -C build/cxx20-warning-scan-12bit cli
+          python - <<'PY'
+          from pathlib import Path
+          width = height = 64
+          y = (512).to_bytes(2, 'little') * (width * height)
+          uv = (2048).to_bytes(2, 'little') * (width * height // 2)
+          Path('build/cxx20-warning-scan-12bit/smoke_12bit.yuv').write_bytes(y + uv)
           PY
+          build/cxx20-warning-scan-12bit/x265.exe --input build/cxx20-warning-scan-12bit/smoke_12bit.yuv --input-res 64x64 --input-depth 12 --output-depth 12 --fps 1 --frames 1 --output build/cxx20-warning-scan-12bit/smoke_12bit.hevc
+          test -s build/cxx20-warning-scan-12bit/smoke_12bit.hevc
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-unity \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_UNITY_BUILD=ON \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-unity \
+            --min-cpp-commands=1 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/dynamicHDR10/ \
+            --required-file-substring=source/output/output.cpp \
+            --forbidden-file-substring=source/input/lavf.cpp \
+            --forbidden-file-substring=source/output/mp4.cpp
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-deps \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=ON \
+            -DENABLE_LAVF=ON \
+            -DENABLE_STATIC_LAVF=ON \
+            -DENABLE_LSMASH=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-shared-deps \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/input/lavf.cpp \
+            --required-file-substring=source/output/mkv.cpp \
+            --required-file-substring=source/output/mp4.cpp \
+            --required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF \
+            --required-file-flag=source/output/mkv.cpp=-DENABLE_MKV \
+            --required-file-flag=source/output/mp4.cpp=-DENABLE_LSMASH \
+            --forbidden-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-flag=source/common/common.cpp=-DENABLE_LAVF \
+            --forbidden-file-flag=source/common/common.cpp=-DENABLE_MKV \
+            --forbidden-file-flag=source/common/common.cpp=-DENABLE_LSMASH \
+            --forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LAVF \
+            --forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_MKV \
+            --forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LSMASH
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-deps-asm \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=ON \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=ON \
+            -DENABLE_LAVF=ON \
+            -DENABLE_STATIC_LAVF=ON \
+            -DENABLE_LSMASH=ON \
+            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          check_cxx20_commands_clang build/cxx20-warning-scan-shared-deps-asm \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/input/lavf.cpp \
+            --required-file-substring=source/output/mkv.cpp \
+            --required-file-substring=source/output/mp4.cpp \
+            --required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF \
+            --required-file-flag=source/output/mkv.cpp=-DENABLE_MKV \
+            --required-file-flag=source/output/mp4.cpp=-DENABLE_LSMASH \
+            --forbidden-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-flag=source/common/common.cpp=-DENABLE_LAVF \
+            --forbidden-file-flag=source/common/common.cpp=-DENABLE_MKV \
+            --forbidden-file-flag=source/common/common.cpp=-DENABLE_LSMASH \
+            --forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LAVF \
+            --forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_MKV \
+            --forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LSMASH
+          ninja -C build/cxx20-warning-scan-shared-deps-asm cli
+
+
+      - name: Run C++20 shared and all-bit-depth warning scans
+        env:
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+        run: |
+          source cxx20-scan-helpers.sh
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-library \
+            -DENABLE_CLI=ON \
+            -DENABLE_SHARED=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-shared-library \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/output/output.cpp \
+            --required-file-substring=source/encoder/api.cpp \
+            --required-file-substring=source/common/version.cpp \
+            --forbidden-file-substring=source/input/lavf.cpp \
+            --forbidden-file-substring=source/output/mp4.cpp
+          ninja -C build/cxx20-warning-scan-shared-library cli x265-shared
+          python - <<'PY'
+          from pathlib import Path
+          width = height = 64
+          frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
+          Path('build/cxx20-warning-scan-shared-library/smoke_shared.yuv').write_bytes(frame)
+          PY
+          build/cxx20-warning-scan-shared-library/x265.exe --input build/cxx20-warning-scan-shared-library/smoke_shared.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-warning-scan-shared-library/smoke_shared.hevc
+          test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-all-8b-lib \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=OFF \
+            -DEXPORT_C_API=OFF
+          check_cxx20_commands_clang build/cxx20-warning-scan-all-8b-lib \
+            --min-cpp-commands=50 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/encoder/api.cpp \
+            --required-file-substring=source/common/version.cpp \
+            --forbidden-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/ \
+            --forbidden-file-substring=source/output/ \
+            --forbidden-file-substring=source/abrEncApp.cpp \
+            --forbidden-file-substring=source/x265.cpp \
+            --forbidden-file-substring=source/x265cli.cpp
+          ninja -C build/cxx20-warning-scan-all-8b-lib x265-static
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=OFF \
+            -DEXPORT_C_API=OFF \
+            -DHIGH_BIT_DEPTH=ON \
+            -DMAIN12=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-all-12b-lib \
+            --min-cpp-commands=50 \
+            --required-depth-define=-DX265_DEPTH=12 \
+            --forbidden-flag=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --required-file-substring=source/encoder/api.cpp \
+            --required-file-substring=source/common/version.cpp \
+            --forbidden-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/ \
+            --forbidden-file-substring=source/output/ \
+            --forbidden-file-substring=source/abrEncApp.cpp \
+            --forbidden-file-substring=source/x265.cpp \
+            --forbidden-file-substring=source/x265cli.cpp
+          ninja -C build/cxx20-warning-scan-all-12b-lib x265-static
+
+          mkdir -p build/cxx20-warning-scan-all
+          cp build/cxx20-warning-scan-all-8b-lib/libx265.a build/cxx20-warning-scan-all/libx265_8b.a
+          cp build/cxx20-warning-scan-all-12b-lib/libx265.a build/cxx20-warning-scan-all/libx265_12b.a
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-all \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON \
+            -DEXTRA_LIB="x265_8b.a;x265_12b.a" \
+            -DEXTRA_LINK_FLAGS=-L. \
+            -DLINKED_8BIT=ON \
+            -DLINKED_12BIT=ON \
+            -DHIGH_BIT_DEPTH=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-all \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/output/output.cpp \
+            --required-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/lavf.cpp \
+            --forbidden-file-substring=source/output/mp4.cpp
+          ninja -C build/cxx20-warning-scan-all cli
+          python - <<'PY'
+          from pathlib import Path
+          width = height = 64
+          y = (512).to_bytes(2, 'little') * (width * height)
+          uv = (512).to_bytes(2, 'little') * (width * height // 2)
+          Path('build/cxx20-warning-scan-all/smoke_all.yuv').write_bytes(y + uv)
+          PY
+          build/cxx20-warning-scan-all/x265.exe --input build/cxx20-warning-scan-all/smoke_all.yuv --input-res 64x64 --input-depth 10 --output-depth 10 --fps 1 --frames 1 --output build/cxx20-warning-scan-all/smoke_all.hevc
+          test -s build/cxx20-warning-scan-all/smoke_all.hevc
+
+
+      - name: Run C++20 CPU and ASM warning scans
+        env:
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+        run: |
+          source cxx20-scan-helpers.sh
+          for target_cpu in haswell arrowlake znver5; do
+            configure_cxx20_scan x265/source "build/cxx20-warning-scan-${target_cpu}" \
+              --target-cpu="${target_cpu}" \
+              -DENABLE_CLI=OFF \
+              -DENABLE_ASSEMBLY=OFF \
+              -DENABLE_HDR10_PLUS=OFF \
+              -DENABLE_MKV=OFF
+            check_cxx20_commands_clang "build/cxx20-warning-scan-${target_cpu}" \
+              --min-cpp-commands=50 \
+              --required-depth-define=-DX265_DEPTH=8 \
+              --forbidden-flag=-DX265_DEPTH=10 \
+              --forbidden-flag=-DX265_DEPTH=12 \
+              --required-file-substring=source/encoder/api.cpp \
+              --required-file-substring=source/common/cpu.cpp \
+              --forbidden-file-substring=source/dynamicHDR10/ \
+              --forbidden-file-substring=source/input/ \
+              --forbidden-file-substring=source/output/ \
+              --forbidden-file-substring=source/abrEncApp.cpp \
+              --forbidden-file-substring=source/x265.cpp \
+              --forbidden-file-substring=source/x265cli.cpp
+          done
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-asm \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=ON \
+            -DENABLE_TESTS=ON \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=OFF \
+            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          check_cxx20_commands_clang build/cxx20-warning-scan-asm \
+            --min-cpp-commands=3 \
+            --required-file-substring=source/test/
+          ninja -C build/cxx20-warning-scan-asm TestBench
+
+  cxx20-gcc-compile-commands:
+    needs: validate-deps-cache-suffix
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout X265
+        uses: actions/checkout@v6
+        with:
+          path: x265
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup GCC diagnostics
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            nasm
+            pkgconf
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+
+      - name: Run GCC C++20 compile command diagnostics
+        run: |
+          set -euo pipefail
+          source x265/.github/scripts/cxx20_scan_helpers.sh
+
+          configure_cxx20_scan x265/source build/cxx20-gcc-compile-commands \
+            --cxx-compiler=g++ \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/encoder/ \
+            --required-file-substring=source/common/ \
+            --required-file-substring=source/input/ \
+            --required-file-substring=source/output/ \
+            --required-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/lavf.cpp \
+            --forbidden-file-substring=source/output/mp4.cpp
+          ninja -C build/cxx20-gcc-compile-commands cli
+
+          configure_cxx20_scan x265/source build/cxx20-gcc-compile-commands-12bit \
+            --cxx-compiler=g++ \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=OFF \
+            -DEXPORT_C_API=OFF \
+            -DHIGH_BIT_DEPTH=ON \
+            -DMAIN12=ON
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit \
+            --min-cpp-commands=50 \
+            --required-depth-define=-DX265_DEPTH=12 \
+            --forbidden-flag=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --required-file-substring=source/encoder/api.cpp \
+            --required-file-substring=source/common/version.cpp \
+            --forbidden-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/ \
+            --forbidden-file-substring=source/output/ \
+            --forbidden-file-substring=source/abrEncApp.cpp \
+            --forbidden-file-substring=source/x265.cpp \
+            --forbidden-file-substring=source/x265cli.cpp
+          ninja -C build/cxx20-gcc-compile-commands-12bit x265-static
+
+          configure_cxx20_scan x265/source build/cxx20-gcc-compile-commands-8bit-lib \
+            --cxx-compiler=g++ \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=OFF \
+            -DEXPORT_C_API=OFF
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib \
+            --min-cpp-commands=50 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/encoder/api.cpp \
+            --required-file-substring=source/common/version.cpp \
+            --forbidden-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/ \
+            --forbidden-file-substring=source/output/ \
+            --forbidden-file-substring=source/abrEncApp.cpp \
+            --forbidden-file-substring=source/x265.cpp \
+            --forbidden-file-substring=source/x265cli.cpp
+          ninja -C build/cxx20-gcc-compile-commands-8bit-lib x265-static
+
+          mkdir -p build/cxx20-gcc-compile-commands-all
+          cp build/cxx20-gcc-compile-commands-8bit-lib/libx265.a build/cxx20-gcc-compile-commands-all/libx265_8b.a
+          cp build/cxx20-gcc-compile-commands-12bit/libx265.a build/cxx20-gcc-compile-commands-all/libx265_12b.a
+          configure_cxx20_scan x265/source build/cxx20-gcc-compile-commands-all \
+            --cxx-compiler=g++ \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON \
+            -DEXTRA_LIB="x265_8b.a;x265_12b.a" \
+            -DEXTRA_LINK_FLAGS=-L. \
+            -DLINKED_8BIT=ON \
+            -DLINKED_12BIT=ON \
+            -DHIGH_BIT_DEPTH=ON
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/output/output.cpp \
+            --required-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/lavf.cpp \
+            --forbidden-file-substring=source/output/mp4.cpp
+          ninja -C build/cxx20-gcc-compile-commands-all cli
+
+  cxx20-linux-gcc-compile-commands:
+    needs: validate-deps-cache-suffix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout X265
+        uses: actions/checkout@v6
+        with:
+          path: x265
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install CMake 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/cmake-venv"
+          "$RUNNER_TEMP/cmake-venv/bin/python" -m pip install 'cmake>=4.0,<5'
+          echo "$RUNNER_TEMP/cmake-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Show GCC diagnostics tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --version
+          g++ --version
+          ninja --version
+          python --version
+
+      - name: Run Linux GCC C++20 compile command diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          source x265/.github/scripts/cxx20_scan_helpers.sh
+
+          configure_cxx20_scan x265/source build/cxx20-linux-gcc-compile-commands \
+            --cxx-compiler=g++ \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON
+          check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --forbidden-flag=-DX265_DEPTH=12 \
+            --required-file-substring=source/encoder/ \
+            --required-file-substring=source/common/ \
+            --required-file-substring=source/input/ \
+            --required-file-substring=source/output/ \
+            --required-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/lavf.cpp \
+            --forbidden-file-substring=source/output/mp4.cpp
+          ninja -C build/cxx20-linux-gcc-compile-commands cli
+          python - <<'PY'
+          from pathlib import Path
+          width = height = 64
+          frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
+          Path('build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv').write_bytes(frame)
+          PY
+          build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
+          test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
+
+          configure_cxx20_scan x265/source build/cxx20-linux-gcc-compile-commands-12bit \
+            --cxx-compiler=g++ \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=OFF \
+            -DENABLE_MKV=OFF \
+            -DEXPORT_C_API=OFF \
+            -DHIGH_BIT_DEPTH=ON \
+            -DMAIN12=ON
+          check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands-12bit \
+            --min-cpp-commands=50 \
+            --required-depth-define=-DX265_DEPTH=12 \
+            --forbidden-flag=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --required-file-substring=source/encoder/api.cpp \
+            --required-file-substring=source/common/version.cpp \
+            --forbidden-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/input/ \
+            --forbidden-file-substring=source/output/ \
+            --forbidden-file-substring=source/abrEncApp.cpp \
+            --forbidden-file-substring=source/x265.cpp \
+            --forbidden-file-substring=source/x265cli.cpp
+          ninja -C build/cxx20-linux-gcc-compile-commands-12bit x265-static
 
   build:
     needs: validate-deps-cache-suffix
@@ -118,7 +650,14 @@ jobs:
       id: tag
       shell: bash
       working-directory: x265
-      run: echo "version=$(git describe --tags --match=[0-9].[0-9]* --abbrev=0)" >> $GITHUB_OUTPUT
+      run: |
+        if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then
+          version="${GITHUB_REF_NAME:-}"
+        else
+          version=$(git tag --list '[0-9].[0-9]*' --sort=-v:refname | head -n1)
+        fi
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Get CI Version
       id: ci_version
@@ -140,75 +679,15 @@ jobs:
         fi
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
-    - name: Fetch PGO Profdata
-      shell: bash
-      run: |
-        mkdir -p build
-        cd x265
-
-        fetch_profdata() {
-          local target="$1"
-          local primary_branch="$2"
-          local fallback_branch="$3"
-          local source_path="$4"
-          local destination="../build/x265-${target}.profdata"
-          local branch last_branch=""
-
-          rm -f "$destination"
-
-          for branch in "$primary_branch" "$fallback_branch"; do
-            [ -n "$branch" ] || continue
-            [ "$branch" != "$last_branch" ] || continue
-            last_branch="$branch"
-
-            local ls_remote_output ls_remote_status
-            set +e
-            ls_remote_output=$(git ls-remote --exit-code --heads origin "$branch" 2>&1)
-            ls_remote_status=$?
-            set -e
-            if [ "$ls_remote_status" -eq 2 ]; then
-              echo "PGO profdata branch missing: $branch"
-              continue
-            fi
-            if [ "$ls_remote_status" -ne 0 ]; then
-              printf '%s\n' "$ls_remote_output"
-              return "$ls_remote_status"
-            fi
-
-            echo "=== Fetching PGO profdata for ${target} from ${branch}:${source_path} ==="
-            git fetch --quiet origin "$branch" --depth=1
-
-            if ! git show "FETCH_HEAD:${source_path}" > "$destination" 2>/dev/null; then
-              echo "PGO profdata file missing: branch=${branch} path=${source_path}"
-              rm -f "$destination"
-              continue
-            fi
-
-            if [ "$branch" = "$fallback_branch" ] && [ "$primary_branch" != "$fallback_branch" ]; then
-              echo "PGO profdata fallback hit: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
-            else
-              echo "PGO profdata hit: target=${target} branch=${branch}"
-            fi
-            echo "PGO profdata path: source=${source_path} destination=${destination}"
-            return 0
-          done
-
-          echo "PGO profdata unavailable: target=${target}"
-        }
-
-        fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib profdata-x86-64-8b-lib x265.profdata
-        fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib profdata-x86-64-12b-lib x265.profdata
-        fetch_profdata all profdata-${{ matrix.target_cpu }}-all profdata-x86-64-all x265.profdata
-
     - name: Setup Shared Dependencies
       uses: ./x265/.github/actions/setup-windows-deps
       with:
-        ffmpeg-cache-suffix: lavf-v1-clang
+        ffmpeg-cache-suffix: lavf-v2-clang
         ffmpeg-configure: |
           ./configure --prefix=/usr/local --enable-gpl \
             --disable-runtime-cpudetect --disable-all --disable-autodetect \
-            --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
             --disable-everything --disable-network \
+            --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
             --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf \
             --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
             --enable-protocol=file \
@@ -219,13 +698,169 @@ jobs:
           mingw-w64-clang-x86_64-ffmpeg
           mingw-w64-clang-x86_64-lldb
 
+    - name: Detect LLVM Profdata Identity
+      id: llvm_profdata
+      run: |
+        version=$(llvm-profdata --version | sed -nE 's/.*LLVM version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
+        test -n "$version"
+        safe_version=${version//[^A-Za-z0-9_.-]/_}
+        echo "id=llvm-${safe_version}" >> "$GITHUB_OUTPUT"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Fetch PGO Profdata
+      shell: bash
+      run: |
+        mkdir -p build
+        cd x265
+
+        append_pgo_status() {
+          local profile_target="$1"
+          local status="$2"
+          local branch="$3"
+          local note="$4"
+          note=$(printf '%s' "$note" | tr '\n|' ';/' | cut -c1-180)
+          printf '| %s | %s | %s | %s | %s |\n' "${{ matrix.target_cpu }}" "$profile_target" "$status" "$branch" "$note" >> ../build/pgo-status.md
+        }
+
+        fetch_profdata() {
+          local target="$1"
+          local primary_branch="$2"
+          local fallback_branch="$3"
+          local source_path="$4"
+          local expected_toolchain="${5:-}"
+          local report_unavailable="${6:-true}"
+          local destination="../build/x265-${target}.profdata"
+          local branch last_branch="" status="unavailable" summary_branch="" summary_note="no matching profdata branch"
+
+          if [ -s "$destination" ]; then
+            echo "PGO profdata already selected for ${target}: ${destination}"
+            append_pgo_status "$target" selected previous "already selected by newer branch identity"
+            return 0
+          fi
+
+          for branch in "$primary_branch" "$fallback_branch"; do
+            [ -n "$branch" ] || continue
+            [ "$branch" != "$last_branch" ] || continue
+            last_branch="$branch"
+            summary_branch="$branch"
+
+            local ls_remote_output ls_remote_status
+            set +e
+            ls_remote_output=$(git ls-remote --exit-code --heads origin "$branch" 2>&1)
+            ls_remote_status=$?
+            set -e
+            if [ "$ls_remote_status" -eq 2 ]; then
+              echo "PGO profdata branch missing: $branch"
+              summary_note="missing branch ${branch}"
+              continue
+            fi
+            if [ "$ls_remote_status" -ne 0 ]; then
+              printf '%s\n' "$ls_remote_output"
+              return "$ls_remote_status"
+            fi
+
+            echo "=== Fetching PGO profdata for ${target} from ${branch}:${source_path} ==="
+            git fetch --quiet origin "$branch" --depth=1
+
+            local metadata_path="../build/x265-${target}.profdata.metadata.json"
+            rm -f "$metadata_path"
+            if git show "FETCH_HEAD:metadata.json" > "$metadata_path" 2>/dev/null; then
+              rm -rf ../build/profiles
+              mkdir -p ../build/profiles
+              if ! git show "FETCH_HEAD:profiles/0.profdata" > ../build/profiles/0.profdata 2>/dev/null; then
+                rm -f ../build/profiles/0.profdata
+              fi
+              metadata_check_args=(
+                --expected-target="$target"
+                --expected-branch="$branch"
+                --current-commit="${{ github.sha }}"
+                --require-dependency-fields
+                --require-fresh-slot
+              )
+              if [ -n "$expected_toolchain" ]; then
+                metadata_check_args+=(--expected-toolchain="$expected_toolchain")
+              fi
+              if ! metadata_check_output=$(python .github/scripts/check_profdata_metadata.py "$metadata_path" "${metadata_check_args[@]}" 2>&1); then
+                printf '%s\n' "$metadata_check_output"
+                if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                  {
+                    echo
+                    echo "#### Rejected PGO metadata"
+                    echo
+                    echo "- target_cpu: ${{ matrix.target_cpu }}"
+                    echo "- profile_target: ${target}"
+                    echo "- branch: ${branch}"
+                    echo
+                    echo '```text'
+                    printf '%s\n' "$metadata_check_output" | head -20
+                    echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"
+                fi
+                while IFS= read -r line; do
+                  [ -n "$line" ] && echo "::warning::PGO profdata metadata rejected: target=${target} branch=${branch}: $line"
+                done <<< "$metadata_check_output"
+                summary_note="metadata rejected: $(printf '%s' "$metadata_check_output" | tr '\n' ';' | cut -c1-180)"
+                rm -f "$metadata_path"
+                rm -rf ../build/profiles
+                continue
+              fi
+              printf '%s\n' "$metadata_check_output"
+              summary_note="metadata validated"
+              rm -rf ../build/profiles
+            else
+              echo "::warning::PGO profdata metadata missing: target=${target} branch=${branch}"
+              summary_note="metadata missing"
+            fi
+
+            if ! git show "FETCH_HEAD:${source_path}" > "$destination" 2>/dev/null; then
+              echo "::warning::PGO profdata file missing: target=${target} branch=${branch} path=${source_path}"
+              rm -f "$destination"
+              summary_note="profdata file missing at ${source_path}"
+              continue
+            fi
+
+            if [ "$branch" = "$fallback_branch" ] && [ "$primary_branch" != "$fallback_branch" ]; then
+              echo "PGO profdata fallback hit: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
+              status="fallback"
+            else
+              echo "PGO profdata hit: target=${target} branch=${branch}"
+              status="hit"
+            fi
+            echo "PGO profdata path: source=${source_path} destination=${destination}"
+            append_pgo_status "$target" "$status" "$branch" "$summary_note"
+            return 0
+          done
+
+          echo "::warning::PGO profdata unavailable: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
+          if [ "$report_unavailable" = true ]; then
+            append_pgo_status "$target" unavailable "${summary_branch:-none}" "$summary_note"
+          fi
+        }
+
+        {
+          echo "### PGO profdata status"
+          echo
+          echo "| target_cpu | profile_target | status | branch | notes |"
+          echo "| --- | --- | --- | --- | --- |"
+        } > ../build/pgo-status.md
+
+        fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-8b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
+        fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib profdata-x86-64-8b-lib x265.profdata
+        fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-12b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
+        fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib profdata-x86-64-12b-lib x265.profdata
+        fetch_profdata all profdata-${{ matrix.target_cpu }}-all-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-all-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
+        fetch_profdata all profdata-${{ matrix.target_cpu }}-all profdata-x86-64-all x265.profdata
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          cat ../build/pgo-status.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
     - name: Smoke Test L-SMASH
       env:
         MSYSTEM: CLANG64
       shell: msys2 {0}
       run: |
         set -ex
-        export PATH="/clang64/bin:/usr/bin:/mingw64/bin"
+        export PATH="/clang64/bin:/usr/bin"
         echo "=== Step 1: Check library files ==="
         ls -la /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a 2>&1
         echo "=== Step 2: Check symbols in liblsmash ==="
@@ -460,6 +1095,7 @@ jobs:
           -DENABLE_VPYSYNTH=OFF
           -DUSE_MIMALLOC=ON
           -DENABLE_UNITY_BUILD=ON
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
         )
 
@@ -497,6 +1133,16 @@ jobs:
         CXX_FLAGS_8B_LIB="${BASE_CXX_FLAGS} ${PGO_8B_LIB_FLAG}"
         CXX_FLAGS_12B_LIB="${BASE_CXX_FLAGS} ${PGO_12B_LIB_FLAG}"
         CXX_FLAGS_ALL="${BASE_CXX_FLAGS} ${PGO_ALL_FLAG}"
+
+        source x265/.github/scripts/cxx20_scan_helpers.sh
+
+        check_pgo_consume_commands() {
+          local build_dir="$1"
+          local pgo_flag="$2"
+          local min_cpp_commands="$3"
+          [ -n "$pgo_flag" ] || return 0
+          check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"
+        }
 
         if [ "$FULL_BUILD" = true ]; then
           # === Configure and build 8bit CLI ===
@@ -540,6 +1186,7 @@ jobs:
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS_8B_LIB" \
             -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
           print_thinlto_cache build/8b-lib
+          check_pgo_consume_commands build/8b-lib "$PGO_8B_LIB_FLAG" 50
           run_ninja_logged 8b-lib build/8b-lib "$NINJA_JOBS_PAIR" &
           ninja_8b_lib_pid=$!
 
@@ -550,6 +1197,7 @@ jobs:
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS_12B_LIB" \
             -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
           print_thinlto_cache build/12b-lib
+          check_pgo_consume_commands build/12b-lib "$PGO_12B_LIB_FLAG" 50
           run_ninja_logged 12b-lib build/12b-lib "$NINJA_JOBS_PAIR" &
           ninja_12b_lib_pid=$!
           wait_for_jobs "$ninja_8b_lib_pid" "$ninja_12b_lib_pid"
@@ -567,6 +1215,7 @@ jobs:
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
           -DCMAKE_EXE_LINKER_FLAGS=""
         print_thinlto_cache build/all-8b-lib
+        check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50
         run_ninja_logged all-8b-lib build/all-8b-lib "$NINJA_JOBS_PAIR" &
         ninja_all_8b_lib_pid=$!
 
@@ -576,6 +1225,7 @@ jobs:
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
           -DCMAKE_EXE_LINKER_FLAGS=""
         print_thinlto_cache build/all-12b-lib
+        check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50
         run_ninja_logged all-12b-lib build/all-12b-lib "$NINJA_JOBS_PAIR" &
         ninja_all_12b_lib_pid=$!
         wait_for_jobs "$ninja_all_8b_lib_pid" "$ninja_all_12b_lib_pid"
@@ -590,11 +1240,26 @@ jobs:
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
           -DOBUPARSE_LIBRARY=/usr/local/lib/libobuparse.a \
           -DCMAKE_EXE_LINKER_FLAGS=""
+        check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60
         echo "=== All builds complete ==="
         run_ninja_logged all build/all
         echo "=== All builds complete ==="
 
         echo "Keeping built executables unstripped until packaging"
+
+    - name: Runtime Smoke Boundary Summary
+      run: |
+        {
+          echo "### Runtime smoke boundary"
+          echo
+          echo "| target_cpu | build | runtime_smoke | reason |"
+          echo "| --- | --- | --- | --- |"
+          if [ "${{ matrix.target_cpu }}" = "x86-64" ]; then
+            echo "| ${{ matrix.target_cpu }} | yes | yes | baseline runner ISA |"
+          else
+            echo "| ${{ matrix.target_cpu }} | yes | no | GitHub runner host may not support target-specific instructions |"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: RAW Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
@@ -636,6 +1301,17 @@ jobs:
         grep -q "width=160" smoke_lavf_probe.txt
         grep -q "height=90" smoke_lavf_probe.txt
 
+    - name: Threaded ME Smoke (All CLI)
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_threaded_me.y4m
+        build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
+        test -s smoke_threaded_me.hevc
+        grep -Fq 'threaded-me' smoke_threaded_me_log.txt
+        ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
+        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
+        grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
+
     - name: QPFile Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
@@ -676,7 +1352,7 @@ jobs:
     - name: GOP Output Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke gop diagnostics ==="; for f in smoke_gop.gop smoke_gop.options smoke_gop.headers smoke_gop_data_files.txt smoke_gop_mux_format.txt smoke_gop_mux_stream.txt; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
+        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke gop diagnostics ==="; for f in smoke_gop.gop smoke_gop.options smoke_gop.headers smoke_gop_data_files.txt smoke_gop_mux_format.txt smoke_gop_mux_stream.txt smoke_gop_mux_count.txt; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
         ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_gop.y4m
         build/all/x265.exe --input smoke_gop.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --output smoke_gop.gop
         test -s smoke_gop.gop
@@ -684,7 +1360,9 @@ jobs:
         test -s smoke_gop.headers
         test -s smoke_gop-000000.hevc-gop-data
         test -s smoke_gop-000008.hevc-gop-data
-        ls smoke_gop-*.hevc-gop-data > smoke_gop_data_files.txt
+        printf '%s\n' smoke_gop-*.hevc-gop-data > smoke_gop_data_files.txt
+        grep -Fxq 'smoke_gop-000000.hevc-gop-data' smoke_gop_data_files.txt
+        grep -Fxq 'smoke_gop-000008.hevc-gop-data' smoke_gop_data_files.txt
         test "$(wc -l < smoke_gop_data_files.txt)" -eq 2
         grep -Fxq '#options smoke_gop.options' smoke_gop.gop
         test "$(grep -Fxc '#options smoke_gop.options' smoke_gop.gop)" -eq 1
@@ -702,12 +1380,15 @@ jobs:
         gop_muxer.exe smoke_gop.gop
         test -s smoke_gop.mp4
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=codec_name,width,height,nb_read_frames -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_stream.txt
+        ffprobe -v error -show_streams -select_streams v:0 smoke_gop.mp4 > smoke_gop_mux_stream.txt
+        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_count.txt
         grep -q 'format_name=mov,mp4,m4a,3gp,3g2,mj2' smoke_gop_mux_format.txt
         grep -q 'codec_name=hevc' smoke_gop_mux_stream.txt
+        grep -q 'codec_type=video' smoke_gop_mux_stream.txt
         grep -q 'width=128' smoke_gop_mux_stream.txt
         grep -q 'height=72' smoke_gop_mux_stream.txt
-        grep -q 'nb_read_frames=16' smoke_gop_mux_stream.txt
+        awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_gop_mux_stream.txt
+        grep -q 'nb_read_frames=16' smoke_gop_mux_count.txt
 
     - name: Prepare MP4 Smoke Helpers
       if: matrix.target_cpu == 'x86-64'
@@ -761,6 +1442,29 @@ jobs:
           test -s "${prefix}_frames.csv"
         }
 
+        dump_mp4_diagnostics() {
+          local prefix="$1"
+          local mp4="$2"
+          for f in "${prefix}_format.txt" "${prefix}_stream.txt" "${prefix}_timing.txt" "${prefix}_count.txt" "${prefix}_packets.csv" "${prefix}_frames.csv"; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              cat "$f"
+            fi
+          done
+          if [ -f "$mp4" ]; then
+            echo "--- ${mp4} size ---"
+            wc -c "$mp4"
+            echo "--- ${mp4} markers ---"
+            python - "$mp4" <<'PY'
+        from pathlib import Path
+        import sys
+        data = Path(sys.argv[1]).read_bytes()
+        for marker in (b'ftyp', b'hvc1', b'hvcC', b'colr', b'sgpd', b'sbgp', b'rap '):
+            print(f'{marker.decode("ascii")}: {data.find(marker)}')
+        PY
+          fi
+        }
+
         assert_mp4_markers() {
           local mp4="$1"
           shift
@@ -773,12 +1477,31 @@ jobs:
                 raise SystemExit(f'missing MP4 marker: {marker!r}')
         PY
         }
+
+        assert_duration_window() {
+          local prefix="$1"
+          local min_duration="$2"
+          local max_duration="$3"
+          awk -F= -v min="$min_duration" -v max="$max_duration" '/^duration=/{ d=$2+0 } END { if (d < min || d > max) exit 1 }' "${prefix}_format.txt"
+          awk -F= -v min="$min_duration" -v max="$max_duration" '/^duration=/{ d=$2+0 } END { if (d < min || d > max) exit 1 }' "${prefix}_timing.txt"
+        }
+
+        assert_single_frame_mp4() {
+          local prefix="$1"
+          local max_timestamp="$2"
+          local min_duration="$3"
+          local max_duration="$4"
+          awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 1) exit 1 }' "${prefix}_packets.csv"
+          awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 } END { if (NR != 1) exit 1 }' "${prefix}_frames.csv"
+          awk -F, -v max="$max_timestamp" 'NR == 1 { if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($2+0) != ($3+0)) exit 1; if (($2+0) < -0.001 || ($2+0) > max) exit 1 } END { if (NR != 1) exit 1 }' "${prefix}_frames.csv"
+          assert_duration_window "$prefix" "$min_duration" "$max_duration"
+        }
         EOF
 
     - name: MP4 Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke mp4 diagnostics ==="; for f in smoke_format.txt smoke_stream.txt smoke_timing.txt smoke_count.txt smoke_packets.csv smoke_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
+        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke mp4 diagnostics ==="; dump_mp4_diagnostics smoke smoke.mp4; fi; exit $status' EXIT
         source ./mp4_smoke_helpers.sh
         make_y4m smoke.y4m 24 16 yuv420p
         if build/all/x265.exe --input smoke.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --no-open-gop --output smoke.mp4; then
@@ -814,13 +1537,12 @@ jobs:
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_frames.csv
         awk -F, 'NR > 8 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
         awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frames.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_timing.txt
+        assert_duration_window smoke 0.60 0.75
 
     - name: MP4 Smoke (All CLI Open GOP)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke open-gop diagnostics ==="; for f in smoke_open_format.txt smoke_open_stream.txt smoke_open_timing.txt smoke_open_count.txt smoke_open_packets.csv smoke_open_frames.csv; do if [ -f "$f" ]; then echo "--- $f ---"; cat "$f"; fi; done; fi; exit $status' EXIT
+        trap 'status=$?; if [ $status -ne 0 ]; then echo "=== smoke open-gop diagnostics ==="; dump_mp4_diagnostics smoke_open smoke_open.mp4; fi; exit $status' EXIT
         source ./mp4_smoke_helpers.sh
         make_y4m smoke_open.y4m 24 16 yuv420p
         build/all/x265.exe --input smoke_open.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --open-gop --output smoke_open.mp4
@@ -836,8 +1558,7 @@ jobs:
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_open_frames.csv
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_open_packets.csv
         assert_mp4_markers smoke_open.mp4 iso6 sgpd sbgp 'rap '
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_open_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_open_timing.txt
+        assert_duration_window smoke_open 0.60 0.75
 
     - name: MP4 Smoke (All CLI CRA)
       if: matrix.target_cpu == 'x86-64'
@@ -847,6 +1568,7 @@ jobs:
         build/all/x265.exe --input smoke_cra.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 1 --min-keyint 1 --cra-nal --output smoke_cra.mp4
         probe_mp4 smoke_cra smoke_cra.mp4 flags
         assert_common_mp4 smoke_cra 128 72 yuv420p 24/1 16 1/24000
+        assert_mp4_markers smoke_cra.mp4 iso6 hvc1 hvcC
         awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_cra_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_cra_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) != ($3+0)) exit 1 } END { if (NR != 16) exit 1 }' smoke_cra_frames.csv
@@ -854,8 +1576,7 @@ jobs:
         awk -F, '$1 == 1 { kf++ } END { if (kf != 16) exit 1 }' smoke_cra_frames.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_cra_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1; if (($3+0) < 0.55 || ($3+0) > 0.75) exit 1 }' smoke_cra_frames.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_cra_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_cra_timing.txt
+        assert_duration_window smoke_cra 0.60 0.75
         awk -F, 'BEGIN { first=""; last=""; step="" } $2 != "N/A" { curr = $2+0; if (first == "") first = curr; if (last != "" && step == "") step = curr - last; last = curr } END { if (first == "" || last == "" || step == "") exit 1; span = (last - first) + step; if (span < 0.60 || span > 0.75) exit 1 }' smoke_cra_frames.csv
 
     - name: MP4 Smoke (All CLI Single Frame)
@@ -866,21 +1587,19 @@ jobs:
         build/all/x265.exe --input smoke_single.y4m --input-res 128x72 --fps 24 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single.mp4
         probe_mp4 smoke_single smoke_single.mp4 flags
         assert_common_mp4 smoke_single 128 72 yuv420p 24/1 1 1/24000
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_packets.csv
-        awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frames.csv
-        awk -F, 'NR == 1 { if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($2+0) != ($3+0)) exit 1; if (($2+0) < -0.001 || ($2+0) > 0.05) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frames.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.02 || d > 0.08) exit 1 }' smoke_single_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.02 || d > 0.08) exit 1 }' smoke_single_timing.txt
+        assert_mp4_markers smoke_single.mp4 iso6 hvc1 hvcC
+        assert_single_frame_mp4 smoke_single 0.05 0.02 0.08
 
     - name: MP4 Smoke (All CLI Frames=0 Means Encode Available Input)
       if: matrix.target_cpu == 'x86-64'
       run: |
-        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 1 -pix_fmt yuv420p smoke_zero.y4m
+        source ./mp4_smoke_helpers.sh
+        make_y4m smoke_zero.y4m 24 1 yuv420p
         build/all/x265.exe --input smoke_zero.y4m --input-res 128x72 --fps 24 --frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4
-        ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_zero.mp4 > smoke_zero_format.txt
-        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_zero.mp4 > smoke_zero_count.txt
-        grep -q "format_name=mov,mp4,m4a,3gp,3g2,mj2" smoke_zero_format.txt
-        grep -q "nb_read_frames=1" smoke_zero_count.txt
+        probe_mp4 smoke_zero smoke_zero.mp4 flags
+        assert_common_mp4 smoke_zero 128 72 yuv420p 24/1 1 1/24000
+        assert_mp4_markers smoke_zero.mp4 iso6 hvc1 hvcC
+        assert_single_frame_mp4 smoke_zero 0.05 0.02 0.08
 
     - name: MP4 Smoke (All CLI Single Frame 24000/1001)
       if: matrix.target_cpu == 'x86-64'
@@ -890,11 +1609,8 @@ jobs:
         build/all/x265.exe --input smoke_single_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single_frac.mp4
         probe_mp4 smoke_single_frac smoke_single_frac.mp4 flags
         assert_common_mp4 smoke_single_frac 128 72 yuv420p 24000/1001 1 1/24000
-        awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frac_packets.csv
-        awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frac_frames.csv
-        awk -F, 'NR == 1 { if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($2+0) != ($3+0)) exit 1; if (($2+0) < -0.001 || ($2+0) > 0.06) exit 1 } END { if (NR != 1) exit 1 }' smoke_single_frac_frames.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.03 || d > 0.06) exit 1 }' smoke_single_frac_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.03 || d > 0.06) exit 1 }' smoke_single_frac_timing.txt
+        assert_mp4_markers smoke_single_frac.mp4 iso6 hvc1 hvcC
+        assert_single_frame_mp4 smoke_single_frac 0.06 0.03 0.06
 
     - name: MP4 Smoke (All CLI VUI Metadata)
       if: matrix.target_cpu == 'x86-64'
@@ -937,6 +1653,7 @@ jobs:
         build/all/x265.exe --input smoke_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 24 --bframes 4 --keyint 12 --min-keyint 12 --no-open-gop --output smoke_frac.mp4
         probe_mp4 smoke_frac smoke_frac.mp4 pts_time,dts_time,flags
         assert_common_mp4 smoke_frac 128 72 yuv420p 24000/1001 24 1/24000
+        assert_mp4_markers smoke_frac.mp4 iso6 hvc1 hvcC
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 24) exit 1 }' smoke_frac_packets.csv
         awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frac_packets.csv
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 13) exit 1 } END { if (kf < 2) exit 1 }' smoke_frac_packets.csv
@@ -947,8 +1664,7 @@ jobs:
         awk -F, 'NR == 1 { if (NF < 3 || $3 == "N/A") exit 1 }' smoke_frac_frames.csv
         awk -F, 'NR == 1 { if (($2+0) < ($3+0)) exit 1 }' smoke_frac_frames.csv
         awk -F, 'END { if (NR != 24) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.90 || ($2+0) > 1.10) exit 1 }' smoke_frac_frames.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.95 || d > 1.10) exit 1 }' smoke_frac_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.95 || d > 1.10) exit 1 }' smoke_frac_timing.txt
+        assert_duration_window smoke_frac 0.95 1.10
 
     - name: MP4 Smoke (All CLI B-Pyramid)
       if: matrix.target_cpu == 'x86-64'
@@ -967,8 +1683,7 @@ jobs:
         awk -F, 'NR == 1 { if (($2+0) < -0.001 || ($2+0) > 0.06) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_bpyramid_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_bpyramid_frames.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_bpyramid_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_bpyramid_timing.txt
+        assert_duration_window smoke_bpyramid 0.60 0.75
 
     - name: MP4 Smoke (All CLI AUD Request Stays Valid)
       if: matrix.target_cpu == 'x86-64'
@@ -985,8 +1700,7 @@ jobs:
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_aud_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_aud_frames.csv
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_aud_packets.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_aud_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_aud_timing.txt
+        assert_duration_window smoke_aud 0.60 0.75
 
     - name: MP4 Smoke (All CLI EOS/EOB Request Stays Valid)
       if: matrix.target_cpu == 'x86-64'
@@ -1003,8 +1717,7 @@ jobs:
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_eos_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_eos_frames.csv
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_eos_packets.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_eos_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_eos_timing.txt
+        assert_duration_window smoke_eos 0.60 0.75
 
     - name: MP4 Smoke (All CLI IDR Recovery SEI)
       if: matrix.target_cpu == 'x86-64'
@@ -1014,6 +1727,7 @@ jobs:
         build/all/x265.exe --input smoke_recovery.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --idr-recovery-sei --output smoke_recovery.mp4
         probe_mp4 smoke_recovery smoke_recovery.mp4 pts_time,dts_time,flags
         assert_common_mp4 smoke_recovery 128 72 yuv420p 24/1 16 1/24000
+        assert_mp4_markers smoke_recovery.mp4 iso6 hvc1 hvcC
         awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_recovery_packets.csv
         awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_recovery_frames.csv
         awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) != ($3+0)) exit 1 } END { if (NR != 16) exit 1 }' smoke_recovery_frames.csv
@@ -1021,8 +1735,7 @@ jobs:
         awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_recovery_packets.csv
         awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_recovery_frames.csv
         awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.60 || ($2+0) > 0.75) exit 1 }' smoke_recovery_frames.csv
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_recovery_format.txt
-        awk -F= '/^duration=/{ d=$2+0 } END { if (d < 0.60 || d > 0.75) exit 1 }' smoke_recovery_timing.txt
+        assert_duration_window smoke_recovery 0.60 0.75
 
     - name: Package
       run: |
@@ -1043,10 +1756,12 @@ jobs:
       shell: bash
       run: |
         if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "version=${{ steps.tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+          version="${{ steps.tag.outputs.version }}"
         else
-          echo "version=${{ steps.ci_version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          version="${{ steps.ci_version.outputs.version }}"
         fi
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     - name: Compress Package
       run: |
@@ -1060,12 +1775,45 @@ jobs:
         path: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z
         compression-level: 0
 
-    - name: Release
+  publish-release:
+    needs:
+      - cxx20-warning-scan
+      - cxx20-gcc-compile-commands
+      - cxx20-linux-gcc-compile-commands
+      - build
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    steps:
+    - name: Checkout X265
+      uses: actions/checkout@v6
+      with:
+        path: x265
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Get Latest Tag
+      id: tag
+      shell: bash
+      working-directory: x265
+      run: |
+        if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then
+          version="${GITHUB_REF_NAME:-}"
+        else
+          version=$(git tag --list '[0-9].[0-9]*' --sort=-v:refname | head -n1)
+        fi
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Download Release Artifacts
+      uses: actions/download-artifact@v7
+      with:
+        path: release-assets
+
+    - name: Release Artifacts
       uses: softprops/action-gh-release@v3
-      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
       with:
         tag_name: ${{ steps.tag.outputs.version }}
-        files: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z
+        files: release-assets/**/*.7z
         fail_on_unmatched_files: true
         generate_release_notes: false
         prerelease: true
