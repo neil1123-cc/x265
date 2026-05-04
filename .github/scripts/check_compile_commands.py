@@ -195,7 +195,7 @@ def main():
         fail(f'missing compile_commands.json: {commands_path}')
 
     commands = json.loads(commands_path.read_text())
-    cpp = [entry for entry in commands if entry_file_path(entry).endswith(CXX_SUFFIXES)]
+    cpp = [entry for entry in commands if entry_file_path(entry).lower().endswith(CXX_SUFFIXES)]
     if not cpp:
         fail(f'no C++ compile commands: {commands_path}')
 

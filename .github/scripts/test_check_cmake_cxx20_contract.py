@@ -328,6 +328,30 @@ def main():
         source = write_source(root)
         nested = source / 'cmake'
         nested.mkdir()
+        (nested / 'flags.cmake').write_text('add_compile_options(-std=gnu++17)\n')
+        expect_fail(run_checker(source), 'manual C++ standard flag in CMake')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        nested = source / 'cmake'
+        nested.mkdir()
+        (nested / 'flags.cmake').write_text('add_definitions(/std:c++17)\n')
+        expect_fail(run_checker(source), 'manual C++ standard flag in CMake')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        nested = source / 'cmake'
+        nested.mkdir()
+        (nested / 'flags.cmake').write_text('set_property(TARGET cli PROPERTY COMPILE_OPTIONS -std=gnu++17)\n')
+        expect_fail(run_checker(source), 'manual C++ standard flag in CMake')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        nested = source / 'cmake'
+        nested.mkdir()
         (nested / 'flags.cmake').write_text('set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -std=c++20")\n')
         expect_fail(run_checker(source), 'manual C++ standard flag in CMake')
 

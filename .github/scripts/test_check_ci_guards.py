@@ -32,6 +32,15 @@ jobs:
       - name: Check release needs guardrails
         shell: bash
         run: python .github/scripts/check_release_needs.py
+      - name: Check PGO metadata/consume guardrails
+        shell: bash
+        run: python .github/scripts/test_check_pgo_consume_chain.py
+      - name: Set Package Version
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::No numeric version tag found; using $version as CI fallback"
+          echo "version=0.0-gabc1234" >> "$GITHUB_OUTPUT"
   cxx20-linux-gcc-compile-commands:
     runs-on: ubuntu-latest
     steps:
@@ -39,13 +48,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output smoke_linux_gcc.hevc
+          build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output smoke_linux_gcc.hevc 2>&1 | tee smoke_linux_gcc.log
+          grep -Fq 'encoded 1 frames' smoke_linux_gcc.log
   build:
     runs-on: windows-latest
     steps:
       - name: Threaded ME Smoke
         shell: bash
-        run: build/all/x265.exe --threaded-me --no-progress --output smoke_threaded_me.hevc
+        run: |
+          build/all/x265.exe --threaded-me --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
+          grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt
+
 '''
 
 UPDATE_DEPS_YML = '''
@@ -60,6 +73,27 @@ jobs:
         run: |
           set -euo pipefail
           python .github/scripts/check_ci_guards.py
+'''
+
+BUILD_PROFILING_YML = '''
+name: Build Profiling
+on: push
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Get Latest Tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::No numeric version tag found; using $version as CI fallback"
+      - name: Get CI Version
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_hash=$(git rev-parse --short HEAD)
+          version="${{ steps.tag.outputs.version }}-g${head_hash}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 '''
 
 ACTION_YML = '''
@@ -138,6 +172,7 @@ def write_repo(repo):
     patches.mkdir(parents=True)
 
     (workflows / 'build.yml').write_text(BUILD_YML)
+    (workflows / 'build-profiling.yml').write_text(BUILD_PROFILING_YML)
     (workflows / 'update-deps.yml').write_text(UPDATE_DEPS_YML)
     (setup_action / 'action.yml').write_text(ACTION_YML)
     (profiling_action / 'action.yml').write_text(PROFILING_ACTION_YML)
@@ -167,8 +202,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--no-progress --output smoke_threaded_me.hevc', '--output smoke_threaded_me.hevc')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --no-progress --output smoke_threaded_me.hevc')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt", "grep -Fq 'threaded-me' smoke_threaded_me_log.txt")
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: frame threads / pool features       : 1 / threaded-me')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

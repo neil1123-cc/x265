@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,14 @@ CHECKER = Path(__file__).with_name('check_dependency_patch_suffixes.py')
 ACTION_TEXT = '''
 name: Setup Windows dependencies
 inputs:
+  obuparse-ref:
+    description: obuparse ref to checkout
+    required: false
+    default: v2.0.2
+  lsmash-ref:
+    description: L-SMASH ref to checkout
+    required: false
+    default: 04e39f1fb232c332d4b04a1043c02c7c2d282d00
   lsmash-cache-suffix:
     description: Cache suffix appended after the L-SMASH ref
     required: false
@@ -17,6 +26,10 @@ inputs:
     description: Patch path relative to the checked-out L-SMASH directory
     required: false
     default: ../x265/.github/patches/l-smash-clang-coff-refptr.patch
+  gop-muxer-ref:
+    description: GOP muxer ref to checkout
+    required: false
+    default: 5677cf5ef905c2412ed31de300cd1a08b341d21d
   gop-muxer-cache-suffix:
     description: Cache suffix appended after the GOP muxer ref
     required: false
@@ -48,6 +61,12 @@ def write_repo(repo):
     action.mkdir(parents=True)
     patches.mkdir(parents=True)
     (action / 'action.yml').write_text(ACTION_TEXT)
+    (repo / '.github' / 'deps-cache.json').write_text(json.dumps({
+        'lsmash': '04e39f1fb232c332d4b04a1043c02c7c2d282d00',
+        'obuparse': 'v2.0.2',
+        'gop_muxer': '5677cf5ef905c2412ed31de300cd1a08b341d21d',
+        'updated_at': '2026-05-04T00:00:00Z',
+    }))
     (patches / 'l-smash-clang-coff-refptr.patch').write_text('lsmash patch v1\n')
     (patches / 'gop-muxer-lsmash-add-box.patch').write_text('gop patch v1\n')
 
@@ -109,6 +128,16 @@ def main():
             '../x265/.github/patches/missing.patch',
         )
         expect_fail(run('--repo-root', str(repo)), 'GOP muxer patch input gop-muxer-patch-path points to .github/patches/missing.patch')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
+            'default: 5677cf5ef905c2412ed31de300cd1a08b341d21d',
+            'default: 1111111111111111111111111111111111111111',
+        )
+        expect_fail(run('--repo-root', str(repo)), ".github/deps-cache.json gop_muxer='5677cf5ef905c2412ed31de300cd1a08b341d21d' does not match gop-muxer-ref default '1111111111111111111111111111111111111111'")
 
     print('dependency patch suffix guardrails validated')
 
