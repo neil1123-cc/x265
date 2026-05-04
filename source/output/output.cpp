@@ -27,6 +27,8 @@
 #include "y4m.h"
 #include "gop.h"
 
+#include <string.h>
+
 #include "raw.h"
 
 using namespace X265_NS;

@@ -2,6 +2,8 @@
 #include "bitstream.h"
 #include "threading.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 #if defined(_MSC_VER)
