@@ -80,7 +80,7 @@ ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
         fprintf(outputPipe, "YUV4MPEG2 W%d H%d F%d:%d Ip C%s%s\n", width, height, param.fpsNum, param.fpsDenom, csp, depth);
 
         pipeValid = true;
-        threadActive = true;
+        threadActive.store(true);
         start();
         return;
     }
@@ -88,19 +88,19 @@ ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
         general_log(&param, "exec", X265_LOG_ERROR, "popen(%s) failed\n", commandLine);
 
 fail:
-    threadActive = false;
+    threadActive.store(false);
 }
 
 ReconPlay::~ReconPlay()
 {
-    if (threadActive)
+    if (threadActive.load())
     {
-        threadActive = false;
+        threadActive.store(false);
         writeCount.poke();
         stop();
     }
 
-    if (outputPipe) 
+    if (outputPipe)
         pclose(outputPipe);
 
     for (int i = 0; i < RECON_BUF_SIZE; i++)
@@ -109,7 +109,7 @@ ReconPlay::~ReconPlay()
 
 bool ReconPlay::writePicture(const x265_picture& pic)
 {
-    if (!threadActive || !pipeValid)
+    if (!threadActive.load() || !pipeValid)
         return false;
 
     int written = writeCount.get();
@@ -121,7 +121,7 @@ bool ReconPlay::writePicture(const x265_picture& pic)
     while (written - read > RECON_BUF_SIZE - 2 || poc[currentCursor] != -1)
     {
         read = readCount.waitForChange(read);
-        if (!threadActive)
+        if (!threadActive.load())
             return false;
     }
 
@@ -158,9 +158,9 @@ void ReconPlay::threadMain()
         if (!outputFrame())
             break;
     }
-    while (threadActive);
+    while (threadActive.load());
 
-    threadActive = false;
+    threadActive.store(false);
     readCount.poke();
 }
 
@@ -173,7 +173,7 @@ bool ReconPlay::outputFrame()
     while (poc[currentCursor] != read)
     {
         written = writeCount.waitForChange(written);
-        if (!threadActive)
+        if (!threadActive.load())
             return false;
     }
 
