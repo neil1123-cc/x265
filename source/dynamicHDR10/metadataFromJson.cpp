@@ -27,6 +27,7 @@
 #include <fstream>
 #include <iostream>
 #include <math.h>
+#include <string.h>
 #include "sstream"
 #include "sys/stat.h"
 

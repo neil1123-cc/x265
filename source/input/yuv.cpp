@@ -25,6 +25,7 @@
 #include "yuv.h"
 #include "common.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define ENABLE_THREADING 1
