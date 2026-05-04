@@ -46,7 +46,10 @@ def ci_shape_records(build_dir, root, overrides=None):
         ('source/common/x86/asm-primitives.cpp', ['-DX265_ARCH_X86=1', '-DX265_DEPTH=8']),
         ('CMakeFiles/common.dir/Unity/unity_0_cxx.cxx', ['-DX265_DEPTH=8']),
         ('source/encoder/api.cpp', ['-DEXPORT_C_API=1', '-DX265_DEPTH=8']),
+        ('source/encoder/encoder.cpp', ['-DX265_DEPTH=8']),
+        ('source/encoder/ratecontrol.cpp', ['-DX265_DEPTH=8', '-Werror=deprecated-volatile']),
         ('source/output/output.cpp', ['-DLINKED_8BIT=1', '-DLINKED_12BIT=1', '-DX265_DEPTH=10']),
+        ('source/output/reconplay.cpp', ['-DX265_DEPTH=8', '-Werror=deprecated-volatile']),
         ('source/common/winxp.cpp', ['-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '-DX265_DEPTH=8']),
         ('source/common/cpu.cpp', ['-march=znver5', '-DX265_DEPTH=8']),
     )
@@ -65,11 +68,14 @@ def ci_shape_records(build_dir, root, overrides=None):
 
 
 CI_SHAPE_ARGS = (
-    '--min-cpp-commands=6',
+    '--min-cpp-commands=9',
     '--required-file-substring=source/common/x86/asm-primitives.cpp',
     '--required-file-substring=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx',
     '--required-file-substring=source/encoder/api.cpp',
+    '--required-file-substring=source/encoder/encoder.cpp',
+    '--required-file-substring=source/encoder/ratecontrol.cpp',
     '--required-file-substring=source/output/output.cpp',
+    '--required-file-substring=source/output/reconplay.cpp',
     '--required-file-substring=source/common/winxp.cpp',
     '--required-file-substring=source/common/cpu.cpp',
     '--required-file-flag=source/common/x86/asm-primitives.cpp=-DX265_ARCH_X86=1',
@@ -77,9 +83,14 @@ CI_SHAPE_ARGS = (
     '--required-file-flag=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx=-DX265_DEPTH=8',
     '--required-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1',
     '--required-file-flag=source/encoder/api.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=source/encoder/encoder.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=source/encoder/ratecontrol.cpp=-Werror=deprecated-volatile',
+    '--required-file-flag=source/encoder/ratecontrol.cpp=-DX265_DEPTH=8',
     '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1',
     '--required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1',
     '--required-file-flag=source/output/output.cpp=-DX265_DEPTH=10',
+    '--required-file-flag=source/output/reconplay.cpp=-Werror=deprecated-volatile',
+    '--required-file-flag=source/output/reconplay.cpp=-DX265_DEPTH=8',
     '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP',
     '--required-file-flag=source/common/winxp.cpp=-DX265_DEPTH=8',
     '--required-file-flag=source/common/cpu.cpp=-march=znver5',
@@ -90,6 +101,14 @@ CI_SHAPE_ARGS = (
     '--forbidden-file-flag=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx=-DX265_DEPTH=12',
     '--forbidden-file-flag=source/encoder/api.cpp=-DX265_DEPTH=10',
     '--forbidden-file-flag=source/encoder/api.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LAVF',
+    '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_MKV',
+    '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LSMASH',
+    '--forbidden-file-flag=source/encoder/encoder.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/encoder/ratecontrol.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/encoder/ratecontrol.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/output/reconplay.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/output/reconplay.cpp=-DX265_DEPTH=12',
     '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7',
     '--forbidden-file-flag=source/common/winxp.cpp=-DX265_DEPTH=10',
     '--forbidden-file-flag=source/common/winxp.cpp=-DX265_DEPTH=12',
@@ -193,6 +212,30 @@ def main():
             },
         }))
         expect_fail(run_ci_shape_checker(shared_api_missing_dir), 'missing required flag -DEXPORT_C_API=1 for file substring source/encoder/api.cpp')
+
+        encoder_dep_leak_dir = root / 'ci-shape-encoder-arguments-dep-leak'
+        write_compile_commands_records(encoder_dep_leak_dir, ci_shape_records(encoder_dep_leak_dir, root, {
+            'source/encoder/encoder.cpp': {
+                'argument_flags': ['-DX265_DEPTH=8', '-DENABLE_LAVF'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(encoder_dep_leak_dir), 'forbidden flag -DENABLE_LAVF for file substring source/encoder/encoder.cpp')
+
+        ratecontrol_warning_missing_dir = root / 'ci-shape-ratecontrol-command-missing-warning'
+        write_compile_commands_records(ratecontrol_warning_missing_dir, ci_shape_records(ratecontrol_warning_missing_dir, root, {
+            'source/encoder/ratecontrol.cpp': {
+                'command_flags': ['-DX265_DEPTH=8'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(ratecontrol_warning_missing_dir), 'missing required flag -Werror=deprecated-volatile for file substring source/encoder/ratecontrol.cpp')
+
+        reconplay_warning_missing_dir = root / 'ci-shape-reconplay-arguments-missing-warning'
+        write_compile_commands_records(reconplay_warning_missing_dir, ci_shape_records(reconplay_warning_missing_dir, root, {
+            'source/output/reconplay.cpp': {
+                'argument_flags': ['-DX265_DEPTH=8'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(reconplay_warning_missing_dir), 'missing required flag -Werror=deprecated-volatile for file substring source/output/reconplay.cpp')
 
         all_depth_forbidden_dir = root / 'ci-shape-all-bit-depth-arguments-forbidden-depth'
         write_compile_commands_records(all_depth_forbidden_dir, ci_shape_records(all_depth_forbidden_dir, root, {
