@@ -31,6 +31,8 @@
 #include "cpu.h"
 #include "common.h"
 
+#include <string.h>
+
 #if MACOS || SYS_FREEBSD
 #include <sys/types.h>
 #include <sys/sysctl.h>

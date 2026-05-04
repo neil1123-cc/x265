@@ -23,6 +23,8 @@
 
 #include "filters.h"
 #include "common.h"
+
+#include <string.h>
 #ifdef ENABLE_ZIMG
 #include "zimgfilter.h"
 #endif

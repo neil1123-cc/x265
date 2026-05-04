@@ -22,6 +22,8 @@
  * For more information, contact us at license @ x265.com.
  *****************************************************************************/
 #include "raw.h"
+
+#include <string.h>
 #if _WIN32
 #include <io.h>
 #include <fcntl.h>
