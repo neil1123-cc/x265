@@ -64,8 +64,9 @@ static const struct option long_options[] =
     { "pmode",                no_argument, NULL, 0 },
     { "no-pme",               no_argument, NULL, 0 },
     { "pme",                  no_argument, NULL, 0 },
-    { "log-level",      required_argument, NULL, 0 },
-    { "profile",        required_argument, NULL, 'P' },
+    { "log-level",           required_argument, NULL, 0 },
+    { "log-file",            required_argument, NULL, 0 },
+    { "log-file-level",      required_argument, NULL, 0 },
     { "level-idc",      required_argument, NULL, 0 },
     { "high-tier",            no_argument, NULL, 0 },
     { "uhd-bd",               no_argument, NULL, 0 },
@@ -74,10 +75,10 @@ static const struct option long_options[] =
     { "no-allow-non-conformance",no_argument, NULL, 0 },
     { "csv",            required_argument, NULL, 0 },
     { "csv-log-level",  required_argument, NULL, 0 },
-    { "no-cu-stats",          no_argument, NULL, 0 },
-    { "cu-stats",             no_argument, NULL, 0 },
+    { "progress-file",  required_argument, NULL, 0 },
     { "y4m",                  no_argument, NULL, 0 },
     { "no-progress",          no_argument, NULL, 0 },
+    { "stylish",              no_argument, NULL, 0 },
     { "output",         required_argument, NULL, 'o' },
     { "output-depth",   required_argument, NULL, 'D' },
     { "input",          required_argument, NULL, 0 },
@@ -91,7 +92,6 @@ static const struct option long_options[] =
     { "no-field",             no_argument, NULL, 0 },
     { "fps",            required_argument, NULL, 0 },
     { "seek",           required_argument, NULL, 0 },
-    { "frame-skip",     required_argument, NULL, 0 },
     { "frames",         required_argument, NULL, 'f' },
     { "recon",          required_argument, NULL, 'r' },
     { "recon-depth",    required_argument, NULL, 0 },
@@ -131,8 +131,6 @@ static const struct option long_options[] =
     { "no-cu-lossless",       no_argument, NULL, 0 },
     { "no-constrained-intra", no_argument, NULL, 0 },
     { "constrained-intra",    no_argument, NULL, 0 },
-    { "cip",                  no_argument, NULL, 0 },
-    { "no-cip",               no_argument, NULL, 0 },
     { "fast-intra",           no_argument, NULL, 0 },
     { "no-fast-intra",        no_argument, NULL, 0 },
     { "no-open-gop",          no_argument, NULL, 0 },
@@ -183,7 +181,11 @@ static const struct option long_options[] =
     { "bitrate",        required_argument, NULL, 0 },
     { "qp",             required_argument, NULL, 'q' },
     { "aq-mode",        required_argument, NULL, 0 },
+    { "limit-aq1",            no_argument, NULL, 0 },
+    { "no-limit-aq1",         no_argument, NULL, 0 },
     { "aq-strength",    required_argument, NULL, 0 },
+    { "aq-bias-strength", required_argument, NULL, 0 },
+    { "limit-aq1-strength", required_argument, NULL, 0 },
     { "sbrc",                 no_argument, NULL, 0 },
     { "no-sbrc",              no_argument, NULL, 0 },
     { "rc-grain",             no_argument, NULL, 0 },
@@ -191,6 +193,10 @@ static const struct option long_options[] =
     { "ipratio",        required_argument, NULL, 0 },
     { "pbratio",        required_argument, NULL, 0 },
     { "qcomp",          required_argument, NULL, 0 },
+    { "cutree-strength",required_argument, NULL, 0 },
+    { "cutree-minqpoffs",required_argument, NULL, 0 },
+    { "cutree-maxqpoffs",required_argument, NULL, 0 },
+    { "qscale-mode",    required_argument, NULL, 0 },
     { "qpstep",         required_argument, NULL, 0 },
     { "qpmin",          required_argument, NULL, 0 },
     { "qpmax",          required_argument, NULL, 0 },
@@ -207,6 +213,9 @@ static const struct option long_options[] =
     { "dynamic-rd",     required_argument, NULL, 0 },
     { "psy-rd",         required_argument, NULL, 0 },
     { "psy-rdoq",       required_argument, NULL, 0 },
+    { "psy-bscale",     required_argument, NULL, 0 },
+    { "psy-pscale",     required_argument, NULL, 0 },
+    { "psy-iscale",     required_argument, NULL, 0 },
     { "no-psy-rd",            no_argument, NULL, 0 },
     { "no-psy-rdoq",          no_argument, NULL, 0 },
     { "rd-refine",            no_argument, NULL, 0 },
@@ -216,8 +225,6 @@ static const struct option long_options[] =
     { "no-lossless",          no_argument, NULL, 0 },
     { "no-signhide",          no_argument, NULL, 0 },
     { "signhide",             no_argument, NULL, 0 },
-    { "no-lft",               no_argument, NULL, 0 }, /* DEPRECATED */
-    { "lft",                  no_argument, NULL, 0 }, /* DEPRECATED */
     { "no-deblock",           no_argument, NULL, 0 },
     { "deblock",        required_argument, NULL, 0 },
     { "no-sao",               no_argument, NULL, 0 },
@@ -245,7 +252,6 @@ static const struct option long_options[] =
     { "colormatrix",    required_argument, NULL, 0 },
     { "chromaloc",      required_argument, NULL, 0 },
     { "display-window", required_argument, NULL, 0 },
-    { "crop-rect",      required_argument, NULL, 0 }, /* DEPRECATED */
     { "master-display", required_argument, NULL, 0 },
     { "max-cll",        required_argument, NULL, 0 },
     {"video-signal-type-preset", required_argument, NULL, 0 },
@@ -295,9 +301,7 @@ static const struct option long_options[] =
     { "no-slow-firstpass",    no_argument, NULL, 0 },
     { "multi-pass-opt-rps",   no_argument, NULL, 0 },
     { "no-multi-pass-opt-rps", no_argument, NULL, 0 },
-    { "analysis-reuse-mode", required_argument, NULL, 0 }, /* DEPRECATED */
     { "analysis-reuse-file", required_argument, NULL, 0 },
-    { "analysis-reuse-level", required_argument, NULL, 0 }, /* DEPRECATED */
     { "analysis-save-reuse-level", required_argument, NULL, 0 },
     { "analysis-load-reuse-level", required_argument, NULL, 0 },
     { "analysis-save",  required_argument, NULL, 0 },
@@ -322,8 +326,6 @@ static const struct option long_options[] =
     { "no-hdr",               no_argument, NULL, 0 },
     { "hdr10",                no_argument, NULL, 0 },
     { "no-hdr10",             no_argument, NULL, 0 },
-    { "hdr-opt",              no_argument, NULL, 0 },
-    { "no-hdr-opt",           no_argument, NULL, 0 },
     { "hdr10-opt",            no_argument, NULL, 0 },
     { "no-hdr10-opt",         no_argument, NULL, 0 },
     { "limit-sao",            no_argument, NULL, 0 },
@@ -433,6 +435,7 @@ static const struct option long_options[] =
         uint64_t totalbytes;
         int64_t startTime;
         int64_t prevUpdateTime;
+        int64_t prevUpdateTimeFile;
 
         int argCnt;
         char** orgArgv;
@@ -455,6 +458,7 @@ static const struct option long_options[] =
 
         /* in microseconds */
         static const int UPDATE_INTERVAL = 250000;
+        static const int UPDATE_INTERVAL_FILE = 1000000;
         CLIOptions()
         {
             for (int i = 0; i < MAX_VIEWS; i++)
@@ -481,6 +485,7 @@ static const struct option long_options[] =
             bForceY4m = false;
             startTime = x265_mdate();
             prevUpdateTime = 0;
+            prevUpdateTimeFile = 0;
             bDither = false;
             isAbrLadderConfig = false;
             enableScaler = false;
