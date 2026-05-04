@@ -37,6 +37,7 @@
 #include "slicetype.h"
 #include "ratecontrol.h"
 #include "sei.h"
+#include <atomic>
 
 #define BR_SHIFT  6
 #define CPB_SHIFT 4
@@ -188,7 +189,7 @@ RateControl::RateControl(x265_param& p, Encoder *top)
     m_rateFactorMaxDecrement = 0;
     m_fps = (double)m_param->fpsNum / m_param->fpsDenom;
     m_startEndOrder.set(0);
-    m_bTerminated = false;
+    m_bTerminated.store(false);
     m_finalFrameCount = 0;
     m_numEntries = 0;
     m_isSceneTransition = false;
@@ -1331,7 +1332,7 @@ int RateControl::rateControlStart(Frame* curFrame, RateControlEntry* rce, Encode
     int orderValue = m_startEndOrder.get();
     int startOrdinal = rce->encodeOrder * 2;
 
-    while (orderValue < startOrdinal && !m_bTerminated)
+    while (orderValue < startOrdinal && !m_bTerminated.load())
         orderValue = m_startEndOrder.waitForChange(orderValue);
 
     if (!curFrame)
@@ -1417,7 +1418,7 @@ int RateControl::rateControlStart(Frame* curFrame, RateControlEntry* rce, Encode
         int index = m_encOrder[rce->poc];
         copyRceData(rce, &m_rce2Pass[index]);
     }
-    rce->isActive = true;
+    std::atomic_ref<bool>(rce->isActive).store(true);
     if (!m_param->rc.bStatRead)
         rce->scenecut = false;
     rce->isFadeEnd = curFrame->m_lowres.bIsFadeEnd;
@@ -3093,7 +3094,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
 {
     int orderValue = m_startEndOrder.get();
     int endOrdinal = (rce->encodeOrder + m_param->frameNumThreads) * 2 - 1;
-    while (orderValue < endOrdinal && !m_bTerminated)
+    while (orderValue < endOrdinal && !m_bTerminated.load())
     {
         /* no more frames are being encoded, so fake the start event if we would
          * have blocked on it. Note that this does not enforce rateControlEnd()
@@ -3272,7 +3273,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
     {
         m_iBits = actualBits;
     }
-    rce->isActive = false;
+    std::atomic_ref<bool>(rce->isActive).store(false);
     // Allow rateControlStart of next frame only when rateControlEnd of previous frame is over
     m_startEndOrder.incr();
     return 0;
@@ -3387,7 +3388,7 @@ void RateControl::setFinalFrameCount(int count)
  * closed */
 void RateControl::terminate()
 {
-    m_bTerminated = true;
+    m_bTerminated.store(true);
     /* unblock waiting threads */
     m_startEndOrder.poke();
 }

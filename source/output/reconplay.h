@@ -27,6 +27,7 @@
 
 #include "x265.h"
 #include "threading.h"
+#include <atomic>
 #include <cstdio>
 
 namespace X265_NS {
@@ -50,7 +51,7 @@ protected:
 
     FILE*  outputPipe;     /* The output pipe for player */
     size_t frameSize;      /* size of one frame in pixels */
-    bool   threadActive;   /* worker thread is active */
+    std::atomic<bool> threadActive; /* worker thread is active */
     int    width;          /* width of frame */
     int    height;         /* height of frame */
     int    colorSpace;     /* color space of frame */

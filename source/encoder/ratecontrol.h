@@ -29,6 +29,7 @@
 #include "common.h"
 #include "sei.h"
 #include "ringmem.h"
+#include <atomic>
 
 namespace X265_NS {
 // encoder namespace
@@ -226,7 +227,7 @@ public:
      * rceEnd    11 */
     ThreadSafeInteger m_startEndOrder;
     int     m_finalFrameCount;   /* set when encoder begins flushing */
-    bool    m_bTerminated;       /* set true when encoder is closing */
+    std::atomic<bool> m_bTerminated;       /* set true when encoder is closing */
 
     /* hrd stuff */
     SEIBufferingPeriod m_bufPeriodSEI;

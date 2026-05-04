@@ -42,6 +42,7 @@
 #include "threadedme.h"
 
 #include "x265.h"
+#include <atomic>
 
 #if _MSC_VER
 #pragma warning(disable: 4996) // POSIX functions are just fine, thanks
@@ -1041,7 +1042,7 @@ void Encoder::updateVbvPlan(RateControl* rc)
     for (int i = 0; i < m_param->frameNumThreads; i++)
     {
         FrameEncoder *encoder = m_frameEncoder[i];
-        if (encoder->m_rce.isActive && encoder->m_rce.poc != rc->m_curSlice->m_poc)
+        if (std::atomic_ref<bool>(encoder->m_rce.isActive).load() && encoder->m_rce.poc != rc->m_curSlice->m_poc)
         {
             int64_t bits = m_param->rc.bEnableConstVbv ? (int64_t)encoder->m_rce.frameSizePlanned : (int64_t)X265_MAX(encoder->m_rce.frameSizeEstimated, encoder->m_rce.frameSizePlanned);
             rc->m_bufferFill -= bits;
