@@ -303,6 +303,12 @@ def main():
         write_compile_commands(pgo_consume_response_dir, 'c++ @pgo.rsp -c source/common/common.cpp')
         expect_pass(run_checker(pgo_consume_response_dir, '--required-flag-prefix=-fprofile-instr-use='))
 
+        pgo_consume_quoted_path_response_dir = root / 'pgo-consume-quoted-path-response-file'
+        pgo_consume_quoted_path_response_dir.mkdir()
+        (pgo_consume_quoted_path_response_dir / 'pgo path.rsp').write_text('-std=gnu++20 "-fprofile-instr-use=C:/Program Files/x265.profdata"')
+        write_compile_commands(pgo_consume_quoted_path_response_dir, 'c++ @"pgo path.rsp" -c source/common/common.cpp')
+        expect_pass(run_checker(pgo_consume_quoted_path_response_dir, '--required-flag-prefix=-fprofile-instr-use='))
+
         pgo_consume_response_missing_dir = root / 'pgo-consume-response-file-missing-prefix'
         pgo_consume_response_missing_dir.mkdir()
         (pgo_consume_response_missing_dir / 'pgo.rsp').write_text('-std=gnu++20 -fprofile-sample-use=/tmp/x265.profdata')
@@ -426,6 +432,15 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(mixed_msvc_fields_dir), 'duplicate standard flags -std=gnu++20,/std:c++20')
+
+        equivalent_std_fields_dir = root / 'equivalent-command-arguments-std'
+        write_compile_commands_records(equivalent_std_fields_dir, [{
+            'directory': str(equivalent_std_fields_dir),
+            'command': 'c++ -std gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+            'arguments': ['c++', '--std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(equivalent_std_fields_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
         missing_argument_std_dir = root / 'command-arguments-missing-std'
         write_compile_commands_records(missing_argument_std_dir, [{
@@ -598,6 +613,22 @@ def main():
         ])
         expect_pass(run_checker(root / 'mixed-c-cpp', '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8', '--min-cpp-commands=1'))
 
+        cxx_language_dir = root / 'x-cxx-language'
+        write_compile_commands_records(cxx_language_dir, [{
+            'directory': str(cxx_language_dir),
+            'command': 'cc -x c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(cxx_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        cxx_language_arguments_dir = root / 'x-cxx-language-arguments'
+        write_compile_commands_records(cxx_language_arguments_dir, [{
+            'directory': str(cxx_language_arguments_dir),
+            'arguments': ['cc', '-x', 'c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(cxx_language_arguments_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
         write_compile_commands(root / 'only-c', 'cc -std=c11 -c source/common/pixel.c', 'source/common/pixel.c')
         expect_fail(run_checker(root / 'only-c'), 'no C++ compile commands')
 
@@ -695,7 +726,14 @@ def main():
         ])
         expect_pass(run_checker(root / 'depth-exclude', '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=dynamicHDR10/'))
 
-        expect_fail(run_checker(root / 'pass', '--min-cpp-commands=2'), 'expected at least 2 C++ compile commands')
+        duplicate_source_dir = root / 'duplicate-source-min-cpp-commands'
+        write_compile_commands_entries(duplicate_source_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DSECOND_PASS=1 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_fail(run_checker(duplicate_source_dir, '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
+
+        expect_fail(run_checker(root / 'pass', '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
 
     print('compile command guardrails validated')
 

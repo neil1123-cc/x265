@@ -57,6 +57,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands
+          ninja -C build/cxx20-linux-gcc-compile-commands cli
           build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output smoke_linux_gcc.hevc 2>&1 | tee smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
           grep -Fq 'encoded 1 frames' smoke_linux_gcc.log
@@ -73,13 +75,23 @@ jobs:
             [ -n "$pgo_flag" ] || return 0
             check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"
           }
+          check_pgo_consume_commands build/8b-lib "$PGO_8B_LIB_FLAG" 50
+          check_pgo_consume_commands build/12b-lib "$PGO_12B_LIB_FLAG" 50
+          check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60
       - name: Threaded ME Smoke
         shell: bash
         run: |
           build/all/x265.exe --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
+          test -s smoke_threaded_me.hevc
           grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt
           ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
           grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
+      - name: GOP Output Smoke
+        shell: bash
+        run: |
+          gop_muxer.exe smoke_gop.gop
+          test -s smoke_gop.mp4
+          grep -q 'nb_read_frames=16' smoke_gop_mux_count.txt
 
 '''
 
@@ -152,6 +164,7 @@ jobs:
       - name: Smoke, Package, and Verify 8b-lib
         shell: bash
         run: |
+          test -s smoke_profile_8b.mp4
           test -s "$LLVM_PROFILE_FILE"
           test -s profile-smoke-8b.profdata
           ./profdata-dist/llvm-profdata.exe show profile-smoke-8b.profdata >/dev/null
@@ -160,6 +173,7 @@ jobs:
       - name: Smoke, Package, and Verify 12b-lib
         shell: bash
         run: |
+          test -s smoke_profile_12b.mp4
           test -s "$LLVM_PROFILE_FILE"
           test -s profile-smoke-12b.profdata
           ./profdata-dist/llvm-profdata.exe show profile-smoke-12b.profdata >/dev/null
@@ -168,6 +182,7 @@ jobs:
       - name: Smoke, Package, and Verify All
         shell: bash
         run: |
+          test -s smoke_profile_all.mp4
           test -s "$LLVM_PROFILE_FILE"
           test -s profile-smoke-all.profdata
           ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null
@@ -332,6 +347,30 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s smoke_threaded_me.hevc', 'echo skip-threaded-me-output-check')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: test -s smoke_threaded_me.hevc')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'gop_muxer.exe smoke_gop.gop', 'echo skip-gop-muxer')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: gop_muxer.exe smoke_gop.gop')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60', 'echo skip-all-pgo-consume')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands', 'echo skip-linux-gcc-compile-commands')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'update-deps.yml', 'python .github/scripts/check_ci_guards.py', 'python .github/scripts/check_dependency_patch_suffixes.py')
         expect_fail(run_checker(repo), 'missing required update-deps guard snippet: python .github/scripts/check_ci_guards.py')
 
@@ -352,6 +391,12 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', './profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null', 'test -s profile-smoke-all.profdata')
         expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'test -s smoke_profile_all.mp4', 'echo skip-profile-all-mp4')
+        expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: test -s smoke_profile_all.mp4')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
