@@ -30,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           python .github/scripts/check_ci_guards.py
+          python .github/scripts/test_check_ci_guards.py
           python .github/scripts/check_dependency_patch_suffixes.py
 
       - name: Get Latest FFmpeg Release

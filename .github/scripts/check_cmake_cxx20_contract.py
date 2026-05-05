@@ -30,7 +30,7 @@ WRAPPED_FLAG_COMMAND_ALLOWLIST = {
 }
 CXX_FLAG_VARIABLE_RE = re.compile(r'^CMAKE_CXX_FLAGS($|_)')
 BRACKET_COMMENT_RE = re.compile(r'#\[(=*)\[')
-CMAKE_TOKEN_RE = re.compile(r'"(?:[^"\\]|\\.)*"|\$<[^>]*>|[^\s()]+')
+CMAKE_TOKEN_RE = re.compile(r'\[=*\[[\s\S]*?\]=*\]|"(?:[^"\\]|\\.)*"|\$<[^>]*>|[^\s()]+')
 SCRIPT_SCAN_GLOBS = (
     '.github/workflows/*.yml',
     '.github/workflows/*.yaml',
@@ -66,6 +66,34 @@ SCRIPT_STANDARD_ALLOWLIST = (
     'if flag in GNU_DIALECT_DRIFT_FLAGS:',
     "STANDARD_PREFIXES = ('-std=', '--std=', '/std:')",
 )
+
+
+def strip_script_comment(line):
+    stripped = []
+    in_single_quote = False
+    in_double_quote = False
+    escaped = False
+    for char in line:
+        if escaped:
+            stripped.append(char)
+            escaped = False
+            continue
+        if char == '\\' and in_double_quote:
+            stripped.append(char)
+            escaped = True
+            continue
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            stripped.append(char)
+            continue
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            stripped.append(char)
+            continue
+        if char == '#' and not in_single_quote and not in_double_quote:
+            break
+        stripped.append(char)
+    return ''.join(stripped).strip()
 
 
 def allowed_script_standard_line(stripped):
@@ -109,11 +137,20 @@ def strip_cmake_comment(line, bracket_comment_end=None):
     return ''.join(stripped).strip(), bracket_comment_end
 
 
+def unquote_cmake_token(token):
+    if len(token) >= 2 and token[0] == token[-1] == '"':
+        return token[1:-1]
+    match = re.fullmatch(r'\[(=*)\[([\s\S]*)\]\1\]', token)
+    if match:
+        return match.group(2)
+    return token
+
+
 def tokenize_cmake_body(command):
     body = cmake_command_body(command)
     if body is None:
         return None
-    return [token.strip('"') for token in CMAKE_TOKEN_RE.findall(' '.join(body))]
+    return [unquote_cmake_token(token) for token in CMAKE_TOKEN_RE.findall(' '.join(body))]
 
 
 def cmake_command_name(command):
@@ -184,21 +221,28 @@ def parse_cmake_set(command):
     return parts[0], parts[1]
 
 
+def normalize_contract_value(name, value):
+    if name == 'CMAKE_CXX_STANDARD':
+        return value
+    return value.upper()
+
+
 def has_target_property_override(command):
     name = cmake_command_name(command)
     parts = tokenize_cmake_body(command)
     if parts is None:
         return False
+    upper_parts = [part.upper() for part in parts]
     if name == 'set_target_properties':
-        if 'PROPERTIES' not in parts:
+        if 'PROPERTIES' not in upper_parts:
             return False
-        properties_index = parts.index('PROPERTIES') + 1
-        return any(parts[index] in TARGET_PROPERTY_MARKERS for index in range(properties_index, len(parts), 2))
+        properties_index = upper_parts.index('PROPERTIES') + 1
+        return any(upper_parts[index] in TARGET_PROPERTY_MARKERS for index in range(properties_index, len(upper_parts), 2))
     if name == 'set_property':
-        if 'TARGET' not in parts:
+        if 'TARGET' not in upper_parts:
             return False
-        property_indices = [index for index, part in enumerate(parts) if part == 'PROPERTY']
-        return any(index + 1 < len(parts) and parts[index + 1] in TARGET_PROPERTY_MARKERS for index in property_indices)
+        property_indices = [index for index, part in enumerate(upper_parts) if part == 'PROPERTY']
+        return any(index + 1 < len(upper_parts) and upper_parts[index + 1] in TARGET_PROPERTY_MARKERS for index in property_indices)
     return False
 
 
@@ -238,14 +282,15 @@ def has_manual_standard_flag(command):
     if name in COMPILE_FLAG_COMMANDS:
         return contains_manual_standard_flag(parts)
     if name in COMPILE_FLAG_PROPERTY_COMMANDS:
-        property_indices = [index for index, part in enumerate(parts) if part in ('PROPERTIES', 'PROPERTY')]
+        upper_parts = [part.upper() for part in parts]
+        property_indices = [index for index, part in enumerate(upper_parts) if part in ('PROPERTIES', 'PROPERTY')]
         for property_index in property_indices:
             index = property_index + 1
             while index < len(parts):
-                if parts[index] in COMPILE_FLAG_PROPERTIES:
+                if upper_parts[index] in COMPILE_FLAG_PROPERTIES:
                     if index + 1 < len(parts) and contains_manual_standard_flag([parts[index + 1]]):
                         return True
-                    if parts[property_index] == 'PROPERTY':
+                    if upper_parts[property_index] == 'PROPERTY':
                         break
                     index += 2
                 else:
@@ -303,7 +348,7 @@ def check_contract(source_dir):
     for index, command in cmake_commands(top):
         parsed = parse_cmake_set(command)
         if parsed and parsed[0] in REQUIRED_TOP_LEVEL_CONTRACT:
-            top_settings[parsed[0]] = (parsed[1], index)
+            top_settings[parsed[0]] = (normalize_contract_value(parsed[0], parsed[1]), index)
     missing = [name for name in REQUIRED_TOP_LEVEL_CONTRACT if name not in top_settings]
     if missing:
         fail('missing top-level GNU++20 contract: ' + ', '.join(REQUIRED_TOP_LEVEL_LINES), top)
@@ -325,7 +370,8 @@ def check_contract(source_dir):
             if has_target_feature_override(command):
                 target_feature_overrides.append((path, index, command))
             if parsed and parsed[0] in REQUIRED_TOP_LEVEL_CONTRACT:
-                if parsed[1] != REQUIRED_TOP_LEVEL_CONTRACT[parsed[0]] or path != top:
+                parsed_value = normalize_contract_value(parsed[0], parsed[1])
+                if parsed_value != REQUIRED_TOP_LEVEL_CONTRACT[parsed[0]] or path != top:
                     extension_overrides.append((path, index, command))
             if has_manual_standard_flag(command):
                 manual_standard_flags.append((path, index, command))
@@ -334,8 +380,8 @@ def check_contract(source_dir):
     script_standard_flags = []
     for path in iter_script_scan_files(repo_root):
         for index, line in enumerate(path.read_text().splitlines(), 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#') or allowed_script_standard_line(stripped):
+            stripped = strip_script_comment(line)
+            if not stripped or allowed_script_standard_line(stripped):
                 continue
             if any(marker in stripped for marker in SCRIPT_STANDARD_MARKERS):
                 script_standard_flags.append((path, index, stripped))

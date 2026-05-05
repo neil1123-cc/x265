@@ -162,6 +162,26 @@ def main():
         }])
         expect_fail(run_checker(missing_file_field_dir), 'compile command entry #1 is missing file field')
 
+        nonobject_entry_dir = root / 'nonobject-entry'
+        write_compile_commands_records(nonobject_entry_dir, ['c++ -std=gnu++20 -c source/common/common.cpp'])
+        expect_fail(run_checker(nonobject_entry_dir), 'compile command entry #1 must be an object')
+
+        nonstring_file_dir = root / 'nonstring-file-field'
+        write_compile_commands_records(nonstring_file_dir, [{
+            'directory': str(nonstring_file_dir),
+            'command': 'c++ -std=gnu++20 -c source/common/common.cpp',
+            'file': 17,
+        }])
+        expect_fail(run_checker(nonstring_file_dir), 'compile command entry #1 file field must be a string')
+
+        nonstring_directory_dir = root / 'nonstring-directory-field'
+        write_compile_commands_records(nonstring_directory_dir, [{
+            'directory': 17,
+            'command': 'c++ -std=gnu++20 -c source/common/common.cpp',
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(nonstring_directory_dir), 'compile command entry #1 directory field must be a string')
+
         missing_command_fields_dir = root / 'missing-command-fields'
         write_compile_commands_records(missing_command_fields_dir, [{
             'directory': str(missing_command_fields_dir),
@@ -184,6 +204,14 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(nonlist_arguments_dir), 'compile command entry #1 arguments field must be a list')
+
+        nonstring_arguments_dir = root / 'nonstring-arguments-field'
+        write_compile_commands_records(nonstring_arguments_dir, [{
+            'directory': str(nonstring_arguments_dir),
+            'arguments': ['c++', '-std=gnu++20', 17, '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(nonstring_arguments_dir), 'compile command entry #1 arguments field must contain only strings')
 
         ci_shape_dir = root / 'ci-shape-dual-field-pass'
         write_compile_commands_records(ci_shape_dir, ci_shape_records(ci_shape_dir, root))
@@ -261,11 +289,68 @@ def main():
         }))
         expect_fail(run_ci_shape_checker(cpu_target_missing_dir), 'missing required flag -march=znver5 for file substring source/common/cpu.cpp')
 
+        shared_deps_shape_dir = root / 'ci-shape-shared-deps-dual-field-pass'
+        shared_deps_entries = (
+            ('source/input/lavf.cpp', ['-DX265_DEPTH=8', '-DENABLE_LAVF']),
+            ('source/output/mkv.cpp', ['-DX265_DEPTH=8', '-DENABLE_MKV']),
+            ('source/output/mp4.cpp', ['-DX265_DEPTH=8', '-DENABLE_LSMASH']),
+            ('source/common/common.cpp', ['-DX265_DEPTH=8']),
+            ('source/encoder/encoder.cpp', ['-DX265_DEPTH=8']),
+        )
+        write_compile_commands_records(shared_deps_shape_dir, [
+            {
+                'directory': str(shared_deps_shape_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags)} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in shared_deps_entries
+        ])
+        shared_deps_args = (
+            '--min-cpp-commands=5',
+            '--required-depth-define=-DX265_DEPTH=8',
+            '--forbidden-flag=-DX265_DEPTH=10',
+            '--forbidden-flag=-DX265_DEPTH=12',
+            '--required-file-substring=source/input/lavf.cpp',
+            '--required-file-substring=source/output/mkv.cpp',
+            '--required-file-substring=source/output/mp4.cpp',
+            '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF',
+            '--required-file-flag=source/output/mkv.cpp=-DENABLE_MKV',
+            '--required-file-flag=source/output/mp4.cpp=-DENABLE_LSMASH',
+            '--forbidden-file-flag=source/common/common.cpp=-DENABLE_LAVF',
+            '--forbidden-file-flag=source/common/common.cpp=-DENABLE_MKV',
+            '--forbidden-file-flag=source/common/common.cpp=-DENABLE_LSMASH',
+            '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LAVF',
+            '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_MKV',
+            '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LSMASH',
+        )
+        expect_pass(run_checker(shared_deps_shape_dir, *shared_deps_args))
+
+        shared_deps_common_leak_dir = root / 'ci-shape-shared-deps-common-arguments-leak'
+        write_compile_commands_records(shared_deps_common_leak_dir, [
+            {
+                'directory': str(shared_deps_common_leak_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags)} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *(flags + (['-DENABLE_LSMASH'] if file_path == 'source/common/common.cpp' else [])), '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in shared_deps_entries
+        ])
+        expect_fail(run_checker(shared_deps_common_leak_dir, *shared_deps_args), 'forbidden flag -DENABLE_LSMASH for file substring source/common/common.cpp')
+
         write_compile_commands(root / 'profiling-flags', 'c++ -std=gnu++20 -fprofile-instr-generate -fprofile-update=atomic -c source/common/common.cpp')
         expect_pass(run_checker(root / 'profiling-flags', '--required-flag=-fprofile-instr-generate', '--required-flag=-fprofile-update=atomic'))
 
         write_compile_commands(root / 'missing-profiling-flag', 'c++ -std=gnu++20 -fprofile-instr-generate -c source/common/common.cpp')
         expect_fail(run_checker(root / 'missing-profiling-flag', '--required-flag=-fprofile-instr-generate', '--required-flag=-fprofile-update=atomic'), 'missing required flag -fprofile-update=atomic')
+
+        malformed_required_file_flag_dir = root / 'malformed-required-file-flag'
+        write_compile_commands(malformed_required_file_flag_dir, 'c++ -std=gnu++20 -DENABLE_LAVF -c source/input/lavf.cpp', 'source/input/lavf.cpp')
+        expect_fail(run_checker(malformed_required_file_flag_dir, '--required-file-flag=source/input/lavf.cpp'), 'invalid file flag rule')
+
+        malformed_forbidden_file_flag_dir = root / 'malformed-forbidden-file-flag'
+        write_compile_commands(malformed_forbidden_file_flag_dir, 'c++ -std=gnu++20 -DENABLE_LAVF -c source/input/lavf.cpp', 'source/input/lavf.cpp')
+        expect_fail(run_checker(malformed_forbidden_file_flag_dir, '--forbidden-file-flag=source/input/lavf.cpp='), 'invalid file flag rule')
 
         profiling_mixed_fields_dir = root / 'profiling-mixed-fields'
         write_compile_commands_records(profiling_mixed_fields_dir, [{
@@ -282,8 +367,8 @@ def main():
         write_compile_commands(root / 'pgo-consume-missing', 'c++ -std=gnu++20 -fprofile-sample-use=/tmp/x265.profdata -c source/common/common.cpp')
         expect_fail(run_checker(root / 'pgo-consume-missing', '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
 
-        write_compile_commands(root / 'pgo-consume-substring', 'c++ -std=gnu++20 -fprofile-instr-use-wrong=/tmp/x265.profdata -c source/common/common.cpp')
-        expect_fail(run_checker(root / 'pgo-consume-substring', '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
+        write_compile_commands(root / 'pgo-consume-split-spelling', 'c++ -std=gnu++20 -fprofile-instr-use /tmp/x265.profdata -c source/common/common.cpp')
+        expect_fail(run_checker(root / 'pgo-consume-split-spelling', '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
 
         write_compile_commands(root / 'pgo-consume-generate-leak', 'c++ -std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata -fprofile-instr-generate -fprofile-update=atomic -c source/common/common.cpp')
         expect_fail(run_checker(root / 'pgo-consume-generate-leak', '--required-flag-prefix=-fprofile-instr-use=', '--forbidden-flag=-fprofile-instr-generate', '--forbidden-flag=-fprofile-update=atomic'), 'forbidden flag -fprofile-instr-generate')
@@ -308,6 +393,26 @@ def main():
         (pgo_consume_quoted_path_response_dir / 'pgo path.rsp').write_text('-std=gnu++20 "-fprofile-instr-use=C:/Program Files/x265.profdata"')
         write_compile_commands(pgo_consume_quoted_path_response_dir, 'c++ @"pgo path.rsp" -c source/common/common.cpp')
         expect_pass(run_checker(pgo_consume_quoted_path_response_dir, '--required-flag-prefix=-fprofile-instr-use='))
+
+        pgo_consume_arguments_response_dir = root / 'pgo-consume-arguments-response-file'
+        pgo_consume_arguments_response_dir.mkdir()
+        (pgo_consume_arguments_response_dir / 'pgo.rsp').write_text('-std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata')
+        write_compile_commands_records(pgo_consume_arguments_response_dir, [{
+            'directory': str(pgo_consume_arguments_response_dir),
+            'arguments': ['c++', '@pgo.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(pgo_consume_arguments_response_dir, '--required-flag-prefix=-fprofile-instr-use='))
+
+        pgo_consume_arguments_response_missing_dir = root / 'pgo-consume-arguments-response-missing-prefix'
+        pgo_consume_arguments_response_missing_dir.mkdir()
+        (pgo_consume_arguments_response_missing_dir / 'pgo.rsp').write_text('-std=gnu++20 -fprofile-sample-use=/tmp/x265.profdata')
+        write_compile_commands_records(pgo_consume_arguments_response_missing_dir, [{
+            'directory': str(pgo_consume_arguments_response_missing_dir),
+            'arguments': ['c++', '@pgo.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(pgo_consume_arguments_response_missing_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
 
         pgo_consume_response_missing_dir = root / 'pgo-consume-response-file-missing-prefix'
         pgo_consume_response_missing_dir.mkdir()
@@ -589,6 +694,15 @@ def main():
         }])
         expect_fail(run_checker(file_flag_mixed_fields_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
 
+        file_flag_command_missing_dir = root / 'file-flag-command-missing'
+        write_compile_commands_records(file_flag_command_missing_dir, [{
+            'directory': str(file_flag_command_missing_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/input/lavf.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-DENABLE_LAVF', '-c', 'source/input/lavf.cpp'],
+            'file': str(root / 'source/input/lavf.cpp'),
+        }])
+        expect_fail(run_checker(file_flag_command_missing_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
+
         file_forbidden_mixed_fields_dir = root / 'file-forbidden-mixed-fields'
         write_compile_commands_records(file_forbidden_mixed_fields_dir, [{
             'directory': str(file_forbidden_mixed_fields_dir),
@@ -597,6 +711,29 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(file_forbidden_mixed_fields_dir, '--forbidden-file-flag=source/common/common.cpp=-DENABLE_LAVF'), 'forbidden flag -DENABLE_LAVF for file substring source/common/common.cpp')
+
+        file_forbidden_command_only_dir = root / 'file-forbidden-command-only'
+        write_compile_commands_records(file_forbidden_command_only_dir, [{
+            'directory': str(file_forbidden_command_only_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(file_forbidden_command_only_dir, '--forbidden-file-flag=source/common/common.cpp=-DENABLE_LAVF'), 'forbidden flag -DENABLE_LAVF for file substring source/common/common.cpp')
+
+        multi_match_file_flag_dir = root / 'multi-match-file-flag'
+        write_compile_commands_entries(multi_match_file_flag_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/input/yuv.cpp', 'source/input/yuv.cpp'),
+        ])
+        expect_fail(run_checker(multi_match_file_flag_dir, '--required-file-flag=source/input/=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/')
+
+        multi_match_forbidden_file_flag_dir = root / 'multi-match-forbidden-file-flag'
+        write_compile_commands_entries(multi_match_forbidden_file_flag_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/output/output.cpp', 'source/output/output.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_MKV -c source/output/mkv.cpp', 'source/output/mkv.cpp'),
+        ])
+        expect_fail(run_checker(multi_match_forbidden_file_flag_dir, '--forbidden-file-flag=source/output/=-DENABLE_MKV'), 'forbidden flag -DENABLE_MKV for file substring source/output/')
 
         write_compile_commands(root / 'missing-file-flag', 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/input/lavf.cpp', 'source/input/lavf.cpp')
         expect_fail(run_checker(root / 'missing-file-flag', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')

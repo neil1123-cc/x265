@@ -91,6 +91,7 @@ REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS = (
 )
 REQUIRED_UPDATE_DEPS_SNIPPETS = (
     'python .github/scripts/check_ci_guards.py',
+    'python .github/scripts/test_check_ci_guards.py',
     'python .github/scripts/check_dependency_patch_suffixes.py',
     'for anchor in ffmpeg-ref mimalloc-ref obuparse-ref lsmash-ref lsmash-cache-suffix gop-muxer-ref gop-muxer-cache-suffix; do',
     'Unexpected dependency update diff paths:',

@@ -14,6 +14,10 @@ inputs:
     description: obuparse ref to checkout
     required: false
     default: v2.0.2
+  lsmash-repository:
+    description: L-SMASH repository to checkout
+    required: false
+    default: vimeo/l-smash
   lsmash-ref:
     description: L-SMASH ref to checkout
     required: false
@@ -22,10 +26,18 @@ inputs:
     description: Cache suffix appended after the L-SMASH ref
     required: false
     default: clang-coff-refptr-v2
+  lsmash-path:
+    description: L-SMASH checkout path
+    required: false
+    default: l-smash
   lsmash-patch-path:
     description: Patch path relative to the checked-out L-SMASH directory
     required: false
     default: ../x265/.github/patches/l-smash-clang-coff-refptr.patch
+  gop-muxer-repository:
+    description: GOP muxer repository to checkout
+    required: false
+    default: msg7086/gop_muxer
   gop-muxer-ref:
     description: GOP muxer ref to checkout
     required: false
@@ -34,10 +46,57 @@ inputs:
     description: Cache suffix appended after the GOP muxer ref
     required: false
     default: lsmash-add-box-v2-clang-gnu20
+  gop-muxer-path:
+    description: GOP muxer checkout path
+    required: false
+    default: gop_muxer
   gop-muxer-patch-path:
     description: Patch path relative to the checked-out GOP muxer directory
     required: false
     default: ../x265/.github/patches/gop-muxer-lsmash-add-box.patch
+          key: lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}
+        git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}
+        git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
+        git diff --check -- ${{ inputs.lsmash-patch-check-paths }}
+        grep -Fq 'lsmash_local_isom_box_type' codecs/description.c
+        grep -Fq 'return isom_get_sample_group_description_common( list, ISOM_GROUP_TYPE_PROL );' core/isom.c
+          key: gop-muxer-${{ inputs.gop-muxer-repository }}-${{ inputs.gop-muxer-ref }}-${{ inputs.gop-muxer-cache-suffix }}
+        git -c core.autocrlf=false reset --hard HEAD
+        git apply --check ${{ inputs.gop-muxer-patch-path }}
+        git apply ${{ inputs.gop-muxer-patch-path }}
+        git diff --check -- gop_muxer.cpp
+        grep -Fq 'lsmash_add_box(lsmash_root_as_box(p_root), free_box)' gop_muxer.cpp
+        c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o
+'''
+
+UPDATE_DEPS_TEXT = '''
+name: Update Dependencies
+jobs:
+  update-deps:
+    steps:
+      - name: Get Latest L-SMASH Commit
+        id: lsmash
+        run: |
+          SHA=$(curl -fsSL "https://api.github.com/repos/vimeo/l-smash/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+      - name: Get Latest GOP muxer Commit
+        id: gop_muxer
+        run: |
+          SHA=$(curl -fsSL "https://api.github.com/repos/msg7086/gop_muxer/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+      - name: Update Dependency Refs
+        run: |
+          sed -i "/lsmash-ref:/,/lsmash-cache-suffix:/s/default: [0-9a-f]\\{40\\}/default: ${{ steps.lsmash.outputs.sha }}/" "$action"
+          sed -i "/gop-muxer-ref:/,/gop-muxer-cache-suffix:/s/default: [0-9a-f]\\{40\\}/default: ${{ steps.gop_muxer.outputs.sha }}/" "$action"
+      - name: Update Deps Cache
+        run: |
+          cat > .github/deps-cache.json << EOF
+          {
+            "lsmash": "${{ steps.lsmash.outputs.sha }}",
+            "obuparse": "${{ steps.obuparse.outputs.tag }}",
+            "gop_muxer": "${{ steps.gop_muxer.outputs.sha }}"
+          }
+          EOF
 '''
 
 
@@ -60,7 +119,9 @@ def write_repo(repo):
     patches = repo / '.github' / 'patches'
     action.mkdir(parents=True)
     patches.mkdir(parents=True)
+    (repo / '.github' / 'workflows').mkdir(parents=True)
     (action / 'action.yml').write_text(ACTION_TEXT)
+    (repo / '.github' / 'workflows' / 'update-deps.yml').write_text(UPDATE_DEPS_TEXT)
     (repo / '.github' / 'deps-cache.json').write_text(json.dumps({
         'lsmash': '04e39f1fb232c332d4b04a1043c02c7c2d282d00',
         'obuparse': 'v2.0.2',
@@ -139,7 +200,91 @@ def main():
         )
         expect_fail(run('--repo-root', str(repo)), ".github/deps-cache.json gop_muxer='5677cf5ef905c2412ed31de300cd1a08b341d21d' does not match gop-muxer-ref default '1111111111111111111111111111111111111111'")
 
-    print('dependency patch suffix guardrails validated')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
+            'default: vimeo/l-smash',
+            'default: fork/l-smash',
+        )
+        expect_fail(run('--repo-root', str(repo)), "L-SMASH repository input lsmash-repository is 'fork/l-smash'")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
+            'default: clang-coff-refptr-v2',
+            'default: clang coff refptr v2',
+        )
+        expect_fail(run('--repo-root', str(repo)), 'L-SMASH cache suffix input lsmash-cache-suffix must be a non-empty cache-key suffix')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'deps-cache.json',
+            '04e39f1fb232c332d4b04a1043c02c7c2d282d00',
+            'master',
+        )
+        expect_fail(run('--repo-root', str(repo)), ".github/deps-cache.json lsmash='master' does not match lsmash-ref default")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'workflows' / 'update-deps.yml',
+            'https://api.github.com/repos/msg7086/gop_muxer/commits?sha=master&per_page=1',
+            'https://api.github.com/repos/other/gop_muxer/commits?sha=master&per_page=1',
+        )
+        expect_fail(run('--repo-root', str(repo)), 'update-deps workflow is not pinned to GOP muxer provenance snippet')
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
+            '    default: clang-coff-refptr-v2\n  lsmash-path:',
+            '  lsmash-path:',
+        )
+        expect_fail(run('--repo-root', str(repo)), 'lsmash-cache-suffix default not found')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
+            'git -c core.autocrlf=false reset --hard HEAD',
+            'git reset --hard HEAD',
+        )
+        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing GOP muxer patch preflight snippet: git -c core.autocrlf=false reset --hard HEAD')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        git(repo, 'init')
+        git(repo, 'config', 'user.name', 'test')
+        git(repo, 'config', 'user.email', 'test@example.com')
+        git(repo, 'add', '.')
+        git(repo, 'commit', '-m', 'base')
+        base = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+
+        (repo / '.github' / 'patches' / 'gop-muxer-lsmash-add-box.patch').write_text('gop patch v2\n')
+        git(repo, 'add', '.')
+        git(repo, 'commit', '-m', 'gop patch without suffix')
+        no_suffix = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+        expect_fail(run('--repo-root', str(repo), '--before', base, '--after', no_suffix), 'changed without bumping gop-muxer-cache-suffix')
+
+        replace_text(
+            repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
+            'default: lsmash-add-box-v2-clang-gnu20',
+            'default: lsmash-add-box-v3-clang-gnu20',
+        )
+        git(repo, 'add', '.')
+        git(repo, 'commit', '-m', 'gop suffix bumped')
+        bumped = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+        expect_pass(run('--repo-root', str(repo), '--before', base, '--after', bumped))
 
 
 if __name__ == '__main__':
