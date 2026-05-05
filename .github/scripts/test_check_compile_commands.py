@@ -50,7 +50,7 @@ def ci_shape_records(build_dir, root, overrides=None):
         ('source/encoder/ratecontrol.cpp', ['-DX265_DEPTH=8', '-Werror=deprecated-volatile']),
         ('source/output/output.cpp', ['-DX265_DEPTH=10']),
         ('source/output/reconplay.cpp', ['-DX265_DEPTH=8', '-Werror=deprecated-volatile']),
-        ('source/common/winxp.cpp', ['-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '-DX265_DEPTH=8']),
+        ('source/common/winxp.cpp', ['-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '-DX265_DEPTH=8']),
         ('source/common/cpu.cpp', ['-march=znver5', '-DX265_DEPTH=8']),
     )
     records = []
@@ -89,7 +89,7 @@ CI_SHAPE_ARGS = (
     '--required-file-flag=source/output/output.cpp=-DX265_DEPTH=10',
     '--required-file-flag=source/output/reconplay.cpp=-Werror=deprecated-volatile',
     '--required-file-flag=source/output/reconplay.cpp=-DX265_DEPTH=8',
-    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP',
+    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7',
     '--required-file-flag=source/common/winxp.cpp=-DX265_DEPTH=8',
     '--required-file-flag=source/common/cpu.cpp=-march=znver5',
     '--required-file-flag=source/common/cpu.cpp=-DX265_DEPTH=8',
@@ -107,7 +107,7 @@ CI_SHAPE_ARGS = (
     '--forbidden-file-flag=source/encoder/ratecontrol.cpp=-DX265_DEPTH=12',
     '--forbidden-file-flag=source/output/reconplay.cpp=-DX265_DEPTH=10',
     '--forbidden-file-flag=source/output/reconplay.cpp=-DX265_DEPTH=12',
-    '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7',
+    '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP',
     '--forbidden-file-flag=source/common/winxp.cpp=-DX265_DEPTH=10',
     '--forbidden-file-flag=source/common/winxp.cpp=-DX265_DEPTH=12',
     '--forbidden-file-flag=source/common/cpu.cpp=-DX265_DEPTH=10',
@@ -274,10 +274,10 @@ def main():
         winxp_forbidden_dir = root / 'ci-shape-winxp-arguments-forbidden-target'
         write_compile_commands_records(winxp_forbidden_dir, ci_shape_records(winxp_forbidden_dir, root, {
             'source/common/winxp.cpp': {
-                'argument_flags': ['-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '-DX265_DEPTH=8'],
+                'argument_flags': ['-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '-DX265_DEPTH=8'],
             },
         }))
-        expect_fail(run_ci_shape_checker(winxp_forbidden_dir), 'forbidden flag -D_WIN32_WINNT=_WIN32_WINNT_WIN7 for file substring source/common/winxp.cpp')
+        expect_fail(run_ci_shape_checker(winxp_forbidden_dir), 'forbidden flag -D_WIN32_WINNT=_WIN32_WINNT_WINXP for file substring source/common/winxp.cpp')
 
         cpu_target_missing_dir = root / 'ci-shape-cpu-target-command-missing-march'
         write_compile_commands_records(cpu_target_missing_dir, ci_shape_records(cpu_target_missing_dir, root, {
