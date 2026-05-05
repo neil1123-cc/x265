@@ -75,9 +75,9 @@ void ShortYuv::destroy()
 
 void ShortYuv::clear()
 {
-    memset(m_buf[0], 0, (m_size  * m_size) *  sizeof(int16_t));
-    memset(m_buf[1], 0, (m_csize * m_csize) * sizeof(int16_t));
-    memset(m_buf[2], 0, (m_csize * m_csize) * sizeof(int16_t));
+    std::memset(m_buf[0], 0, (m_size  * m_size) *  sizeof(int16_t));
+    std::memset(m_buf[1], 0, (m_csize * m_csize) * sizeof(int16_t));
+    std::memset(m_buf[2], 0, (m_csize * m_csize) * sizeof(int16_t));
 }
 
 void ShortYuv::subtract(const Yuv& srcYuv0, const Yuv& srcYuv1, uint32_t log2Size, int picCsp)

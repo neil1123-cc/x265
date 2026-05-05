@@ -1042,12 +1042,12 @@ void extendPicBorder(pixel* pic, intptr_t stride, int width, int height, int mar
     /* copy top row to create above margin */
     pixel* top = pic - marginX;
     for (int y = 0; y < marginY; y++)
-        memcpy(top - (y + 1) * stride, top, stride * sizeof(pixel));
+        std::memcpy(top - (y + 1) * stride, top, stride * sizeof(pixel));
 
     /* copy bottom row to create below margin */
     pixel* bot = pic - marginX + (height - 1) * stride;
     for (int y = 0; y < marginY; y++)
-        memcpy(bot + (y + 1) * stride, bot, stride * sizeof(pixel));
+        std::memcpy(bot + (y + 1) * stride, bot, stride * sizeof(pixel));
 }
 
 /* Initialize entries for pixel functions defined in this file */

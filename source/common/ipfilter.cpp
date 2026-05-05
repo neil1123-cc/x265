@@ -70,8 +70,8 @@ static void extendCURowColBorder(pixel* txt, intptr_t stride, int width, int hei
         }
 
 #else
-        memset(txt - marginX, txt[0], marginX);
-        memset(txt + width, txt[width - 1], marginX);
+        std::memset(txt - marginX, txt[0], marginX);
+        std::memset(txt + width, txt[width - 1], marginX);
 #endif
 
         txt += stride;

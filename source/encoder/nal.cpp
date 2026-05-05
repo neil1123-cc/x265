@@ -51,7 +51,7 @@ void NALList::takeContents(NALList& other)
 
     /* copy packet data */
     m_numNal = other.m_numNal;
-    memcpy(m_nal, other.m_nal, sizeof(x265_nal) * m_numNal);
+    std::memcpy(m_nal, other.m_nal, sizeof(x265_nal) * m_numNal);
 
     /* reset other list, re-allocate their buffer with same size */
     other.m_numNal = 0;
@@ -74,7 +74,7 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
         uint8_t *temp = X265_MALLOC(uint8_t, nextSize);
         if (temp)
         {
-            memcpy(temp, m_buffer, m_occupancy);
+            std::memcpy(temp, m_buffer, m_occupancy);
 
             /* fixup existing payload pointers */
             for (uint32_t i = 0; i < m_numNal; i++)
@@ -101,12 +101,12 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
     }
     else if (!m_numNal || nalUnitType == NAL_UNIT_VPS || nalUnitType == NAL_UNIT_SPS || nalUnitType == NAL_UNIT_PPS || nalUnitType == NAL_UNIT_UNSPECIFIED)
     {
-        memcpy(out, startCodePrefix, 4);
+        std::memcpy(out, startCodePrefix, 4);
         bytes += 4;
     }
     else
     {
-        memcpy(out, startCodePrefix + 1, 3);
+        std::memcpy(out, startCodePrefix + 1, 3);
         bytes += 3;
     }
 
@@ -142,7 +142,7 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
     if (m_extraOccupancy)
     {
         /* these bytes were escaped by serializeSubstreams */
-        memcpy(out + bytes, m_extraBuffer, m_extraOccupancy);
+        std::memcpy(out + bytes, m_extraBuffer, m_extraOccupancy);
         bytes += m_extraOccupancy;
         m_extraOccupancy = 0;
     }

@@ -354,11 +354,11 @@ void Lowres::init(PicYuv *origPic, int poc)
     frameNum = poc;
     leadingBframes = 0;
     indB = 0;
-    memset(costEst, -1, sizeof(costEst));
-    memset(weightedCostDelta, 0, sizeof(weightedCostDelta));
+    std::memset(costEst, -1, sizeof(costEst));
+    std::memset(weightedCostDelta, 0, sizeof(weightedCostDelta));
 
     if (qpAqOffset && invQscaleFactor)
-        memset(costEstAq, -1, sizeof(costEstAq));
+        std::memset(costEstAq, -1, sizeof(costEstAq));
 
     for (int y = 0; y < bframes + 2; y++)
         for (int x = 0; x < bframes + 2; x++)
@@ -421,7 +421,7 @@ void Lowres::init(PicYuv *origPic, int poc)
     {
         int cuCount = maxBlocksInRow * maxBlocksInCol;
         int cuCountFullRes = (origPic->m_param->rc.qgSize > 8) ? cuCount : cuCount << 2;
-        memset(qpAqOffset, 0, sizeof(double) * cuCountFullRes);
-        memset(qpAqMotionOffset, 0, sizeof(double) * cuCountFullRes);
+        std::memset(qpAqOffset, 0, sizeof(double) * cuCountFullRes);
+        std::memset(qpAqMotionOffset, 0, sizeof(double) * cuCountFullRes);
     }
 }

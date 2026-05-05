@@ -62,7 +62,7 @@ FrameEncoder::FrameEncoder()
     m_cuGeoms = NULL;
     m_ctuGeomMap = NULL;
     m_localTldIdx = 0;
-    memset(&m_rce, 0, sizeof(RateControlEntry));
+    std::memset(&m_rce, 0, sizeof(RateControlEntry));
     for (int layer = 0; layer < MAX_LAYERS; layer++)
     {
         m_prevOutputTime[layer] = x265_mdate();
@@ -194,7 +194,7 @@ bool FrameEncoder::init(Encoder *top, int numRows, int numCols)
     if (m_param->noiseReductionIntra || m_param->noiseReductionInter)
         m_nr = X265_MALLOC(NoiseReduction, 1);
     if (m_nr)
-        memset(m_nr, 0, sizeof(NoiseReduction));
+        std::memset(m_nr, 0, sizeof(NoiseReduction));
     else
         m_param->noiseReductionIntra = m_param->noiseReductionInter = 0;
 
@@ -234,7 +234,7 @@ bool FrameEncoder::initializeGeoms()
 
     // body
     CUData::calcCTUGeoms(maxCUSize, maxCUSize, maxCUSize, minCUSize, m_cuGeoms);
-    memset(m_ctuGeomMap, 0, sizeof(uint32_t) * m_numRows * m_numCols);
+    std::memset(m_ctuGeomMap, 0, sizeof(uint32_t) * m_numRows * m_numCols);
     if (allocGeoms == 1)
         return true;
 
@@ -355,7 +355,7 @@ void FrameEncoder::threadMain()
             while (!m_frame[0]->m_ctuInfo)
                 m_frame[0]->m_copied.wait();
         }
-        if ((m_param->bAnalysisType == AVC_INFO) && !strlen(m_param->analysisSave) && !strlen(m_param->analysisLoad) && !(IS_X265_TYPE_I(m_frame[0]->m_lowres.sliceType)))
+        if ((m_param->bAnalysisType == AVC_INFO) && !std::strlen(m_param->analysisSave) && !std::strlen(m_param->analysisLoad) && !(IS_X265_TYPE_I(m_frame[0]->m_lowres.sliceType)))
         {
             while (((m_frame[0]->m_analysisData.interData == NULL && m_frame[0]->m_analysisData.intraData == NULL) || (uint32_t)m_frame[0]->m_poc != m_frame[0]->m_analysisData.poc))
                 m_frame[0]->m_copyMVType.wait();
@@ -392,7 +392,7 @@ bool FrameEncoder::writeToneMapInfo(x265_sei_payload *payload)
     bool payloadChange = false;
     if (m_top->m_prevTonemapPayload.payload != NULL && payload->payloadSize == m_top->m_prevTonemapPayload.payloadSize)
     {
-        if (memcmp(m_top->m_prevTonemapPayload.payload, payload->payload, payload->payloadSize) != 0)
+        if (std::memcmp(m_top->m_prevTonemapPayload.payload, payload->payload, payload->payloadSize) != 0)
             payloadChange = true;
     }
     else
@@ -407,7 +407,7 @@ bool FrameEncoder::writeToneMapInfo(x265_sei_payload *payload)
     {
         m_top->m_prevTonemapPayload.payloadType = payload->payloadType;
         m_top->m_prevTonemapPayload.payloadSize = payload->payloadSize;
-        memcpy(m_top->m_prevTonemapPayload.payload, payload->payload, payload->payloadSize);
+        std::memcpy(m_top->m_prevTonemapPayload.payload, payload->payload, payload->payloadSize);
     }
 
     bool isIDR = m_frame[0]->m_lowres.sliceType == X265_TYPE_IDR;
@@ -473,7 +473,7 @@ void FrameEncoder::compressFrame(int layer)
     m_SSDY[layer] = m_SSDU[layer] = m_SSDV[layer] = 0;
     m_ssim[layer] = 0;
     m_ssimCnt[layer] = 0;
-    memset(&(m_frame[layer]->m_encData->m_frameStats), 0, sizeof(m_frame[layer]->m_encData->m_frameStats));
+    std::memset(&(m_frame[layer]->m_encData->m_frameStats), 0, sizeof(m_frame[layer]->m_encData->m_frameStats));
     m_sLayerId = layer;
 
     if (m_param->rc.aqMode != X265_AQ_EDGE_BIASED && m_param->rc.aqMode != X265_AQ_EDGE && m_param->recursionSkipMode == EDGE_BASED_RSKIP)
@@ -547,7 +547,7 @@ void FrameEncoder::compressFrame(int layer)
         m_cuStats.countWeightAnalyze++;
         ScopedElapsedTime time(m_cuStats.weightAnalyzeTime);
 #endif
-        if (strlen(m_param->analysisLoad))
+        if (std::strlen(m_param->analysisLoad))
         {
             for (int list = 0; list < slice->isInterB() + 1; list++) 
             {
@@ -572,7 +572,7 @@ void FrameEncoder::compressFrame(int layer)
     else
         slice->disableWeights();
 
-    if (strlen(m_param->analysisSave) && (bUseWeightP || bUseWeightB))
+    if (std::strlen(m_param->analysisSave) && (bUseWeightP || bUseWeightB))
         reuseWP = (WeightParam*)m_frame[layer]->m_analysisData.wt;
     // Generate motion references
     int numPredDir = slice->isInterP() ? 1 : slice->isInterB() ? 2 : 0;
@@ -586,7 +586,7 @@ void FrameEncoder::compressFrame(int layer)
             slice->m_refReconPicList[l][ref] = slice->m_refFrameList[l][ref]->m_reconPic[0];
             m_mref[l][ref].init(slice->m_refReconPicList[l][ref], w, *m_param);
         }
-        if (strlen(m_param->analysisSave) && (bUseWeightP || bUseWeightB))
+        if (std::strlen(m_param->analysisSave) && (bUseWeightP || bUseWeightB))
         {
             for (int i = 0; i < (m_param->internalCsp != X265_CSP_I400 ? 3 : 1); i++)
                 *(reuseWP++) = slice->m_weightPredTable[l][0][i];
@@ -623,8 +623,8 @@ void FrameEncoder::compressFrame(int layer)
         }
         else if (m_param->numScalableLayers > 1)
         {
-            memset(m_frame[layer]->m_lowres.qpCuTreeOffset, 0, sizeof(double)*ncu);
-            memset(m_frame[layer]->m_lowres.qpAqOffset, 0, sizeof(double)* ncu);
+            std::memset(m_frame[layer]->m_lowres.qpCuTreeOffset, 0, sizeof(double)*ncu);
+            std::memset(m_frame[layer]->m_lowres.qpAqOffset, 0, sizeof(double)* ncu);
         }
 
         m_frame[layer]->m_encData->m_avgQpAq = m_frame[0]->m_encData->m_avgQpAq;
@@ -660,8 +660,8 @@ void FrameEncoder::compressFrame(int layer)
                 {
                     int numAQPartInWidth = (m_frame[0]->m_fencPic->m_picWidth + aqPartWidth - 1) / aqPartWidth;
                     int numAQPartInHeight = (m_frame[0]->m_fencPic->m_picHeight + aqPartHeight - 1) / aqPartHeight;
-                    memset(m_frame[layer]->m_lowres.pAQLayer[d].dQpOffset, 0, sizeof(double)*numAQPartInWidth* numAQPartInHeight);
-                    memset(m_frame[layer]->m_lowres.pAQLayer[d].dCuTreeOffset, 0, sizeof(double)* numAQPartInWidth* numAQPartInHeight);
+                    std::memset(m_frame[layer]->m_lowres.pAQLayer[d].dQpOffset, 0, sizeof(double)*numAQPartInWidth* numAQPartInHeight);
+                    std::memset(m_frame[layer]->m_lowres.pAQLayer[d].dCuTreeOffset, 0, sizeof(double)* numAQPartInWidth* numAQPartInHeight);
                 }
             }
         }
@@ -1089,12 +1089,12 @@ void FrameEncoder::compressFrame(int layer)
         //Reset the MCSTF context in Frame Encoder and Frame
         for (int i = 0; i < (m_frame[layer]->m_mcstf->m_range << 1); i++)
         {
-            memset(m_frame[layer]->m_mcstfRefList[i].mvs0, 0, sizeof(MV) * ((m_param->sourceWidth / 16) * (m_param->sourceHeight / 16)));
-            memset(m_frame[layer]->m_mcstfRefList[i].mvs1, 0, sizeof(MV) * ((m_param->sourceWidth / 16) * (m_param->sourceHeight / 16)));
-            memset(m_frame[layer]->m_mcstfRefList[i].mvs2, 0, sizeof(MV) * ((m_param->sourceWidth / 16) * (m_param->sourceHeight / 16)));
-            memset(m_frame[layer]->m_mcstfRefList[i].mvs,  0, sizeof(MV) * ((m_param->sourceWidth / 4) * (m_param->sourceHeight / 4)));
-            memset(m_frame[layer]->m_mcstfRefList[i].noise, 0, sizeof(int) * ((m_param->sourceWidth / 4) * (m_param->sourceHeight / 4)));
-            memset(m_frame[layer]->m_mcstfRefList[i].error, 0, sizeof(int) * ((m_param->sourceWidth / 4) * (m_param->sourceHeight / 4)));
+            std::memset(m_frame[layer]->m_mcstfRefList[i].mvs0, 0, sizeof(MV) * ((m_param->sourceWidth / 16) * (m_param->sourceHeight / 16)));
+            std::memset(m_frame[layer]->m_mcstfRefList[i].mvs1, 0, sizeof(MV) * ((m_param->sourceWidth / 16) * (m_param->sourceHeight / 16)));
+            std::memset(m_frame[layer]->m_mcstfRefList[i].mvs2, 0, sizeof(MV) * ((m_param->sourceWidth / 16) * (m_param->sourceHeight / 16)));
+            std::memset(m_frame[layer]->m_mcstfRefList[i].mvs,  0, sizeof(MV) * ((m_param->sourceWidth / 4) * (m_param->sourceHeight / 4)));
+            std::memset(m_frame[layer]->m_mcstfRefList[i].noise, 0, sizeof(int) * ((m_param->sourceWidth / 4) * (m_param->sourceHeight / 4)));
+            std::memset(m_frame[layer]->m_mcstfRefList[i].error, 0, sizeof(int) * ((m_param->sourceWidth / 4) * (m_param->sourceHeight / 4)));
 
             m_frame[layer]->m_mcstf->m_numRef = 0;
         }
@@ -1333,9 +1333,9 @@ void FrameEncoder::compressFrame(int layer)
             for (int i = 0; i < numTLD; i++)
             {
                 NoiseReduction* nr = &m_tld[i].analysis.m_quant.m_frameNr[m_jpId];
-                memcpy(nr->nrOffsetDenoise, m_nr->nrOffsetDenoise, sizeof(uint16_t)* MAX_NUM_TR_CATEGORIES * MAX_NUM_TR_COEFFS);
-                memset(nr->nrCount, 0, sizeof(uint32_t)* MAX_NUM_TR_CATEGORIES);
-                memset(nr->nrResidualSum, 0, sizeof(uint32_t)* MAX_NUM_TR_CATEGORIES * MAX_NUM_TR_COEFFS);
+                std::memcpy(nr->nrOffsetDenoise, m_nr->nrOffsetDenoise, sizeof(uint16_t)* MAX_NUM_TR_CATEGORIES * MAX_NUM_TR_COEFFS);
+                std::memset(nr->nrCount, 0, sizeof(uint32_t)* MAX_NUM_TR_CATEGORIES);
+                std::memset(nr->nrResidualSum, 0, sizeof(uint32_t)* MAX_NUM_TR_CATEGORIES * MAX_NUM_TR_COEFFS);
             }
         }
     }
@@ -1655,7 +1655,7 @@ void FrameEncoder::processRowEncoder(int intRow, ThreadLocalData& tld, int layer
         const uint32_t bLastCuInSlice = (bLastRowInSlice & (col == numCols - 1)) ? 1 : 0;
 
         /* Must wait for TME to finish before initCTU because both threads
-         * operate on the same CUData â€” the encoder's initCTU would corrupt
+         * operate on the same CUData â€ the encoder's initCTU would corrupt
          * data that deriveMVsForCTU is still reading. */
         if (m_top->m_threadedME && slice->m_sliceType != I_SLICE)
         {
@@ -1703,7 +1703,7 @@ void FrameEncoder::processRowEncoder(int intRow, ThreadLocalData& tld, int layer
             /* TODO: use defines from slicetype.h for lowres block size */
             uint32_t block_y = (ctu->m_cuPelY >> m_param->maxLog2CUSize) * noOfBlocks;
             uint32_t block_x = (ctu->m_cuPelX >> m_param->maxLog2CUSize) * noOfBlocks;
-            if (!strlen(m_param->analysisLoad) || !m_param->bDisableLookahead)
+            if (!std::strlen(m_param->analysisLoad) || !m_param->bDisableLookahead)
             {
                 cuStat.vbvCost = 0;
                 cuStat.intraVbvCost = 0;
@@ -1879,7 +1879,7 @@ void FrameEncoder::processRowEncoder(int intRow, ThreadLocalData& tld, int layer
                     rowCoder.loadContexts(curRow.bufferedEntropy);
 
                     curRow.completed.store(0);
-                    memset(&curRow.rowStats, 0, sizeof(curRow.rowStats));
+                    std::memset(&curRow.rowStats, 0, sizeof(curRow.rowStats));
                     curEncData.m_rowStat[row].numEncodedCUs = 0;
                     curEncData.m_rowStat[row].encodedBits = 0;
                     curEncData.m_rowStat[row].rowSatd = 0;
@@ -1966,7 +1966,7 @@ void FrameEncoder::processRowEncoder(int intRow, ThreadLocalData& tld, int layer
 
                         m_outStreams[r].resetBits();
                         stopRow.completed.store(0);
-                        memset(&stopRow.rowStats, 0, sizeof(stopRow.rowStats));
+                        std::memset(&stopRow.rowStats, 0, sizeof(stopRow.rowStats));
                         curEncData.m_rowStat[r].numEncodedCUs = 0;
                         curEncData.m_rowStat[r].encodedBits = 0;
                         curEncData.m_rowStat[r].rowSatd = 0;
@@ -2182,9 +2182,9 @@ void FrameEncoder::computeAvgTrainingData(int layer)
     {
         m_top->m_startPoint = m_frame[layer]->m_encodeOrder;
         int size = (m_param->keyframeMax + m_param->lookaheadDepth) * m_param->maxCUDepth * X265_REFINE_INTER_LEVELS;
-        memset(m_top->m_variance, 0, size * sizeof(uint64_t));
-        memset(m_top->m_rdCost, 0, size * sizeof(uint64_t));
-        memset(m_top->m_trainingCount, 0, size * sizeof(uint32_t));
+        std::memset(m_top->m_variance, 0, size * sizeof(uint64_t));
+        std::memset(m_top->m_rdCost, 0, size * sizeof(uint64_t));
+        std::memset(m_top->m_trainingCount, 0, size * sizeof(uint32_t));
     }
     if (m_frame[layer]->m_encodeOrder - m_top->m_startPoint < 2 * m_param->frameNumThreads)
         m_frame[layer]->m_classifyFrame = false;
@@ -2192,9 +2192,9 @@ void FrameEncoder::computeAvgTrainingData(int layer)
         m_frame[layer]->m_classifyFrame = true;
 
     int size = m_param->maxCUDepth * X265_REFINE_INTER_LEVELS;
-    memset(m_frame[layer]->m_classifyRd, 0, size * sizeof(uint64_t));
-    memset(m_frame[layer]->m_classifyVariance, 0, size * sizeof(uint64_t));
-    memset(m_frame[layer]->m_classifyCount, 0, size * sizeof(uint32_t));
+    std::memset(m_frame[layer]->m_classifyRd, 0, size * sizeof(uint64_t));
+    std::memset(m_frame[layer]->m_classifyVariance, 0, size * sizeof(uint64_t));
+    std::memset(m_frame[layer]->m_classifyCount, 0, size * sizeof(uint32_t));
     if (m_frame[layer]->m_classifyFrame)
     {
         uint32_t limit = m_frame[layer]->m_encodeOrder - m_top->m_startPoint - m_param->frameNumThreads;

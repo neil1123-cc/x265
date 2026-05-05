@@ -223,19 +223,19 @@ void x265_report_simd(x265_param* param)
         char *none = p;
         for (int i = 0; X265_NS::cpu_names[i].flags; i++)
         {
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE")
                 && (cpuid & X265_CPU_SSE2))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE2")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE2")
                 && (cpuid & (X265_CPU_SSE2_IS_FAST | X265_CPU_SSE2_IS_SLOW)))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE3")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE3")
                 && (cpuid & X265_CPU_SSSE3 || !(cpuid & X265_CPU_CACHELINE_64)))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE4.1")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE4.1")
                 && (cpuid & X265_CPU_SSE42))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "BMI1")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "BMI1")
                 && (cpuid & X265_CPU_BMI2))
                 continue;
             if ((cpuid & X265_NS::cpu_names[i].flags) == X265_NS::cpu_names[i].flags

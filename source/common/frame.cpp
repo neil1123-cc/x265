@@ -50,7 +50,7 @@ Frame::Frame()
     m_userSEI.payloads = NULL;
     m_rpu.payloadSize = 0;
     m_rpu.payload = NULL;
-    memset(&m_lowres, 0, sizeof(m_lowres));
+    std::memset(&m_lowres, 0, sizeof(m_lowres));
     m_rcData = NULL;
     m_encodeStartTime = 0;
     m_reconfigureRc = false;
@@ -230,7 +230,7 @@ bool Frame::allocEncodeData(x265_param *param, const SPS& sps)
         /* initialize right border of m_reconPicYuv as SAO may read beyond the
          * end of the picture accessing uninitialized pixels */
         int maxHeight = sps.numCuInHeight * param->maxCUSize;
-        memset(m_reconPic[0]->m_picOrg[0], 0, sizeof(pixel)* m_reconPic[0]->m_stride * maxHeight);
+        std::memset(m_reconPic[0]->m_picOrg[0], 0, sizeof(pixel)* m_reconPic[0]->m_stride * maxHeight);
 
         for (int i = 0; i < !!m_param->bEnableSCC + 1; i++)
         {
@@ -240,8 +240,8 @@ bool Frame::allocEncodeData(x265_param *param, const SPS& sps)
 
             if (param->internalCsp != X265_CSP_I400)
             {
-                memset(m_reconPic[i]->m_picOrg[1], 0, sizeof(pixel) * m_reconPic[i]->m_strideC * (maxHeight >> m_reconPic[i]->m_vChromaShift));
-                memset(m_reconPic[i]->m_picOrg[2], 0, sizeof(pixel) * m_reconPic[i]->m_strideC * (maxHeight >> m_reconPic[i]->m_vChromaShift));
+                std::memset(m_reconPic[i]->m_picOrg[1], 0, sizeof(pixel) * m_reconPic[i]->m_strideC * (maxHeight >> m_reconPic[i]->m_vChromaShift));
+                std::memset(m_reconPic[i]->m_picOrg[2], 0, sizeof(pixel) * m_reconPic[i]->m_strideC * (maxHeight >> m_reconPic[i]->m_vChromaShift));
 
                 /* use pre-calculated cu/pu offsets cached in the SPS structure */
                 m_reconPic[i]->m_cuOffsetC = sps.cuOffsetC;

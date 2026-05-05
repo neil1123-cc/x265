@@ -40,7 +40,7 @@ void Deblock::deblockCTU(const CUData* ctu, const CUGeom& cuGeom, int32_t dir)
 {
     uint8_t blockStrength[MAX_NUM_PARTITIONS];
 
-    memset(blockStrength, 0, sizeof(uint8_t) * cuGeom.numPartitions);
+    std::memset(blockStrength, 0, sizeof(uint8_t) * cuGeom.numPartitions);
 
     deblockCU(ctu, cuGeom, dir, blockStrength);
 }

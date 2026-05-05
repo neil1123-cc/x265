@@ -54,8 +54,8 @@ static void bcast64(uint8_t* dst, uint8_t val) { uint64_t bval = 0x0101010101010
 
 /* at 256 bytes, memset/memcpy will probably use SIMD more effectively than our uint64_t hack,
  * but hand-written assembly would beat it. */
-static void copy256(uint8_t* dst, uint8_t* src) { memcpy(dst, src, 256); }
-static void bcast256(uint8_t* dst, uint8_t val) { memset(dst, val, 256); }
+static void copy256(uint8_t* dst, uint8_t* src) { std::memcpy(dst, src, 256); }
+static void bcast256(uint8_t* dst, uint8_t val) { std::memset(dst, val, 256); }
 
 namespace {
 // file private namespace
@@ -115,7 +115,7 @@ inline MV scaleMv(MV mv, int scale)
 
 CUData::CUData()
 {
-    memset(this, 0, sizeof(*this));
+    std::memset(this, 0, sizeof(*this));
 }
 
 void CUData::initialize(const CUDataMemPool& dataPool, uint32_t depth, const x265_param& param, int instance)
@@ -313,7 +313,7 @@ void CUData::initCTU(const Frame& frame, uint32_t cuAddr, int qp, uint32_t first
     X265_CHECK(!(frame.m_encData->m_param->bLossless && !m_slice->m_pps->bTransquantBypassEnabled), "lossless enabled without TQbypass in PPS\n");
 
     /* initialize the remaining CU data in one memset */
-    memset(m_cuDepth, 0, (frame.m_param->internalCsp == X265_CSP_I400 ? BytesPerPartition - 12 : BytesPerPartition - 8) * m_numPartitions);
+    std::memset(m_cuDepth, 0, (frame.m_param->internalCsp == X265_CSP_I400 ? BytesPerPartition - 12 : BytesPerPartition - 8) * m_numPartitions);
 
     for (int8_t i = 0; i < NUM_TU_DEPTH; i++)
         m_refTuDepth[i] = -1;
@@ -325,7 +325,7 @@ void CUData::initCTU(const Frame& frame, uint32_t cuAddr, int qp, uint32_t first
     m_cuAbove = (m_cuAddr >= widthInCU) && !m_bFirstRowInSlice ? m_encData->getPicCTU(m_cuAddr - widthInCU) : NULL;
     m_cuAboveLeft = (m_cuLeft && m_cuAbove) ? m_encData->getPicCTU(m_cuAddr - widthInCU - 1) : NULL;
     m_cuAboveRight = (m_cuAbove && ((m_cuAddr % widthInCU) < (widthInCU - 1))) ? m_encData->getPicCTU(m_cuAddr - widthInCU + 1) : NULL;
-    memset(m_distortion, 0, m_numPartitions * sizeof(sse_t));
+    std::memset(m_distortion, 0, m_numPartitions * sizeof(sse_t));
 }
 
 // initialize Sub partition
@@ -368,8 +368,8 @@ void CUData::initSubCU(const CUData& ctu, const CUGeom& cuGeom, int qp)
     m_partSet(m_cuDepth,      (uint8_t)cuGeom.depth);
 
     /* initialize the remaining CU data in one memset */
-    memset(m_predMode, 0, (ctu.m_chromaFormat == X265_CSP_I400 ? BytesPerPartition - 13 : BytesPerPartition - 9) * m_numPartitions);
-    memset(m_distortion, 0, m_numPartitions * sizeof(sse_t));
+    std::memset(m_predMode, 0, (ctu.m_chromaFormat == X265_CSP_I400 ? BytesPerPartition - 13 : BytesPerPartition - 9) * m_numPartitions);
+    std::memset(m_distortion, 0, m_numPartitions * sizeof(sse_t));
 
 #if ENABLE_SCC_EXT
     if (lastIntraBCMv)
@@ -409,16 +409,16 @@ void CUData::copyPartFrom(const CUData& subCU, const CUGeom& childGeom, uint32_t
     m_subPartCopy(m_transformSkip[0] + offset, subCU.m_transformSkip[0]);
     m_subPartCopy(m_cbf[0] + offset, subCU.m_cbf[0]);
 
-    memcpy(m_mv[0] + offset, subCU.m_mv[0], childGeom.numPartitions * sizeof(MV));
-    memcpy(m_mv[1] + offset, subCU.m_mv[1], childGeom.numPartitions * sizeof(MV));
-    memcpy(m_mvd[0] + offset, subCU.m_mvd[0], childGeom.numPartitions * sizeof(MV));
-    memcpy(m_mvd[1] + offset, subCU.m_mvd[1], childGeom.numPartitions * sizeof(MV));
+    std::memcpy(m_mv[0] + offset, subCU.m_mv[0], childGeom.numPartitions * sizeof(MV));
+    std::memcpy(m_mv[1] + offset, subCU.m_mv[1], childGeom.numPartitions * sizeof(MV));
+    std::memcpy(m_mvd[0] + offset, subCU.m_mvd[0], childGeom.numPartitions * sizeof(MV));
+    std::memcpy(m_mvd[1] + offset, subCU.m_mvd[1], childGeom.numPartitions * sizeof(MV));
 
-    memcpy(m_distortion + offset, subCU.m_distortion, childGeom.numPartitions * sizeof(sse_t));
+    std::memcpy(m_distortion + offset, subCU.m_distortion, childGeom.numPartitions * sizeof(sse_t));
 
     uint32_t tmp = 1 << ((m_slice->m_param->maxLog2CUSize - childGeom.depth) * 2);
     uint32_t tmp2 = subPartIdx * tmp;
-    memcpy(m_trCoeff[0] + tmp2, subCU.m_trCoeff[0], sizeof(coeff_t)* tmp);
+    std::memcpy(m_trCoeff[0] + tmp2, subCU.m_trCoeff[0], sizeof(coeff_t)* tmp);
 
     if (subCU.m_chromaFormat != X265_CSP_I400)
     {
@@ -430,8 +430,8 @@ void CUData::copyPartFrom(const CUData& subCU, const CUGeom& childGeom, uint32_t
 
         uint32_t tmpC = tmp >> (m_hChromaShift + m_vChromaShift);
         uint32_t tmpC2 = tmp2 >> (m_hChromaShift + m_vChromaShift);
-        memcpy(m_trCoeff[1] + tmpC2, subCU.m_trCoeff[1], sizeof(coeff_t) * tmpC);
-        memcpy(m_trCoeff[2] + tmpC2, subCU.m_trCoeff[2], sizeof(coeff_t) * tmpC);
+        std::memcpy(m_trCoeff[1] + tmpC2, subCU.m_trCoeff[1], sizeof(coeff_t) * tmpC);
+        std::memcpy(m_trCoeff[2] + tmpC2, subCU.m_trCoeff[2], sizeof(coeff_t) * tmpC);
     }
 #if ENABLE_SCC_EXT
     for (int i = 0; i < 2; i++)
@@ -464,12 +464,12 @@ void CUData::initLosslessCU(const CUData& cu, const CUGeom& cuGeom)
     m_cuAboveRight = cu.m_cuAboveRight;
     m_absIdxInCTU  = cuGeom.absPartIdx;
     m_numPartitions = cuGeom.numPartitions;
-    memcpy(m_qp, cu.m_qp, BytesPerPartition * m_numPartitions);
-    memcpy(m_mv[0],  cu.m_mv[0],  m_numPartitions * sizeof(MV));
-    memcpy(m_mv[1],  cu.m_mv[1],  m_numPartitions * sizeof(MV));
-    memcpy(m_mvd[0], cu.m_mvd[0], m_numPartitions * sizeof(MV));
-    memcpy(m_mvd[1], cu.m_mvd[1], m_numPartitions * sizeof(MV));
-    memcpy(m_distortion, cu.m_distortion, m_numPartitions * sizeof(sse_t));
+    std::memcpy(m_qp, cu.m_qp, BytesPerPartition * m_numPartitions);
+    std::memcpy(m_mv[0],  cu.m_mv[0],  m_numPartitions * sizeof(MV));
+    std::memcpy(m_mv[1],  cu.m_mv[1],  m_numPartitions * sizeof(MV));
+    std::memcpy(m_mvd[0], cu.m_mvd[0], m_numPartitions * sizeof(MV));
+    std::memcpy(m_mvd[1], cu.m_mvd[1], m_numPartitions * sizeof(MV));
+    std::memcpy(m_distortion, cu.m_distortion, m_numPartitions * sizeof(sse_t));
 
     /* force TQBypass to true */
     m_partSet(m_tqBypass, true);
@@ -513,16 +513,16 @@ void CUData::copyToPic(uint32_t depth) const
     m_partCopy(ctu.m_transformSkip[0] + m_absIdxInCTU, m_transformSkip[0]);
     m_partCopy(ctu.m_cbf[0] + m_absIdxInCTU, m_cbf[0]);
 
-    memcpy(ctu.m_mv[0] + m_absIdxInCTU, m_mv[0], m_numPartitions * sizeof(MV));
-    memcpy(ctu.m_mv[1] + m_absIdxInCTU, m_mv[1], m_numPartitions * sizeof(MV));
-    memcpy(ctu.m_mvd[0] + m_absIdxInCTU, m_mvd[0], m_numPartitions * sizeof(MV));
-    memcpy(ctu.m_mvd[1] + m_absIdxInCTU, m_mvd[1], m_numPartitions * sizeof(MV));
+    std::memcpy(ctu.m_mv[0] + m_absIdxInCTU, m_mv[0], m_numPartitions * sizeof(MV));
+    std::memcpy(ctu.m_mv[1] + m_absIdxInCTU, m_mv[1], m_numPartitions * sizeof(MV));
+    std::memcpy(ctu.m_mvd[0] + m_absIdxInCTU, m_mvd[0], m_numPartitions * sizeof(MV));
+    std::memcpy(ctu.m_mvd[1] + m_absIdxInCTU, m_mvd[1], m_numPartitions * sizeof(MV));
 
-    memcpy(ctu.m_distortion + m_absIdxInCTU, m_distortion, m_numPartitions * sizeof(sse_t));
+    std::memcpy(ctu.m_distortion + m_absIdxInCTU, m_distortion, m_numPartitions * sizeof(sse_t));
 
     uint32_t tmpY = 1 << ((m_slice->m_param->maxLog2CUSize - depth) * 2);
     uint32_t tmpY2 = m_absIdxInCTU << (LOG2_UNIT_SIZE * 2);
-    memcpy(ctu.m_trCoeff[0] + tmpY2, m_trCoeff[0], sizeof(coeff_t)* tmpY);
+    std::memcpy(ctu.m_trCoeff[0] + tmpY2, m_trCoeff[0], sizeof(coeff_t)* tmpY);
 
     if (ctu.m_chromaFormat != X265_CSP_I400)
     {
@@ -534,8 +534,8 @@ void CUData::copyToPic(uint32_t depth) const
 
         uint32_t tmpC = tmpY >> (m_hChromaShift + m_vChromaShift);
         uint32_t tmpC2 = tmpY2 >> (m_hChromaShift + m_vChromaShift);
-        memcpy(ctu.m_trCoeff[1] + tmpC2, m_trCoeff[1], sizeof(coeff_t) * tmpC);
-        memcpy(ctu.m_trCoeff[2] + tmpC2, m_trCoeff[2], sizeof(coeff_t) * tmpC);
+        std::memcpy(ctu.m_trCoeff[1] + tmpC2, m_trCoeff[1], sizeof(coeff_t) * tmpC);
+        std::memcpy(ctu.m_trCoeff[2] + tmpC2, m_trCoeff[2], sizeof(coeff_t) * tmpC);
     }
 }
 
@@ -571,12 +571,12 @@ void CUData::copyFromPic(const CUData& ctu, const CUGeom& cuGeom, int csp, bool 
     m_partCopy(m_mvpIdx[1],    ctu.m_mvpIdx[1] + m_absIdxInCTU);
     m_partCopy(m_chromaIntraDir, ctu.m_chromaIntraDir + m_absIdxInCTU);
 
-    memcpy(m_mv[0], ctu.m_mv[0] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
-    memcpy(m_mv[1], ctu.m_mv[1] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
-    memcpy(m_mvd[0], ctu.m_mvd[0] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
-    memcpy(m_mvd[1], ctu.m_mvd[1] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
+    std::memcpy(m_mv[0], ctu.m_mv[0] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
+    std::memcpy(m_mv[1], ctu.m_mv[1] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
+    std::memcpy(m_mvd[0], ctu.m_mvd[0] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
+    std::memcpy(m_mvd[1], ctu.m_mvd[1] + m_absIdxInCTU, m_numPartitions * sizeof(MV));
 
-    memcpy(m_distortion, ctu.m_distortion + m_absIdxInCTU, m_numPartitions * sizeof(sse_t));
+    std::memcpy(m_distortion, ctu.m_distortion + m_absIdxInCTU, m_numPartitions * sizeof(sse_t));
 
     /* clear residual coding flags */
     m_partSet(m_tuDepth, 0);
@@ -606,7 +606,7 @@ void CUData::updatePic(uint32_t depth, int picCsp) const
 
     uint32_t tmpY = 1 << ((m_slice->m_param->maxLog2CUSize - depth) * 2);
     uint32_t tmpY2 = m_absIdxInCTU << (LOG2_UNIT_SIZE * 2);
-    memcpy(ctu.m_trCoeff[0] + tmpY2, m_trCoeff[0], sizeof(coeff_t)* tmpY);
+    std::memcpy(ctu.m_trCoeff[0] + tmpY2, m_trCoeff[0], sizeof(coeff_t)* tmpY);
 
     if (ctu.m_chromaFormat != X265_CSP_I400 && picCsp != X265_CSP_I400)
     {
@@ -619,8 +619,8 @@ void CUData::updatePic(uint32_t depth, int picCsp) const
 
         tmpY  >>= m_hChromaShift + m_vChromaShift;
         tmpY2 >>= m_hChromaShift + m_vChromaShift;
-        memcpy(ctu.m_trCoeff[1] + tmpY2, m_trCoeff[1], sizeof(coeff_t) * tmpY);
-        memcpy(ctu.m_trCoeff[2] + tmpY2, m_trCoeff[2], sizeof(coeff_t) * tmpY);
+        std::memcpy(ctu.m_trCoeff[1] + tmpY2, m_trCoeff[1], sizeof(coeff_t) * tmpY);
+        std::memcpy(ctu.m_trCoeff[2] + tmpY2, m_trCoeff[2], sizeof(coeff_t) * tmpY);
     }
 }
 
@@ -1061,72 +1061,72 @@ void CUData::setPUInterDir(uint8_t dir, uint32_t absPartIdx, uint32_t puIdx)
     switch (m_partSize[absPartIdx])
     {
     case SIZE_2Nx2N:
-        memset(m_interDir + absPartIdx, dir, 4 * curPartNumQ);
+        std::memset(m_interDir + absPartIdx, dir, 4 * curPartNumQ);
         break;
     case SIZE_2NxN:
-        memset(m_interDir + absPartIdx, dir, 2 * curPartNumQ);
+        std::memset(m_interDir + absPartIdx, dir, 2 * curPartNumQ);
         break;
     case SIZE_Nx2N:
-        memset(m_interDir + absPartIdx, dir, curPartNumQ);
-        memset(m_interDir + absPartIdx + 2 * curPartNumQ, dir, curPartNumQ);
+        std::memset(m_interDir + absPartIdx, dir, curPartNumQ);
+        std::memset(m_interDir + absPartIdx + 2 * curPartNumQ, dir, curPartNumQ);
         break;
     case SIZE_NxN:
-        memset(m_interDir + absPartIdx, dir, curPartNumQ);
+        std::memset(m_interDir + absPartIdx, dir, curPartNumQ);
         break;
     case SIZE_2NxnU:
         if (!puIdx)
         {
-            memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 1));
-            memset(m_interDir + absPartIdx + curPartNumQ, dir, (curPartNumQ >> 1));
+            std::memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 1));
+            std::memset(m_interDir + absPartIdx + curPartNumQ, dir, (curPartNumQ >> 1));
         }
         else
         {
-            memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 1));
-            memset(m_interDir + absPartIdx + curPartNumQ, dir, ((curPartNumQ >> 1) + (curPartNumQ << 1)));
+            std::memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 1));
+            std::memset(m_interDir + absPartIdx + curPartNumQ, dir, ((curPartNumQ >> 1) + (curPartNumQ << 1)));
         }
         break;
     case SIZE_2NxnD:
         if (!puIdx)
         {
-            memset(m_interDir + absPartIdx, dir, ((curPartNumQ << 1) + (curPartNumQ >> 1)));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1) + curPartNumQ, dir, (curPartNumQ >> 1));
+            std::memset(m_interDir + absPartIdx, dir, ((curPartNumQ << 1) + (curPartNumQ >> 1)));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1) + curPartNumQ, dir, (curPartNumQ >> 1));
         }
         else
         {
-            memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 1));
-            memset(m_interDir + absPartIdx + curPartNumQ, dir, (curPartNumQ >> 1));
+            std::memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 1));
+            std::memset(m_interDir + absPartIdx + curPartNumQ, dir, (curPartNumQ >> 1));
         }
         break;
     case SIZE_nLx2N:
         if (!puIdx)
         {
-            memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1) + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1) + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
         }
         else
         {
-            memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ >> 1), dir, (curPartNumQ + (curPartNumQ >> 2)));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1) + (curPartNumQ >> 1), dir, (curPartNumQ + (curPartNumQ >> 2)));
+            std::memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ >> 1), dir, (curPartNumQ + (curPartNumQ >> 2)));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1) + (curPartNumQ >> 1), dir, (curPartNumQ + (curPartNumQ >> 2)));
         }
         break;
     case SIZE_nRx2N:
         if (!puIdx)
         {
-            memset(m_interDir + absPartIdx, dir, (curPartNumQ + (curPartNumQ >> 2)));
-            memset(m_interDir + absPartIdx + curPartNumQ + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ + (curPartNumQ >> 2)));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1) + curPartNumQ + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx, dir, (curPartNumQ + (curPartNumQ >> 2)));
+            std::memset(m_interDir + absPartIdx + curPartNumQ + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ + (curPartNumQ >> 2)));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1) + curPartNumQ + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
         }
         else
         {
-            memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ >> 2));
-            memset(m_interDir + absPartIdx + (curPartNumQ << 1) + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx, dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1), dir, (curPartNumQ >> 2));
+            std::memset(m_interDir + absPartIdx + (curPartNumQ << 1) + (curPartNumQ >> 1), dir, (curPartNumQ >> 2));
         }
         break;
     default:

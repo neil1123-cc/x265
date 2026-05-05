@@ -1437,7 +1437,7 @@ me_hex2:
         if (scratchSize)
         {
             meScratchBuffer = X265_MALLOC(int16_t, scratchSize);
-            memset(meScratchBuffer, 0, sizeof(int16_t)* scratchSize);
+            std::memset(meScratchBuffer, 0, sizeof(int16_t)* scratchSize);
         }
 
         /* SEA is fastest in multiples of 4 */

@@ -62,9 +62,9 @@ void Slice::setRefPicList(PicList& picList, int sLayerId)
 {
     if (m_sliceType == I_SLICE)
     {
-        memset(m_refFrameList, 0, sizeof(m_refFrameList));
-        memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
-        memset(m_refPOCList, 0, sizeof(m_refPOCList));
+        std::memset(m_refFrameList, 0, sizeof(m_refFrameList));
+        std::memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
+        std::memset(m_refPOCList, 0, sizeof(m_refPOCList));
         m_numRefIdx[1] = m_numRefIdx[0] = 0;
 
 #if ENABLE_SCC_EXT
@@ -91,9 +91,9 @@ void Slice::setRefPicList(PicList& picList, int sLayerId)
     /*Reset the number of references for I-slice marked as P-slice*/
     if ((m_param->bEnableSCC || sLayerId) && m_sliceType != m_origSliceType)
     {
-        memset(m_refFrameList, 0, sizeof(m_refFrameList));
-        memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
-        memset(m_refPOCList, 0, sizeof(m_refPOCList));
+        std::memset(m_refFrameList, 0, sizeof(m_refFrameList));
+        std::memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
+        std::memset(m_refPOCList, 0, sizeof(m_refPOCList));
         m_numRefIdx[0] = 1;
     }
 #endif
@@ -239,7 +239,7 @@ void Slice::setRefPicList(PicList& picList, int sLayerId)
     if (m_sliceType != B_SLICE)
     {
         m_numRefIdx[1] = 0;
-        memset(m_refFrameList[1], 0, sizeof(m_refFrameList[1]));
+        std::memset(m_refFrameList[1], 0, sizeof(m_refFrameList[1]));
     }
     else
     {

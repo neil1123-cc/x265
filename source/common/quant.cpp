@@ -207,7 +207,7 @@ bool Quant::allocNoiseReduction(const x265_param& param)
 {
     m_frameNr = X265_MALLOC(NoiseReduction, param.frameNumThreads);
     if (m_frameNr)
-        memset(m_frameNr, 0, sizeof(NoiseReduction) * param.frameNumThreads);
+        std::memset(m_frameNr, 0, sizeof(NoiseReduction) * param.frameNumThreads);
     else
         return false;
     return true;
@@ -257,9 +257,9 @@ uint32_t Quant::signBitHidingHDQ(int16_t* coeff, int32_t* deltaU, uint32_t numSi
 
 #if CHECKED_BUILD || _DEBUG
     // clean output buffer, the asm version of scanPosLast Never output anything after latest non-zero coeff group
-    memset(coeffNum, 0, sizeof(coeffNum) * sizeof(uint8_t));
-    memset(coeffSign, 0, sizeof(coeffNum) * sizeof(uint16_t));
-    memset(coeffFlag, 0, sizeof(coeffNum) * sizeof(uint16_t));
+    std::memset(coeffNum, 0, sizeof(coeffNum) * sizeof(uint8_t));
+    std::memset(coeffSign, 0, sizeof(coeffNum) * sizeof(uint16_t));
+    std::memset(coeffFlag, 0, sizeof(coeffNum) * sizeof(uint16_t));
 #endif
     const int lastScanPos = primitives.scanPosLast(codeParams.scan, coeff, coeffSign, coeffFlag, coeffNum, numSig, g_scan4x4[codeParams.scanType], trSize);
     const int cgLastScanPos = (lastScanPos >> LOG2_SCAN_SET_SIZE);
@@ -678,9 +678,9 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
 #if CHECKED_BUILD || _DEBUG
     // clean output buffer, the asm version of scanPosLast Never output anything after latest non-zero coeff group
-    memset(coeffNum, 0, sizeof(coeffNum) * sizeof(uint8_t));
-    memset(coeffSign, 0, sizeof(coeffNum) * sizeof(uint16_t));
-    memset(coeffFlag, 0, sizeof(coeffNum) * sizeof(uint16_t));
+    std::memset(coeffNum, 0, sizeof(coeffNum) * sizeof(uint8_t));
+    std::memset(coeffSign, 0, sizeof(coeffNum) * sizeof(uint16_t));
+    std::memset(coeffFlag, 0, sizeof(coeffNum) * sizeof(uint16_t));
 #endif
     const int lastScanPos = primitives.scanPosLast(codeParams.scan, dstCoeff, coeffSign, coeffFlag, coeffNum, numSig, g_scan4x4[codeParams.scanType], trSize);
     const int cgLastScanPos = (lastScanPos >> LOG2_SCAN_SET_SIZE);
@@ -696,8 +696,8 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
     /* coefficients after lastNZ have no distortion signal cost */
     const int zeroCG = cgNum - 1 - cgLastScanPos;
-    memset(&costCoeff[(cgLastScanPos + 1) << MLS_CG_SIZE], 0, zeroCG * MLS_CG_BLK_SIZE * sizeof(int64_t));
-    memset(&costSig[(cgLastScanPos + 1) << MLS_CG_SIZE], 0, zeroCG * MLS_CG_BLK_SIZE * sizeof(int64_t));
+    std::memset(&costCoeff[(cgLastScanPos + 1) << MLS_CG_SIZE], 0, zeroCG * MLS_CG_BLK_SIZE * sizeof(int64_t));
+    std::memset(&costSig[(cgLastScanPos + 1) << MLS_CG_SIZE], 0, zeroCG * MLS_CG_BLK_SIZE * sizeof(int64_t));
 
     /* sum zero coeff (uncodec) cost */
 
@@ -858,7 +858,7 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
         }
 
         coeffGroupRDStats cgRdStats;
-        memset(&cgRdStats, 0, sizeof(coeffGroupRDStats));
+        std::memset(&cgRdStats, 0, sizeof(coeffGroupRDStats));
 
         uint32_t subFlagMask = coeffFlag[cgScanPos];
         int    c2            = 0;
@@ -1148,10 +1148,10 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
                 /* reset all coeffs to 0. UNCODE THIS COEFF GROUP! */
                 const uint32_t blkPos = codeParams.scan[cgScanPos * cgSize];
-                memset(&dstCoeff[blkPos + 0 * trSize], 0, 4 * sizeof(*dstCoeff));
-                memset(&dstCoeff[blkPos + 1 * trSize], 0, 4 * sizeof(*dstCoeff));
-                memset(&dstCoeff[blkPos + 2 * trSize], 0, 4 * sizeof(*dstCoeff));
-                memset(&dstCoeff[blkPos + 3 * trSize], 0, 4 * sizeof(*dstCoeff));
+                std::memset(&dstCoeff[blkPos + 0 * trSize], 0, 4 * sizeof(*dstCoeff));
+                std::memset(&dstCoeff[blkPos + 1 * trSize], 0, 4 * sizeof(*dstCoeff));
+                std::memset(&dstCoeff[blkPos + 2 * trSize], 0, 4 * sizeof(*dstCoeff));
+                std::memset(&dstCoeff[blkPos + 3 * trSize], 0, 4 * sizeof(*dstCoeff));
             }
         }
         else
@@ -1278,10 +1278,10 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
     for (int pos = (bestLastIdx & ~(SCAN_SET_SIZE - 1)) + SCAN_SET_SIZE; pos <= lastScanPos; pos += SCAN_SET_SIZE)
     {
         const uint32_t blkPos = codeParams.scan[pos];
-        memset(&dstCoeff[blkPos + 0 * trSize], 0, 4 * sizeof(*dstCoeff));
-        memset(&dstCoeff[blkPos + 1 * trSize], 0, 4 * sizeof(*dstCoeff));
-        memset(&dstCoeff[blkPos + 2 * trSize], 0, 4 * sizeof(*dstCoeff));
-        memset(&dstCoeff[blkPos + 3 * trSize], 0, 4 * sizeof(*dstCoeff));
+        std::memset(&dstCoeff[blkPos + 0 * trSize], 0, 4 * sizeof(*dstCoeff));
+        std::memset(&dstCoeff[blkPos + 1 * trSize], 0, 4 * sizeof(*dstCoeff));
+        std::memset(&dstCoeff[blkPos + 2 * trSize], 0, 4 * sizeof(*dstCoeff));
+        std::memset(&dstCoeff[blkPos + 3 * trSize], 0, 4 * sizeof(*dstCoeff));
     }
 
     /* rate-distortion based sign-hiding */

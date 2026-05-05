@@ -268,7 +268,7 @@ uint32_t cpu_detect(bool benableavx512 )
                 cpu |= X265_CPU_FMA4;
         }
 
-        if (!strcmp((char*)vendor, "AuthenticAMD"))
+        if (!std::strcmp((char*)vendor, "AuthenticAMD"))
         {
             if (edx & 0x00400000)
                 cpu |= X265_CPU_MMX2;
@@ -277,7 +277,7 @@ uint32_t cpu_detect(bool benableavx512 )
         }
     }
 
-    if (!strcmp((char*)vendor, "GenuineIntel"))
+    if (!std::strcmp((char*)vendor, "GenuineIntel"))
     {
         PFX(cpu_cpuid)(1, &eax, &ebx, &ecx, &edx);
         int family = ((eax >> 8) & 0xf) + ((eax >> 20) & 0xff);
@@ -298,7 +298,7 @@ uint32_t cpu_detect(bool benableavx512 )
         }
     }
 
-    if ((!strcmp((char*)vendor, "GenuineIntel") || !strcmp((char*)vendor, "CyrixInstead")) && !(cpu & X265_CPU_SSE42))
+    if ((!std::strcmp((char*)vendor, "GenuineIntel") || !std::strcmp((char*)vendor, "CyrixInstead")) && !(cpu & X265_CPU_SSE42))
     {
         /* cacheline size is specified in 3 places, any of which may be missing */
         PFX(cpu_cpuid)(1, &eax, &ebx, &ecx, &edx);
@@ -326,9 +326,9 @@ uint32_t cpu_detect(bool benableavx512 )
                     if (!(buf[j] >> 31))
                         while (buf[j])
                         {
-                            if (strchr(cache32_ids, buf[j] & 0xff))
+                            if (std::strchr(cache32_ids, buf[j] & 0xff))
                                 cache = 32;
-                            if (strchr(cache64_ids, buf[j] & 0xff))
+                            if (std::strchr(cache64_ids, buf[j] & 0xff))
                                 cache = 64;
                             buf[j] >>= 8;
                         }

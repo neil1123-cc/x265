@@ -134,13 +134,13 @@ void PicYuv::copyFromFrame(PicYuv* source)
     uint32_t numCuInHeight = (m_picHeight + m_param->maxCUSize - 1) / m_param->maxCUSize;
 
     int maxHeight = numCuInHeight * m_param->maxCUSize;
-    memcpy(m_picBuf[0], source->m_picBuf[0], sizeof(pixel)* m_stride * (maxHeight + (m_lumaMarginY * 2)));
+    std::memcpy(m_picBuf[0], source->m_picBuf[0], sizeof(pixel)* m_stride * (maxHeight + (m_lumaMarginY * 2)));
     m_picOrg[0] = m_picBuf[0] + m_lumaMarginY * m_stride + m_lumaMarginX;
 
     if (m_picCsp != X265_CSP_I400)
     {
-        memcpy(m_picBuf[1], source->m_picBuf[1], sizeof(pixel)* m_strideC * ((maxHeight >> m_vChromaShift) + (m_chromaMarginY * 2)));
-        memcpy(m_picBuf[2], source->m_picBuf[2], sizeof(pixel)* m_strideC * ((maxHeight >> m_vChromaShift) + (m_chromaMarginY * 2)));
+        std::memcpy(m_picBuf[1], source->m_picBuf[1], sizeof(pixel)* m_strideC * ((maxHeight >> m_vChromaShift) + (m_chromaMarginY * 2)));
+        std::memcpy(m_picBuf[2], source->m_picBuf[2], sizeof(pixel)* m_strideC * ((maxHeight >> m_vChromaShift) + (m_chromaMarginY * 2)));
 
         m_picOrg[1] = m_picBuf[1] + m_chromaMarginY * m_strideC + m_chromaMarginX;
         m_picOrg[2] = m_picBuf[2] + m_chromaMarginY * m_strideC + m_chromaMarginX;
@@ -343,7 +343,7 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
 
                 for (int r = 0; r < height; r++)
                 {
-                    memcpy(yPixel, yChar, width * sizeof(pixel));
+                    std::memcpy(yPixel, yChar, width * sizeof(pixel));
 
                     yPixel += m_stride;
                     yChar += pic.stride[0] / sizeof(*yChar);
@@ -363,8 +363,8 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
 
                     for (int r = 0; r < height >> m_vChromaShift; r++)
                     {
-                        memcpy(uPixel, uChar, (width >> m_hChromaShift) * sizeof(pixel));
-                        memcpy(vPixel, vChar, (width >> m_hChromaShift) * sizeof(pixel));
+                        std::memcpy(uPixel, uChar, (width >> m_hChromaShift) * sizeof(pixel));
+                        std::memcpy(vPixel, vChar, (width >> m_hChromaShift) * sizeof(pixel));
 
                         uPixel += m_strideC;
                         vPixel += m_strideC;
@@ -381,7 +381,7 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
 
                 for (int r = 0; r < height; r++)
                 {
-                    memcpy(aPixel, aChar, width * sizeof(pixel));
+                    std::memcpy(aPixel, aChar, width * sizeof(pixel));
 
                     aPixel += m_stride;
                     aChar += pic.stride[0] / sizeof(*aChar);
@@ -392,8 +392,8 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
 
                 for (int r = 0; r < height >> m_vChromaShift; r++)
                 {
-                    memset(uPixel, 128, (width >> m_hChromaShift) * sizeof(pixel));
-                    memset(vPixel, 128, (width >> m_hChromaShift) * sizeof(pixel));
+                    std::memset(uPixel, 128, (width >> m_hChromaShift) * sizeof(pixel));
+                    std::memset(vPixel, 128, (width >> m_hChromaShift) * sizeof(pixel));
 
                     uPixel += m_strideC;
                     vPixel += m_strideC;
@@ -578,7 +578,7 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
     /* extend the bottom if height was not multiple of the minimum CU size */
     Y = m_picOrg[0] + (height - 1) * m_stride;
     for (int i = 1; i <= pady; i++)
-        memcpy(Y + i * m_stride, Y, (width + padx) * sizeof(pixel));
+        std::memcpy(Y + i * m_stride, Y, (width + padx) * sizeof(pixel));
 
     if (param.internalCsp != X265_CSP_I400)
     {
@@ -599,8 +599,8 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
 
         for (int j = 1; j <= pady >> m_vChromaShift; j++)
         {
-            memcpy(U + j * m_strideC, U, ((width + padx) >> m_hChromaShift) * sizeof(pixel));
-            memcpy(V + j * m_strideC, V, ((width + padx) >> m_hChromaShift) * sizeof(pixel));
+            std::memcpy(U + j * m_strideC, U, ((width + padx) >> m_hChromaShift) * sizeof(pixel));
+            std::memcpy(V + j * m_strideC, V, ((width + padx) >> m_hChromaShift) * sizeof(pixel));
         }
     }
 }

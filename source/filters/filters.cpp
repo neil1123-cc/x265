@@ -34,7 +34,7 @@ using namespace X265_NS;
 bool Filter::parseFilterString(char* paramString, vector<Filter *>* filters)
 {
     // --vf func1:param1/func2:param2
-    char* end = paramString + strlen(paramString);
+    char* end = paramString + std::strlen(paramString);
     char* begin = paramString;
     char* p = begin;
     while(p < end)
@@ -46,20 +46,20 @@ bool Filter::parseFilterString(char* paramString, vector<Filter *>* filters)
         while(p[0] != ':' && p[0] != '/' && p < end) p++;
         length = p - begin;
         fName[length] = 0;
-        strncpy(fName, begin, length);
+        std::strncpy(fName, begin, length);
         p = begin = p + 1;
 
         while(p[0] != '/' && p < end) p++;
         length = p - begin;
         fParams[length] = 0;
-        strncpy(fParams, begin, length);
+        std::strncpy(fParams, begin, length);
         p = begin = p + 1;
 
         if (fName[0])
         {
             Filter* filter = nullptr;
 #ifdef ENABLE_ZIMG
-            if (!strcmp(fName, "zimg"))
+            if (!std::strcmp(fName, "zimg"))
                 filter = new ZimgFilter(fParams);
 #endif
             if (filter == nullptr)

@@ -1920,7 +1920,7 @@ void Entropy::copyFrom(const Entropy& src)
 
     copyState(src);
 
-    memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(uint8_t));
+    std::memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(uint8_t));
     markValid();
 }
 
@@ -2325,7 +2325,7 @@ void Entropy::codeCoeffNxN(const CUData& cu, const coeff_t* coeff, uint32_t absP
 
 #if _DEBUG
     // Unnecessary, for Valgrind-3.10.0 only
-    memset(absCoeff, 0, sizeof(absCoeff));
+    std::memset(absCoeff, 0, sizeof(absCoeff));
 #endif
 
     absCoeff[0] = (uint16_t)abs(coeff[posLast]);
@@ -2411,7 +2411,7 @@ void Entropy::codeCoeffNxN(const CUData& cu, const coeff_t* coeff, uint32_t absP
             if (m_bitIf)
             {
                 ALIGN_VAR_32(uint16_t, tmpCoeff[SCAN_SET_SIZE]);
-                memset(tmpCoeff, 0, sizeof(tmpCoeff));
+                std::memset(tmpCoeff, 0, sizeof(tmpCoeff));
 
                 // TODO: accelerate by PABSW
                 for (int i = 0; i < MLS_CG_SIZE; i++)
@@ -2798,7 +2798,7 @@ void Entropy::copyContextsFrom(const Entropy& src)
 {
     X265_CHECK(src.m_valid, "invalid copy source context\n");
 
-    memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(m_contextState[0]));
+    std::memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(m_contextState[0]));
     markValid();
 }
 

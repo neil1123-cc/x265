@@ -64,7 +64,7 @@ int MotionReference::init(PicYuv* recPic, WeightParam *wp, const x265_param& p)
         numSliceWeightedRows = NULL;
     }
     numSliceWeightedRows = X265_MALLOC(uint32_t, p.maxSlices);
-    memset(numSliceWeightedRows, 0, p.maxSlices * sizeof(uint32_t));
+    std::memset(numSliceWeightedRows, 0, p.maxSlices * sizeof(uint32_t));
 
     /* directly reference the extended integer pel planes */
     fpelPlane[0] = recPic->m_picOrg[0];
@@ -169,7 +169,7 @@ void MotionReference::applyWeight(uint32_t finishedRows, uint32_t maxNumRows, ui
         {
             pixel *pixY = fpelPlane[c] - marginX;
             for (int y = 0; y < marginY; y++)
-                memcpy(pixY - (y + 1) * stride, pixY, stride * sizeof(pixel));
+                std::memcpy(pixY - (y + 1) * stride, pixY, stride * sizeof(pixel));
         }
 
         // Extending Bottom
@@ -179,7 +179,7 @@ void MotionReference::applyWeight(uint32_t finishedRows, uint32_t maxNumRows, ui
             if (c) picHeight >>= reconPic->m_vChromaShift;
             pixel *pixY = fpelPlane[c] - marginX + (picHeight - 1) * stride;
             for (int y = 0; y < marginY; y++)
-                memcpy(pixY + (y + 1) * stride, pixY, stride * sizeof(pixel));
+                std::memcpy(pixY + (y + 1) * stride, pixY, stride * sizeof(pixel));
         }
     }
 

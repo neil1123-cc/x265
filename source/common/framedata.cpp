@@ -32,7 +32,7 @@ using namespace X265_NS;
 
 FrameData::FrameData()
 {
-    memset(this, 0, sizeof(*this));
+    std::memset(this, 0, sizeof(*this));
 }
 
 bool FrameData::create(const x265_param& param, const SPS& sps, int csp)
@@ -90,12 +90,12 @@ fail:
 
 void FrameData::reinit(const SPS& sps)
 {
-    memset(m_cuStat, 0, sps.numCUsInFrame * sizeof(*m_cuStat));
-    memset(m_rowStat, 0, sps.numCuInHeight * sizeof(*m_rowStat));
+    std::memset(m_cuStat, 0, sps.numCUsInFrame * sizeof(*m_cuStat));
+    std::memset(m_rowStat, 0, sps.numCuInHeight * sizeof(*m_rowStat));
     if (m_param->bThreadedME)
     {
         uint32_t totalPUs = sps.numCuInWidth * sps.numCuInHeight * MAX_NUM_PUS_PER_CTU;
-        memset(m_slice->m_ctuMV, 0, totalPUs * sizeof(*m_slice->m_ctuMV));
+        std::memset(m_slice->m_ctuMV, 0, totalPUs * sizeof(*m_slice->m_ctuMV));
         for (uint32_t i = 0; i < totalPUs; i++)
         {
             m_slice->m_ctuMV[i].ref[0] = REF_NOT_VALID;
@@ -104,9 +104,9 @@ void FrameData::reinit(const SPS& sps)
     }
     if (m_param->bDynamicRefine)
     {
-        memset(m_picCTU->m_collectCURd, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint64_t));
-        memset(m_picCTU->m_collectCUVariance, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint32_t));
-        memset(m_picCTU->m_collectCUCount, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint32_t));
+        std::memset(m_picCTU->m_collectCURd, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint64_t));
+        std::memset(m_picCTU->m_collectCUVariance, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint32_t));
+        std::memset(m_picCTU->m_collectCUCount, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint32_t));
     }
 }
 

@@ -452,7 +452,7 @@ void dst4_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
 
     for (int i = 0; i < 4; i++)
     {
-        memcpy(&block[i * 4], &src[i * srcStride], 4 * sizeof(int16_t));
+        std::memcpy(&block[i * 4], &src[i * srcStride], 4 * sizeof(int16_t));
     }
 
     fastForwardDst(block, coef, shift_1st);
@@ -469,7 +469,7 @@ void dct4_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
 
     for (int i = 0; i < 4; i++)
     {
-        memcpy(&block[i * 4], &src[i * srcStride], 4 * sizeof(int16_t));
+        std::memcpy(&block[i * 4], &src[i * srcStride], 4 * sizeof(int16_t));
     }
 
     partialButterfly4(block, coef, shift_1st, 4);
@@ -486,7 +486,7 @@ void dct8_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
 
     for (int i = 0; i < 8; i++)
     {
-        memcpy(&block[i * 8], &src[i * srcStride], 8 * sizeof(int16_t));
+        std::memcpy(&block[i * 8], &src[i * srcStride], 8 * sizeof(int16_t));
     }
 
     partialButterfly8(block, coef, shift_1st, 8);
@@ -503,7 +503,7 @@ void dct16_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
 
     for (int i = 0; i < 16; i++)
     {
-        memcpy(&block[i * 16], &src[i * srcStride], 16 * sizeof(int16_t));
+        std::memcpy(&block[i * 16], &src[i * srcStride], 16 * sizeof(int16_t));
     }
 
     partialButterfly16(block, coef, shift_1st, 16);
@@ -520,7 +520,7 @@ void dct32_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
 
     for (int i = 0; i < 32; i++)
     {
-        memcpy(&block[i * 32], &src[i * srcStride], 32 * sizeof(int16_t));
+        std::memcpy(&block[i * 32], &src[i * srcStride], 32 * sizeof(int16_t));
     }
 
     partialButterfly32(block, coef, shift_1st, 32);
@@ -540,7 +540,7 @@ void idst4_c(const int16_t* src, int16_t* dst, intptr_t dstStride)
 
     for (int i = 0; i < 4; i++)
     {
-        memcpy(&dst[i * dstStride], &block[i * 4], 4 * sizeof(int16_t));
+        std::memcpy(&dst[i * dstStride], &block[i * 4], 4 * sizeof(int16_t));
     }
 }
 
@@ -557,7 +557,7 @@ void idct4_c(const int16_t* src, int16_t* dst, intptr_t dstStride)
 
     for (int i = 0; i < 4; i++)
     {
-        memcpy(&dst[i * dstStride], &block[i * 4], 4 * sizeof(int16_t));
+        std::memcpy(&dst[i * dstStride], &block[i * 4], 4 * sizeof(int16_t));
     }
 }
 
@@ -574,7 +574,7 @@ void idct8_c(const int16_t* src, int16_t* dst, intptr_t dstStride)
 
     for (int i = 0; i < 8; i++)
     {
-        memcpy(&dst[i * dstStride], &block[i * 8], 8 * sizeof(int16_t));
+        std::memcpy(&dst[i * dstStride], &block[i * 8], 8 * sizeof(int16_t));
     }
 }
 
@@ -591,7 +591,7 @@ void idct16_c(const int16_t* src, int16_t* dst, intptr_t dstStride)
 
     for (int i = 0; i < 16; i++)
     {
-        memcpy(&dst[i * dstStride], &block[i * 16], 16 * sizeof(int16_t));
+        std::memcpy(&dst[i * dstStride], &block[i * 16], 16 * sizeof(int16_t));
     }
 }
 
@@ -608,7 +608,7 @@ void idct32_c(const int16_t* src, int16_t* dst, intptr_t dstStride)
 
     for (int i = 0; i < 32; i++)
     {
-        memcpy(&dst[i * dstStride], &block[i * 32], 32 * sizeof(int16_t));
+        std::memcpy(&dst[i * dstStride], &block[i * 32], 32 * sizeof(int16_t));
     }
 }
 } // namespace X265_NS
@@ -760,9 +760,9 @@ static void denoiseDct_c(int16_t* dctCoef, uint32_t* resSum, const uint16_t* off
 
 static int scanPosLast_c(const uint16_t *scan, const coeff_t *coeff, uint16_t *coeffSign, uint16_t *coeffFlag, uint8_t *coeffNum, int numSig, const uint16_t* /*scanCG4x4*/, const int /*trSize*/)
 {
-    memset(coeffNum, 0, MLS_GRP_NUM * sizeof(*coeffNum));
-    memset(coeffFlag, 0, MLS_GRP_NUM * sizeof(*coeffFlag));
-    memset(coeffSign, 0, MLS_GRP_NUM * sizeof(*coeffSign));
+    std::memset(coeffNum, 0, MLS_GRP_NUM * sizeof(*coeffNum));
+    std::memset(coeffFlag, 0, MLS_GRP_NUM * sizeof(*coeffFlag));
+    std::memset(coeffSign, 0, MLS_GRP_NUM * sizeof(*coeffSign));
 
     int scanPosLast = 0;
     do
