@@ -17,7 +17,7 @@ REQUIRED_TOP_LEVEL_CONTRACT = {
 }
 TARGET_PROPERTY_MARKERS = {'CXX_STANDARD', 'CXX_STANDARD_REQUIRED', 'CXX_EXTENSIONS'}
 COMPILE_FLAG_COMMANDS = {'add_compile_options', 'target_compile_options', 'add_definitions'}
-COMPILE_FLAG_PROPERTY_COMMANDS = {'set_property', 'set_source_files_properties', 'set_target_properties'}
+COMPILE_FLAG_PROPERTY_COMMANDS = {'set_property', 'set_source_files_properties', 'set_target_properties', 'set_directory_properties'}
 COMPILE_FLAG_PROPERTIES = {'COMPILE_FLAGS', 'COMPILE_OPTIONS', 'INTERFACE_COMPILE_OPTIONS'}
 LIST_COMPILE_FLAG_SUBCOMMANDS = {'append', 'prepend', 'insert'}
 STRING_COMPILE_FLAG_SUBCOMMANDS = {'append', 'prepend', 'concat'}

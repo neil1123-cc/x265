@@ -171,6 +171,31 @@ def main():
         ''')
         expect_pass(run_checker(legal_feature_source))
 
+        public_standard_feature_source = write_source(root / 'public-standard-target-feature')
+        public_standard_feature_nested = public_standard_feature_source / 'cmake'
+        public_standard_feature_nested.mkdir()
+        (public_standard_feature_nested / 'features.cmake').write_text('target_compile_features(cli PUBLIC cxx_std_17)\n')
+        expect_fail(run_checker(public_standard_feature_source), 'target-level C++ compile feature override')
+
+        bracket_comment_feature_source = write_source(root / 'bracket-comment-target-feature')
+        bracket_comment_feature_nested = bracket_comment_feature_source / 'cmake'
+        bracket_comment_feature_nested.mkdir()
+        (bracket_comment_feature_nested / 'features.cmake').write_text('''
+        #[[
+        target_compile_features(cli PUBLIC cxx_std_17)
+        target_compile_options(cli PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-std=c++17>")
+        set_directory_properties(PROPERTIES COMPILE_OPTIONS -std=gnu++17)
+        ]]
+        target_compile_features(cli PRIVATE cxx_constexpr)
+        ''')
+        expect_pass(run_checker(bracket_comment_feature_source))
+
+        generator_standard_flag_source = write_source(root / 'generator-expression-standard-flag')
+        generator_standard_flag_nested = generator_standard_flag_source / 'cmake'
+        generator_standard_flag_nested.mkdir()
+        (generator_standard_flag_nested / 'flags.cmake').write_text('target_compile_options(cli PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-std=c++17>")\n')
+        expect_fail(run_checker(generator_standard_flag_source), 'manual C++ standard flag in CMake')
+
         bracket_argument_override_source = write_source(root / 'bracket-argument-standard-override')
         bracket_argument_override_nested = bracket_argument_override_source / 'cmake'
         bracket_argument_override_nested.mkdir()
@@ -445,6 +470,18 @@ def main():
         directory_compile_property_manual_nested.mkdir()
         (directory_compile_property_manual_nested / 'properties.cmake').write_text('set_property(DIRECTORY APPEND PROPERTY COMPILE_OPTIONS -Wall -std=gnu++17)\n')
         expect_fail(run_checker(directory_compile_property_manual_source), 'manual C++ standard flag in CMake')
+
+        directory_properties_manual_source = write_source(root / 'directory-properties-manual-standard')
+        directory_properties_manual_nested = directory_properties_manual_source / 'cmake'
+        directory_properties_manual_nested.mkdir()
+        (directory_properties_manual_nested / 'properties.cmake').write_text('set_directory_properties(PROPERTIES COMPILE_OPTIONS -std=c++17)\n')
+        expect_fail(run_checker(directory_properties_manual_source), 'manual C++ standard flag in CMake')
+
+        source_files_compile_options_manual_source = write_source(root / 'source-files-compile-options-manual-standard')
+        source_files_compile_options_manual_nested = source_files_compile_options_manual_source / 'cmake'
+        source_files_compile_options_manual_nested.mkdir()
+        (source_files_compile_options_manual_nested / 'properties.cmake').write_text('set_source_files_properties(probe.cpp PROPERTIES COMPILE_OPTIONS -std=gnu++17)\n')
+        expect_fail(run_checker(source_files_compile_options_manual_source), 'manual C++ standard flag in CMake')
 
         source_compile_property_generator_source = write_source(root / 'source-compile-property-generator')
         source_compile_property_generator_nested = source_compile_property_generator_source / 'cmake'
