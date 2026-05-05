@@ -37,7 +37,7 @@
 #include "temporalfilter.h"
 
 #include <atomic>
-#include <string.h>
+#include <cstring>
 
 namespace X265_NS {
 void weightAnalyse(Slice& slice, Frame& frame, x265_param& param);

@@ -24,7 +24,7 @@
 #include "filters.h"
 #include "common.h"
 
-#include <string.h>
+#include <cstring>
 #ifdef ENABLE_ZIMG
 #include "zimgfilter.h"
 #endif

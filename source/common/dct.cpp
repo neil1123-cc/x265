@@ -32,7 +32,7 @@
 #include "contexts.h"   // costCoeffNxN_c
 #include "threading.h"  // BSR
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

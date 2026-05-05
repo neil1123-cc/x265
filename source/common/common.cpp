@@ -26,9 +26,9 @@
 #include "threading.h"
 #include "x265.h"
 
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
 
 #if _WIN32
 #include <sys/types.h>

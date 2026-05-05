@@ -27,10 +27,10 @@
 #include "slice.h"
 #include "param.h"
 
-#include <signal.h>
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
+#include <csignal>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 
 #include <queue>
 

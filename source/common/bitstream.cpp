@@ -2,7 +2,7 @@
 #include "bitstream.h"
 #include "threading.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

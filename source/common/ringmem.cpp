@@ -23,7 +23,7 @@
 
 #include "ringmem.h"
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <string.h>
 
 #ifndef _WIN32

@@ -27,7 +27,7 @@
 #include "slice.h"
 #include "primitives.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

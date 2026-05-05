@@ -31,7 +31,7 @@
 #include "cudata.h"
 #include "contexts.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

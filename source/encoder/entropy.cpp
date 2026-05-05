@@ -32,7 +32,7 @@
 #include "sao.h"
 #include "entropy.h"
 
-#include <string.h>
+#include <cstring>
 
 #define CU_DQP_TU_CMAX 5 // max number bins for truncated unary
 #define CU_DQP_EG_k    0 // exp-golomb order

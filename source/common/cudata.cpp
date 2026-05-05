@@ -29,7 +29,7 @@
 #include "mv.h"
 #include "cudata.h"
 
-#include <string.h>
+#include <cstring>
 #define MAX_MV 1 << 14
 
 using namespace X265_NS;

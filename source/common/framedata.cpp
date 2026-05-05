@@ -26,7 +26,7 @@
 #include "search.h"
 #include "threadedme.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

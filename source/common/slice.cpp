@@ -27,7 +27,7 @@
 #include "picyuv.h"
 #include "slice.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

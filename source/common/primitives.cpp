@@ -24,7 +24,7 @@
 #include "common.h"
 #include "primitives.h"
 
-#include <string.h>
+#include <cstring>
 
 namespace X265_NS {
 // x265 private namespace

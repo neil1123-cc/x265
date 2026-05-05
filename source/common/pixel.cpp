@@ -31,7 +31,7 @@
 #include "x265.h"
 
 #include <cstdlib> // abs()
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

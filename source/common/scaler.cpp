@@ -23,7 +23,7 @@
 
 #include "scaler.h"
 
-#include <string.h>
+#include <cstring>
 
 #if _MSC_VER
 #pragma warning(disable: 4706) // assignment within conditional

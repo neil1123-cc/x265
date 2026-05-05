@@ -28,7 +28,7 @@
 
 #include "x265.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 

@@ -26,8 +26,8 @@
 
 #include <fstream>
 #include <iostream>
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 #include "sstream"
 #include "sys/stat.h"
 
@@ -283,7 +283,7 @@ bool metadataFromJson::frameMetadataFromJson(const char* filePath,
     metadata = new uint8_t[mSEIBytesToRead];
     mPimpl->mCurrentStreamBit = 8;
     mPimpl->mCurrentStreamByte = 1;
-    memset(metadata, 0, mSEIBytesToRead);
+    std::memset(metadata, 0, mSEIBytesToRead);
 
     fillMetadataArray(fileData, frame, jsonType, metadata);
     mPimpl->setPayloadSize(metadata, 0, mPimpl->mCurrentStreamByte);
@@ -306,7 +306,7 @@ int metadataFromJson::movieMetadataFromJson(const char* filePath, uint8_t **&met
     for (int frame = 0; frame < numFrames; ++frame)
     {
         metadata[frame] = new uint8_t[509];
-        memset(metadata[frame], 0, 509);
+        std::memset(metadata[frame], 0, 509);
         mPimpl->mCurrentStreamBit = 8;
         mPimpl->mCurrentStreamByte = 1;
 

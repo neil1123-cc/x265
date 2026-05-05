@@ -43,9 +43,9 @@
 
 #include "x265.h"
 #include <atomic>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #if _MSC_VER
 #pragma warning(disable: 4996) // POSIX functions are just fine, thanks

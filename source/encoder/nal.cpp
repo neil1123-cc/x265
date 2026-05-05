@@ -26,7 +26,7 @@
 #include "bitstream.h"
 #include "nal.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace X265_NS;
 
