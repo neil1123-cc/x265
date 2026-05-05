@@ -1273,14 +1273,18 @@ void Lookahead::checkLookaheadQueue(int &frameCnt)
 void Lookahead::flush()
 {
     /* force slicetypeDecide to run until the input queue is empty */
+    m_inputLock.acquire();
     m_fullQueueSize = 1;
     m_filled = true;
+    m_inputLock.release();
 }
 
 void Lookahead::setLookaheadQueue()
 {
+    m_inputLock.acquire();
     m_filled = false;
     m_fullQueueSize = X265_MAX(1, m_param->lookaheadDepth);
+    m_inputLock.release();
 }
 
 void Lookahead::findJob(int /*workerThreadID*/)
