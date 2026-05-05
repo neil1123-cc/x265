@@ -23,8 +23,8 @@
  *****************************************************************************/
 #include "raw.h"
 
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #if _WIN32
 #include <io.h>
 #include <fcntl.h>

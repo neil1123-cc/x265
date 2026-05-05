@@ -25,10 +25,10 @@
 #include "common.h"
 #include "reconplay.h"
 
-#include <signal.h>
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
+#include <csignal>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 
 using namespace X265_NS;
 

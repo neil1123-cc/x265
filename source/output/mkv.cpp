@@ -23,8 +23,8 @@
  *****************************************************************************/
 
 #include "mkv.h"
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #include <vector>
 
 using namespace X265_NS;
