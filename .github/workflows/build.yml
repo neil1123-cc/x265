@@ -507,7 +507,7 @@ jobs:
             --required-file-substring=source/encoder/api.cpp \
             --required-file-substring=source/common/version.cpp \
             --required-file-substring=source/common/winxp.cpp \
-            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP \
+            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP \
             --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1 \
             --forbidden-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/ \

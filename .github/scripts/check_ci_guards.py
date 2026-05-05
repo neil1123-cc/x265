@@ -71,7 +71,7 @@ REQUIRED_BUILD_SNIPPETS = (
     'encoded 1 frames',
     '--required-file-substring=source/output/reconplay.cpp',
     '--required-file-substring=source/common/winxp.cpp',
-    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP',
+    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP',
     '--forbidden-file-substring=source/common/winxp.cpp',
     'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands',
     'ninja -C build/cxx20-linux-gcc-compile-commands cli',
