@@ -53,6 +53,8 @@ def has_cxx_language_flag(tokens):
             continue
         if token.startswith('-x') and token[2:].lower() in ('c++', 'c++-header', 'objective-c++'):
             return True
+        if token.lower() == '/tp' or token.lower().startswith('/tp'):
+            return True
         index += 1
     return False
 

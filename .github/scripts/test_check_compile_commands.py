@@ -441,6 +441,12 @@ def main():
         write_compile_commands(root / 'pass-msvc-std', 'cl /std:c++20 /c source/common/common.cpp')
         expect_pass(run_checker(root / 'pass-msvc-std', '--min-cpp-commands=1'))
 
+        write_compile_commands(root / 'quoted-clang-cl-path', '"C:/Program Files/LLVM/bin/clang-cl.exe" /std:c++20 /c source/common/common.cpp')
+        expect_pass(run_checker(root / 'quoted-clang-cl-path', '--min-cpp-commands=1'))
+
+        write_compile_commands(root / 'quoted-clang-cl-old-std', '"C:/Program Files/LLVM/bin/clang-cl.exe" /std:c++17 /c source/common/common.cpp')
+        expect_fail(run_checker(root / 'quoted-clang-cl-old-std'), 'old standard flag /std:c++17')
+
         msvc_arguments_dir = root / 'pass-msvc-arguments'
         write_compile_commands_records(msvc_arguments_dir, [{
             'directory': str(msvc_arguments_dir),
@@ -766,6 +772,22 @@ def main():
         }])
         expect_pass(run_checker(cxx_language_arguments_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
+        msvc_tp_language_dir = root / 'msvc-tp-cxx-language'
+        write_compile_commands_records(msvc_tp_language_dir, [{
+            'directory': str(msvc_tp_language_dir),
+            'command': 'clang-cl /TP /std:c++20 /c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(msvc_tp_language_dir, '--min-cpp-commands=1'))
+
+        msvc_tp_missing_std_dir = root / 'msvc-tp-cxx-language-missing-std'
+        write_compile_commands_records(msvc_tp_missing_std_dir, [{
+            'directory': str(msvc_tp_missing_std_dir),
+            'arguments': ['clang-cl', '/TP', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_tp_missing_std_dir), 'missing GNU++20 dialect')
+
         write_compile_commands(root / 'only-c', 'cc -std=c11 -c source/common/pixel.c', 'source/common/pixel.c')
         expect_fail(run_checker(root / 'only-c'), 'no C++ compile commands')
 
@@ -810,6 +832,32 @@ def main():
         (nested_response_dir / 'args.rsp').write_text('@std.rsp -Werror=deprecated -DX265_DEPTH=8')
         write_compile_commands(nested_response_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_pass(run_checker(nested_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        nested_parent_response_dir = root / 'nested-parent-response-file'
+        nested_parent_response_dir.mkdir()
+        nested_parent_response_subdir = nested_parent_response_dir / 'sub'
+        nested_parent_response_subdir.mkdir()
+        (nested_parent_response_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (nested_parent_response_subdir / 'args.rsp').write_text('@../std.rsp -DX265_DEPTH=8')
+        write_compile_commands_records(nested_parent_response_dir, [{
+            'directory': str(nested_parent_response_subdir),
+            'command': 'c++ @args.rsp -c source/common/common.cpp',
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(nested_parent_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        nested_parent_response_missing_dir = root / 'nested-parent-response-file-missing-flag'
+        nested_parent_response_missing_dir.mkdir()
+        nested_parent_response_missing_subdir = nested_parent_response_missing_dir / 'sub'
+        nested_parent_response_missing_subdir.mkdir()
+        (nested_parent_response_missing_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated')
+        (nested_parent_response_missing_subdir / 'args.rsp').write_text('@../std.rsp -DX265_DEPTH=8')
+        write_compile_commands_records(nested_parent_response_missing_dir, [{
+            'directory': str(nested_parent_response_missing_subdir),
+            'command': 'c++ @args.rsp -c source/common/common.cpp',
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(nested_parent_response_missing_dir, '--required-flag=-Werror=deprecated'), 'missing required flag -Werror=deprecated')
 
         nested_arguments_dir = root / 'nested-response-file-arguments'
         nested_arguments_dir.mkdir()
@@ -862,6 +910,12 @@ def main():
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
         ])
         expect_pass(run_checker(root / 'depth-exclude', '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=dynamicHDR10/'))
+
+        write_compile_commands_entries(root / 'windows-depth-exclude', [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/dynamicHDR10/json11.cpp', 'source\\dynamicHDR10\\json11.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(root / 'windows-depth-exclude', '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source/dynamicHDR10/'))
 
         duplicate_source_dir = root / 'duplicate-source-min-cpp-commands'
         write_compile_commands_entries(duplicate_source_dir, [

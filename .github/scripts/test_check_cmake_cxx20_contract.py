@@ -139,7 +139,10 @@ def main():
         legal_feature_source = write_source(root / 'legal-target-features')
         legal_feature_nested = legal_feature_source / 'cmake'
         legal_feature_nested.mkdir()
-        (legal_feature_nested / 'features.cmake').write_text('target_compile_features(cli PRIVATE cxx_constexpr cxx_lambdas)\n')
+        (legal_feature_nested / 'features.cmake').write_text('''
+        set(cxx_std_feature cxx_constexpr)
+        target_compile_features(cli PRIVATE cxx_constexpr cxx_lambdas ${cxx_std_feature})
+        ''')
         expect_pass(run_checker(legal_feature_source))
 
         bracket_argument_override_source = write_source(root / 'bracket-argument-standard-override')
@@ -259,7 +262,11 @@ def main():
         string_docs_source = write_source(root / 'string-docs-pass')
         string_docs_nested = string_docs_source / 'cmake'
         string_docs_nested.mkdir()
-        (string_docs_nested / 'docs.cmake').write_text('string(APPEND MY_CXX_FLAGS_DOC " -std=gnu++17 appears in docs")\n')
+        (string_docs_nested / 'docs.cmake').write_text('''
+        string(APPEND MY_CXX_FLAGS_DOC " -std=gnu++17 appears in docs")
+        string(APPEND MY_CXX_FLAGS_COMMENT " -std=gnu++17 appears in comments")
+        string(APPEND MY_CXX_FLAGS_DESCRIPTION [=[ -std=gnu++17 appears in descriptions ]=])
+        ''')
         expect_pass(run_checker(string_docs_source))
 
         quoted_paren_source = write_source(root / 'quoted-paren-command')
@@ -397,6 +404,18 @@ def main():
                               COMPILE_OPTIONS -std=gnu++17)
         ''')
         expect_fail(run_checker(target_properties_compile_flag_source), 'manual C++ standard flag in CMake')
+
+        target_property_multi_compile_flag_source = write_source(root / 'target-property-multi-compile-flag')
+        target_property_multi_compile_flag_nested = target_property_multi_compile_flag_source / 'cmake'
+        target_property_multi_compile_flag_nested.mkdir()
+        (target_property_multi_compile_flag_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS -Wall -std=gnu++17)\n')
+        expect_fail(run_checker(target_property_multi_compile_flag_source), 'manual C++ standard flag in CMake')
+
+        target_property_multi_compile_flag_pass_source = write_source(root / 'target-property-multi-compile-flag-pass')
+        target_property_multi_compile_flag_pass_nested = target_property_multi_compile_flag_pass_source / 'cmake'
+        target_property_multi_compile_flag_pass_nested.mkdir()
+        (target_property_multi_compile_flag_pass_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS -Wall -Wextra)\n')
+        expect_pass(run_checker(target_property_multi_compile_flag_pass_source))
 
         top_text = '''
         cmake_minimum_required(VERSION 3.20)

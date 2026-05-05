@@ -26,6 +26,10 @@
 #include "threading.h"
 #include "x265.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 #if _WIN32
 #include <sys/types.h>
 #include <sys/timeb.h>

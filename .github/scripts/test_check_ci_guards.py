@@ -77,11 +77,17 @@ jobs:
           }
           check_pgo_consume_commands build/8b-lib "$PGO_8B_LIB_FLAG" 50
           check_pgo_consume_commands build/12b-lib "$PGO_12B_LIB_FLAG" 50
+          check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50
+          check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50
           check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60
+          check_cxx20_commands_clang build/all \
+            --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1 \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
       - name: Threaded ME Smoke
         shell: bash
         run: |
-          build/all/x265.exe --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
+          build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
           test -s smoke_threaded_me.hevc
           grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt
           ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
@@ -189,6 +195,10 @@ jobs:
       - name: Smoke, Package, and Verify 8b-lib
         shell: bash
         run: |
+          case "$llvm_profdata" in
+            /clang64/bin/*) ;;
+            *) echo "Unexpected llvm-profdata path: $llvm_profdata" >&2; exit 1 ;;
+          esac
           test -s smoke_profile_8b.mp4
           test -s "$LLVM_PROFILE_FILE"
           test -s profile-smoke-8b.profdata
@@ -256,6 +266,17 @@ runs:
       shell: msys2 {0}
       run: |
         set -euo pipefail
+        case "${MSYSTEM:-}" in
+          CLANG64) ;;
+          *) echo "Unexpected MSYSTEM: ${MSYSTEM:-unset}" >&2; exit 1 ;;
+        esac
+        for tool in clang c++ ld.lld llvm-ar llvm-ranlib llvm-profdata cmake ninja pkg-config; do
+          tool_path=$(command -v "$tool")
+          case "$tool_path" in
+            /clang64/bin/*|/usr/bin/*) ;;
+            *) echo "Unexpected $tool path: $tool_path" >&2; exit 1 ;;
+          esac
+        done
         echo "=== Dependency provenance ==="
         echo "lsmash=${{ inputs.lsmash-repository }}@${{ inputs.lsmash-ref }} suffix=${{ inputs.lsmash-cache-suffix }} patch=${{ inputs.lsmash-patch-path }}"
         echo "gop_muxer=${{ inputs.gop-muxer-repository }}@${{ inputs.gop-muxer-ref }} suffix=${{ inputs.gop-muxer-cache-suffix }} patch=${{ inputs.gop-muxer-patch-path }}"
@@ -385,14 +406,20 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress', '--threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt", "grep -Fq 'threaded-me' smoke_threaded_me_log.txt")
         expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: frame threads / pool features       : 1 / threaded-me')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s smoke_threaded_me.hevc', 'echo skip-threaded-me-output-check')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: test -s smoke_threaded_me.hevc')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q \'nb_read_frames=16\' smoke_threaded_me_count.txt', 'grep -q \'nb_read_frames=2\' smoke_threaded_me_count.txt')
+        expect_fail(run_checker(repo), "missing required Build workflow guard snippet: grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt")
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -403,8 +430,26 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60', 'echo skip-all-pgo-consume')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50', 'echo skip-all-8b-pgo-consume')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50', 'echo skip-all-12b-pgo-consume')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1', '--required-file-substring=source/output/output.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1', '--required-file-substring=source/encoder/api.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -435,6 +480,12 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'needs: validate-guardrails', '# needs removed')
         expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: needs: validate-guardrails')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', '/clang64/bin/*) ;;', '/usr/local/bin/*) ;;')
+        expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: /clang64/bin/*) ;;')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
