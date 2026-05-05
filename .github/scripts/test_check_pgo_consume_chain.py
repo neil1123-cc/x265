@@ -148,6 +148,13 @@ def main():
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        (root / 'profiles' / '0.profdata').write_text('')
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing profdata fresh slot')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
         profdata.write_text('')
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing PGO profdata')
 
@@ -159,6 +166,15 @@ def main():
         stale_target_metadata['profile_target'] = '12b-lib'
         write_metadata(metadata, stale_target_metadata)
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profile_target mismatch')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        stale_toolchain_metadata = dict(VALID_METADATA)
+        stale_toolchain_metadata['profdata_toolchain'] = 'llvm-19.1'
+        write_metadata(metadata, stale_toolchain_metadata)
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profdata_toolchain mismatch')
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -214,6 +230,19 @@ def main():
         result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', require_dependency_fields=False)
         expect_pass(result)
         if '::warning::' not in result.stdout:
+            raise AssertionError(result.stdout)
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing profdata metadata field: dependencies')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        source_commit_metadata = dict(VALID_METADATA)
+        source_commit_metadata['source_commit'] = 'old-commit'
+        write_metadata(metadata, source_commit_metadata)
+        result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', '--current-commit=new-commit')
+        expect_pass(result)
+        if 'PGO profdata source_commit differs from build commit' not in result.stdout:
             raise AssertionError(result.stdout)
 
     with tempfile.TemporaryDirectory() as tmp:
