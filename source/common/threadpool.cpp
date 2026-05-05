@@ -49,14 +49,10 @@
 #ifdef __GNUC__
 
 #define SLEEPBITMAP_BSF(id, x)     (id) = ((unsigned long)__builtin_ctzll(x))
-#define SLEEPBITMAP_OR(ptr, mask)  __sync_fetch_and_or(ptr, mask)
-#define SLEEPBITMAP_AND(ptr, mask) __sync_fetch_and_and(ptr, mask)
 
 #elif defined(_MSC_VER)
 
 #define SLEEPBITMAP_BSF(id, x)     _BitScanForward64(&id, x)
-#define SLEEPBITMAP_OR(ptr, mask)  InterlockedOr64((volatile LONG64*)ptr, (LONG)mask)
-#define SLEEPBITMAP_AND(ptr, mask) InterlockedAnd64((volatile LONG64*)ptr, (LONG)mask)
 
 #endif // ifdef __GNUC__
 
@@ -64,10 +60,12 @@
 
 /* use 32-bit primitives defined in threading.h */
 #define SLEEPBITMAP_BSF BSF
-#define SLEEPBITMAP_OR  ATOMIC_OR
-#define SLEEPBITMAP_AND ATOMIC_AND
 
 #endif
+
+#define SLEEPBITMAP_LOAD(ptr)      (ptr)->load(std::memory_order_acquire)
+#define SLEEPBITMAP_OR(ptr, mask)  (ptr)->fetch_or((mask), std::memory_order_acq_rel)
+#define SLEEPBITMAP_AND(ptr, mask) (ptr)->fetch_and((mask), std::memory_order_acq_rel)
 
 /* TODO FIX: Macro __MACH__ ideally should be part of MacOS definition, but adding to Cmake
    behaving is not as expected, need to fix this. */
@@ -193,7 +191,7 @@ void WorkerThread::threadMain()
 
 void JobProvider::tryWakeOne()
 {
-    int id = m_pool->tryAcquireSleepingThread(m_ownerBitmap, ALL_POOL_THREADS);
+    int id = m_pool->tryAcquireSleepingThread(m_ownerBitmap.load(std::memory_order_acquire), ALL_POOL_THREADS);
     if (id < 0)
     {
         m_helpWanted.store(true);
@@ -215,7 +213,7 @@ int ThreadPool::tryAcquireSleepingThread(sleepbitmap_t firstTryBitmap, sleepbitm
 {
     unsigned long id;
 
-    sleepbitmap_t masked = m_sleepBitmap & firstTryBitmap;
+    sleepbitmap_t masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & firstTryBitmap;
     while (masked)
     {
         SLEEPBITMAP_BSF(id, masked);
@@ -224,10 +222,10 @@ int ThreadPool::tryAcquireSleepingThread(sleepbitmap_t firstTryBitmap, sleepbitm
         if (SLEEPBITMAP_AND(&m_sleepBitmap, ~bit) & bit)
             return (int)id;
 
-        masked = m_sleepBitmap & firstTryBitmap;
+        masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & firstTryBitmap;
     }
 
-    masked = m_sleepBitmap & secondTryBitmap;
+    masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & secondTryBitmap;
     while (masked)
     {
         SLEEPBITMAP_BSF(id, masked);
@@ -236,7 +234,7 @@ int ThreadPool::tryAcquireSleepingThread(sleepbitmap_t firstTryBitmap, sleepbitm
         if (SLEEPBITMAP_AND(&m_sleepBitmap, ~bit) & bit)
             return (int)id;
 
-        masked = m_sleepBitmap & secondTryBitmap;
+        masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & secondTryBitmap;
     }
 
     return -1;
@@ -712,7 +710,7 @@ void ThreadPool::stopWorkers()
         m_isActive.store(false);
         for (int i = 0; i < m_numWorkers; i++)
         {
-            while (!(m_sleepBitmap & ((sleepbitmap_t)1 << i)))
+            while (!(SLEEPBITMAP_LOAD(&m_sleepBitmap) & ((sleepbitmap_t)1 << i)))
                 GIVE_UP_TIME();
             m_workers[i].awaken();
             m_workers[i].stop();

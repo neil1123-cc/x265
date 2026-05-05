@@ -2123,9 +2123,10 @@ void FrameEncoder::processRowEncoder(int intRow, ThreadLocalData& tld, int layer
             enqueueRowFilter(m_row_to_idx[row]);
             tryWakeOne();
         }
-    }
 
-    curRow.busy = false;
+        ScopedLock self(curRow.lock);
+        curRow.busy = false;
+    }
 
     // CHECK_ME: Does it always FALSE condition?
     if (m_completionCount.fetch_add(1) + 1 == 2 * (int)m_numRows)
