@@ -35,7 +35,7 @@
 #else
 #include <pthread.h>
 #include <semaphore.h>
-#include <errno.h>
+#include <cerrno>
 #include <fcntl.h>
 #endif
 
