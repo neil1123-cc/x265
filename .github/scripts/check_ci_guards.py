@@ -82,7 +82,9 @@ REQUIRED_BUILD_SNIPPETS = (
     'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc',
     'smoke_linux_gcc.hevc',
     'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib',
-    'ninja -C build/cxx20-warning-scan-all-12b-lib x265-static',
+    '-DENABLE_ZIMG=ON',
+    '--required-file-substring=source/filters/zimgfilter.cpp',
+    '--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG',
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit',
     'ninja -C build/cxx20-gcc-compile-commands-12bit x265-static',
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all',
@@ -635,6 +637,15 @@ def validate_gnu20_diagnostic_steps(repo_root):
         ),
         (
             'cxx20-warning-scan',
+            'Run C++20 CLI and dependency warning scans',
+            (
+                ('-DENABLE_ZIMG=ON', 'C++20 warning scan must actively enable ZIMG'),
+                ('--required-file-substring=source/filters/zimgfilter.cpp', 'C++20 warning scan must actively require zimgfilter.cpp'),
+                ('--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG', 'C++20 warning scan must actively require ENABLE_ZIMG on zimgfilter.cpp'),
+            ),
+        ),
+        (
+            'cxx20-warning-scan',
             'Run C++20 shared and all-bit-depth warning scans',
             (
                 ('configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'C++20 warning scan must actively configure all 12-bit lib'),
@@ -670,8 +681,9 @@ def build_step_requirements():
         ('build', 'Threaded ME Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[21:28]),
         ('build', 'GOP Output Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[28:39]),
         ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[39:41] + REQUIRED_BUILD_SNIPPETS[44:52]),
-        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[52:54]),
-        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:44] + REQUIRED_BUILD_SNIPPETS[54:]),
+        ('cxx20-warning-scan', 'Run C++20 CLI and dependency warning scans', REQUIRED_BUILD_SNIPPETS[85:88]),
+        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[84:85]),
+        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:44] + REQUIRED_BUILD_SNIPPETS[88:]),
     )
 
 
@@ -739,6 +751,19 @@ def validate_required_snippets(repo_root):
     print('Required CI guard steps validated')
 
 
+def validate_warning_scan_dependencies(repo_root):
+    build_path = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(workflow_steps(parsed, build_path, 'cxx20-warning-scan'), 'Setup Shared Dependencies', build_path, job_name='cxx20-warning-scan')
+    with_values = step.get('with')
+    if not isinstance(with_values, dict):
+        fail('C++20 warning scan dependency setup is missing with inputs', build_path)
+    packages = with_values.get('extra-msys2-packages')
+    if not isinstance(packages, str) or 'mingw-w64-clang-x86_64-zimg' not in packages.split():
+        fail('C++20 warning scan dependency setup must install mingw-w64-clang-x86_64-zimg', build_path)
+    print('C++20 warning scan dependency setup validated')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Check CI workflow guardrails that are easy to miss by hand')
     parser.add_argument('--repo-root', type=Path, default=Path.cwd())
@@ -756,6 +781,7 @@ def main():
         validate_scan_helper(repo_root, bash)
         validate_dependency_update_anchors(repo_root)
         validate_required_snippets(repo_root)
+        validate_warning_scan_dependencies(repo_root)
         validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
         validate_gnu20_diagnostic_steps(repo_root)

@@ -119,6 +119,7 @@ jobs:
           use-mimalloc: 'false'
           extra-msys2-packages: >-
             mingw-w64-clang-x86_64-python
+            mingw-w64-clang-x86_64-zimg
 
       - name: Prepare C++20 warning scan helpers
         run: cp x265/.github/scripts/cxx20_scan_helpers.sh ./cxx20-scan-helpers.sh
@@ -145,7 +146,8 @@ jobs:
             -DENABLE_CLI=ON \
             -DENABLE_ASSEMBLY=OFF \
             -DENABLE_HDR10_PLUS=ON \
-            -DENABLE_MKV=ON
+            -DENABLE_MKV=ON \
+            -DENABLE_ZIMG=ON
           check_cxx20_commands_clang build/cxx20-warning-scan \
             --min-cpp-commands=60 \
             --required-depth-define=-DX265_DEPTH=8 \
@@ -155,8 +157,10 @@ jobs:
             --required-file-substring=source/common/ \
             --required-file-substring=source/input/ \
             --required-file-substring=source/output/ \
+            --required-file-substring=source/filters/zimgfilter.cpp \
             --required-file-substring=source/abrEncApp.cpp \
             --required-file-substring=source/dynamicHDR10/ \
+            --required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
           ninja -C build/cxx20-warning-scan cli

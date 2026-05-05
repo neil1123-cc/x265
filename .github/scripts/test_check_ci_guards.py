@@ -53,6 +53,20 @@ jobs:
   cxx20-warning-scan:
     runs-on: windows-latest
     steps:
+      - name: Setup Shared Dependencies
+        uses: ./x265/.github/actions/setup-windows-deps
+        with:
+          extra-msys2-packages: >-
+            mingw-w64-clang-x86_64-python
+            mingw-w64-clang-x86_64-zimg
+      - name: Run C++20 CLI and dependency warning scans
+        shell: bash
+        run: |
+          configure_cxx20_scan x265/source build/cxx20-warning-scan \
+            -DENABLE_ZIMG=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan \
+            --required-file-substring=source/filters/zimgfilter.cpp \
+            --required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG
       - name: Run C++20 shared and all-bit-depth warning scans
         shell: bash
         run: |
@@ -598,13 +612,13 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure all 12-bit lib')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'echo skip-gcc-12bit-lib-shape')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
+        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check 12-bit compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -634,13 +648,31 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all', 'echo skip-gcc-all-bit-depth-shape')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all')
+        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check all-bit-depth compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands', 'echo skip-linux-gcc-compile-commands\n          # check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands')
         expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively check compile commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '-DENABLE_ZIMG=ON', '# -DENABLE_ZIMG=ON')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively enable ZIMG')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'mingw-w64-clang-x86_64-zimg', 'mingw-w64-clang-x86_64-python')
+        expect_fail(run_checker(repo), 'C++20 warning scan dependency setup must install mingw-w64-clang-x86_64-zimg')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG', '--required-file-substring=source/filters/zimgfilter.cpp')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively require ENABLE_ZIMG on zimgfilter.cpp')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

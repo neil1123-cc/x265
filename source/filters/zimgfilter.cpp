@@ -62,7 +62,7 @@ ZimgFilter::ZimgFilter(char* paramString)
     cLeft = cRight = cTop = cBottom = 0;
     rWidth = rHeight = 0;
     resizer = -1;
-    param1 = param2 = NAN;
+    param1 = param2 = 0.0;
     bFail = false;
     graph = nullptr;
     planes[0] = nullptr;
@@ -309,8 +309,10 @@ void ZimgFilter::processFrame(x265_picture& picture)
         }
     }
 
-    zimg_image_buffer_const src_buf = { ZIMG_API_VERSION };
-    zimg_image_buffer dst_buf = { ZIMG_API_VERSION };
+    zimg_image_buffer_const src_buf = {};
+    zimg_image_buffer dst_buf = {};
+    src_buf.version = ZIMG_API_VERSION;
+    dst_buf.version = ZIMG_API_VERSION;
 
     for (int i = 0; i < x265_cli_csps[csp].planes; i++)
     {
