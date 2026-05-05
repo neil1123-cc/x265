@@ -53,7 +53,7 @@ class JobProvider
 public:
 
     ThreadPool*   m_pool;
-    sleepbitmap_t m_ownerBitmap;
+    std::atomic<sleepbitmap_t> m_ownerBitmap;
     int           m_jpId;
     int           m_sliceType;
     std::atomic<bool> m_helpWanted;
@@ -82,7 +82,7 @@ class ThreadPool
 {
 public:
 
-    sleepbitmap_t m_sleepBitmap;
+    std::atomic<sleepbitmap_t> m_sleepBitmap;
     int           m_numProviders;
     int           m_numWorkers;
     void*         m_numaMask; // node mask in linux, cpu mask in windows
@@ -143,7 +143,7 @@ public:
      * maxPeers worker threads will call your processTasks() method. */
     int tryBondPeers(JobProvider& jp, int maxPeers)
     {
-        int count = jp.m_pool->tryBondPeers(maxPeers, jp.m_ownerBitmap, *this);
+        int count = jp.m_pool->tryBondPeers(maxPeers, jp.m_ownerBitmap.load(std::memory_order_acquire), *this);
         m_bondedPeerCount += count;
         return count;
     }
