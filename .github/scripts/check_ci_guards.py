@@ -71,7 +71,8 @@ REQUIRED_BUILD_SNIPPETS = (
     'encoded 1 frames',
     '--required-file-substring=source/output/reconplay.cpp',
     '--required-file-substring=source/common/winxp.cpp',
-    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP',
+    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7',
+    '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP',
     '--forbidden-file-substring=source/common/winxp.cpp',
     'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands',
     'ninja -C build/cxx20-linux-gcc-compile-commands cli',
@@ -510,9 +511,9 @@ def build_step_requirements():
         ('build', 'Compile X265', REQUIRED_BUILD_SNIPPETS[10:16]),
         ('build', 'Threaded ME Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[21:28]),
         ('build', 'GOP Output Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[28:39]),
-        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[39:41] + REQUIRED_BUILD_SNIPPETS[43:51]),
-        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[51:53]),
-        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:43] + REQUIRED_BUILD_SNIPPETS[53:]),
+        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[39:41] + REQUIRED_BUILD_SNIPPETS[44:52]),
+        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[52:54]),
+        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:44] + REQUIRED_BUILD_SNIPPETS[54:]),
     )
 
 

@@ -75,7 +75,8 @@ jobs:
           ninja -C build/cxx20-gcc-compile-commands-12bit x265-static
           check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib \
             --required-file-substring=source/common/winxp.cpp \
-            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP
+            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7 \
+            --forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP
           ninja -C build/cxx20-gcc-compile-commands-8bit-lib x265-static
           check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all \
             --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
@@ -107,7 +108,8 @@ jobs:
           ninja -C build/cxx20-gcc-compile-commands-12bit x265-static
           check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib \
             --required-file-substring=source/common/winxp.cpp \
-            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP
+            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7 \
+            --forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP
           ninja -C build/cxx20-gcc-compile-commands-8bit-lib x265-static
           check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all \
             --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
@@ -578,8 +580,14 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '--required-file-substring=source/common/winxp.cpp')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '--required-file-substring=source/common/winxp.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '--required-file-substring=source/common/winxp.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
