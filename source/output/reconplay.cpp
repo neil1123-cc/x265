@@ -137,7 +137,7 @@ bool ReconPlay::writePicture(const x265_picture& pic)
 
         for (int h = 0; h < height >> x265_cli_csps[colorSpace].height[i]; h++)
         {
-            memcpy(buf, src, pwidth * sizeof(pixel));
+            std::memcpy(buf, src, pwidth * sizeof(pixel));
             src += pic.stride[i];
             buf += pwidth;
         }

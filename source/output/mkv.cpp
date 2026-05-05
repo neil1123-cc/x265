@@ -210,7 +210,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     *(phc++) = vps_size >> 8;
     *(phc++) = vps_size & 0xff;
     // data
-    memcpy(phc, vps, vps_size);
+    std::memcpy(phc, vps, vps_size);
     phc += vps_size;
 
     // -- SPS --
@@ -223,7 +223,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     *(phc++) = sps_size >> 8;
     *(phc++) = sps_size & 0xff;
     // data
-    memcpy(phc, sps, sps_size);
+    std::memcpy(phc, sps, sps_size);
     phc += sps_size;
 
     // -- PPS --
@@ -236,7 +236,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     *(phc++) = pps_size >> 8;
     *(phc++) = pps_size & 0xff;
     // data
-    memcpy(phc, pps, pps_size);
+    std::memcpy(phc, pps, pps_size);
     phc += pps_size;
 
     if (nalcount >= 4)
@@ -251,7 +251,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
         *(phc++) = sei_size >> 8;
         *(phc++) = sei_size & 0xff;
         // data
-        memcpy(phc, sei, sei_size);
+        std::memcpy(phc, sei, sei_size);
         phc += sei_size;
     }
 
