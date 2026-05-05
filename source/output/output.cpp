@@ -27,7 +27,7 @@
 #include "y4m.h"
 #include "gop.h"
 
-#include <string.h>
+#include <cstring>
 
 #include "raw.h"
 

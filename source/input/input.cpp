@@ -25,7 +25,7 @@
 #include "yuv.h"
 #include "y4m.h"
 
-#include <string.h>
+#include <cstring>
 #ifdef ENABLE_AVISYNTH
     #include "avs.h"
 #endif
