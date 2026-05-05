@@ -410,6 +410,18 @@ def main():
         (included_target_property_same_value_nested / 'properties.cmake').write_text('set_target_properties(cli PROPERTIES CXX_STANDARD 20)\n')
         expect_fail(run_checker(included_target_property_same_value_source), 'target-level C++ standard override')
 
+        included_target_required_same_value_source = write_source(root / 'included-target-required-same-value', BASE_CMAKELISTS + 'include(cmake/properties.cmake)\n')
+        included_target_required_same_value_nested = included_target_required_same_value_source / 'cmake'
+        included_target_required_same_value_nested.mkdir()
+        (included_target_required_same_value_nested / 'properties.cmake').write_text('set_property(TARGET cli PROPERTY CXX_STANDARD_REQUIRED ON)\n')
+        expect_fail(run_checker(included_target_required_same_value_source), 'target-level C++ standard override')
+
+        included_target_properties_required_same_value_source = write_source(root / 'included-target-properties-required-same-value', BASE_CMAKELISTS + 'include(cmake/properties.cmake)\n')
+        included_target_properties_required_same_value_nested = included_target_properties_required_same_value_source / 'cmake'
+        included_target_properties_required_same_value_nested.mkdir()
+        (included_target_properties_required_same_value_nested / 'properties.cmake').write_text('set_target_properties(cli PROPERTIES CXX_STANDARD_REQUIRED ON)\n')
+        expect_fail(run_checker(included_target_properties_required_same_value_source), 'target-level C++ standard override')
+
         included_target_extensions_same_value_source = write_source(root / 'included-target-extensions-same-value', BASE_CMAKELISTS + 'include(cmake/properties.cmake)\n')
         included_target_extensions_same_value_nested = included_target_extensions_same_value_source / 'cmake'
         included_target_extensions_same_value_nested.mkdir()
@@ -427,6 +439,24 @@ def main():
         directory_compile_property_nested.mkdir()
         (directory_compile_property_nested / 'properties.cmake').write_text('set_property(DIRECTORY PROPERTY COMPILE_OPTIONS "$<$<CONFIG:Debug>:-Wextra>")\n')
         expect_pass(run_checker(directory_compile_property_source))
+
+        directory_compile_property_manual_source = write_source(root / 'directory-compile-property-manual-standard')
+        directory_compile_property_manual_nested = directory_compile_property_manual_source / 'cmake'
+        directory_compile_property_manual_nested.mkdir()
+        (directory_compile_property_manual_nested / 'properties.cmake').write_text('set_property(DIRECTORY APPEND PROPERTY COMPILE_OPTIONS -Wall -std=gnu++17)\n')
+        expect_fail(run_checker(directory_compile_property_manual_source), 'manual C++ standard flag in CMake')
+
+        source_compile_property_generator_source = write_source(root / 'source-compile-property-generator')
+        source_compile_property_generator_nested = source_compile_property_generator_source / 'cmake'
+        source_compile_property_generator_nested.mkdir()
+        (source_compile_property_generator_nested / 'properties.cmake').write_text('set_property(SOURCE probe.cpp PROPERTY COMPILE_OPTIONS "$<$<CONFIG:Debug>:-Wextra>")\n')
+        expect_pass(run_checker(source_compile_property_generator_source))
+
+        source_compile_property_manual_source = write_source(root / 'source-compile-property-manual-standard')
+        source_compile_property_manual_nested = source_compile_property_manual_source / 'cmake'
+        source_compile_property_manual_nested.mkdir()
+        (source_compile_property_manual_nested / 'properties.cmake').write_text('set_property(SOURCE probe.cpp APPEND PROPERTY COMPILE_OPTIONS -Wextra -std=c++20)\n')
+        expect_fail(run_checker(source_compile_property_manual_source), 'manual C++ standard flag in CMake')
 
         target_properties_compile_flag_source = write_source(root / 'target-properties-compile-flag')
         target_properties_compile_flag_nested = target_properties_compile_flag_source / 'cmake'

@@ -2,6 +2,7 @@
 import argparse
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -44,8 +45,10 @@ REQUIRED_BUILD_SNIPPETS = (
     'check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50',
     'check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50',
     'check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60',
-    '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1',
-    '--required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1',
+    '--required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1',
+    '--required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1',
+    '--required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1',
+    '--required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1',
     '--forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1',
     '--input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress',
     'ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_threaded_me.y4m',
@@ -66,9 +69,15 @@ REQUIRED_BUILD_SNIPPETS = (
     'test -s smoke_gop.mp4',
     "grep -q 'nb_read_frames=16' smoke_gop_mux_count.txt",
     'encoded 1 frames',
+    '--required-file-substring=source/output/reconplay.cpp',
+    '--required-file-substring=source/common/winxp.cpp',
+    '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP',
+    '--forbidden-file-substring=source/common/winxp.cpp',
     'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands',
     'ninja -C build/cxx20-linux-gcc-compile-commands cli',
     'build/cxx20-linux-gcc-compile-commands/x265 --input',
+    'build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log',
+    'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log',
     'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc',
     'smoke_linux_gcc.hevc',
     'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib',
@@ -142,6 +151,25 @@ REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS = (
     'git -c core.autocrlf=false reset --hard HEAD',
     'git apply ${{ inputs.gop-muxer-patch-path }}',
     'c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o',
+)
+TME_SMOKE_FLAGS = (
+    '--threaded-me',
+    '--no-wpp',
+    '--no-progress',
+)
+TME_SMOKE_OPTIONS = (
+    ('--input-res', '160x90'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--preset', 'medium'),
+    ('--pools', '32'),
+    ('--frame-threads', '1'),
+)
+TME_SMOKE_REQUIRED_LINES = (
+    'test -s smoke_threaded_me.hevc',
+    "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt",
+    "! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt",
+    "grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt",
 )
 GITHUB_EXPR = re.compile(r'\$\{\{.*?\}\}', re.DOTALL)
 RUN_LINE = re.compile(r'^(?P<indent>\s*)run:\s*(?P<value>.*)$')
@@ -236,6 +264,73 @@ def validate_yaml_text(repo_root):
             continue
         if path.parent == repo_root / WORKFLOW_DIR and 'jobs:' not in text:
             fail('workflow text is missing jobs:', path)
+
+
+def load_yaml(repo_root, relative_path):
+    import yaml
+
+    path = repo_root / relative_path
+    try:
+        parsed = yaml.safe_load(read_text(path))
+    except yaml.YAMLError as exc:
+        line = getattr(getattr(exc, 'problem_mark', None), 'line', None)
+        fail(str(exc), path, None if line is None else line + 1)
+    if not isinstance(parsed, dict):
+        fail('YAML file did not parse to a mapping', path)
+    return parsed
+
+
+def workflow_jobs(parsed, path):
+    jobs = parsed.get('jobs')
+    if not isinstance(jobs, dict):
+        fail('workflow YAML is missing a jobs mapping', path)
+    return jobs
+
+
+def workflow_steps(parsed, path, job_name):
+    job = workflow_jobs(parsed, path).get(job_name)
+    if not isinstance(job, dict):
+        fail(f'missing workflow job: {job_name}', path)
+    steps = job.get('steps')
+    if not isinstance(steps, list):
+        fail(f'workflow job {job_name} is missing a steps list', path)
+    return steps
+
+
+def action_steps(parsed, path):
+    runs = parsed.get('runs')
+    if not isinstance(runs, dict):
+        fail('action YAML is missing a runs mapping', path)
+    steps = runs.get('steps')
+    if not isinstance(steps, list):
+        fail('action YAML is missing a runs.steps list', path)
+    return steps
+
+
+def named_step(steps, step_name, path, required_items=(), job_name=None):
+    for step in steps:
+        if isinstance(step, dict) and step.get('name') == step_name:
+            return step
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        run = step.get('run')
+        if isinstance(run, str) and any(required in run for required in required_items):
+            return step
+    prefix = f'job {job_name} ' if job_name else ''
+    fail(f'missing {prefix}step: {step_name}', path)
+
+
+def required_run(step, path, step_name):
+    run = step.get('run')
+    if not isinstance(run, str) or not run.strip():
+        fail(f'step {step_name} is missing a run block', path)
+    return run
+
+
+def require_run_text(script, required, path, context):
+    if required not in script:
+        fail(f'missing required {context} snippet: {required}', path)
 
 
 def block_scalar(lines, start_index, base_indent):
@@ -361,32 +456,128 @@ def validate_dependency_update_anchors(repo_root):
     print('Dependency update anchors validated')
 
 
+def validate_threaded_me_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_threaded_me' in block]
+    if len(blocks) != 1:
+        fail(f'expected exactly one Threaded ME smoke run block, found {len(blocks)}', build)
+
+    script = blocks[0]
+    command_lines = [line.strip() for line in script.splitlines() if 'x265.exe' in line and 'smoke_threaded_me' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one Threaded ME x265 command, found {len(command_lines)}', build)
+
+    command = command_lines[0]
+    before_pipe = command.split('|', 1)[0].strip()
+    try:
+        tokens = shlex.split(before_pipe)
+    except ValueError as exc:
+        fail(f'could not parse Threaded ME smoke command: {exc}', build)
+
+    args = [token for token in tokens if token not in ('2>&1',)]
+    for expected in TME_SMOKE_FLAGS:
+        if expected not in args:
+            fail(f'missing Threaded ME smoke argument: {expected}', build)
+    for option, expected in TME_SMOKE_OPTIONS:
+        try:
+            actual = args[args.index(option) + 1]
+        except (ValueError, IndexError):
+            fail(f'missing Threaded ME smoke value for {option}', build)
+        if actual != expected:
+            fail(f'Threaded ME smoke {option} must be {expected}, got {actual}', build)
+
+    for required in TME_SMOKE_REQUIRED_LINES:
+        if required not in script:
+            fail(f'missing Threaded ME smoke check: {required}', build)
+    if 'tee smoke_threaded_me_log.txt' not in command:
+        fail('Threaded ME smoke must capture x265 log to smoke_threaded_me_log.txt', build)
+    if 'ffprobe -v error -count_frames' not in script or 'smoke_threaded_me.hevc > smoke_threaded_me_count.txt' not in script:
+        fail('Threaded ME smoke must count frames from smoke_threaded_me.hevc', build)
+    print('Threaded ME smoke guard validated')
+
+
+def build_step_requirements():
+    return (
+        ('validate-deps-cache-suffix', 'Check CI guardrails', REQUIRED_BUILD_SNIPPETS[:2]),
+        ('validate-deps-cache-suffix', 'Check CMake C++20 contract', REQUIRED_BUILD_SNIPPETS[2:3]),
+        ('validate-deps-cache-suffix', 'Check CMake C++20 contract guardrails', REQUIRED_BUILD_SNIPPETS[3:4]),
+        ('validate-deps-cache-suffix', 'Check C++20 compile command guardrails', REQUIRED_BUILD_SNIPPETS[4:5]),
+        ('validate-deps-cache-suffix', 'Check dependency patch cache suffixes', REQUIRED_BUILD_SNIPPETS[5:6]),
+        ('validate-deps-cache-suffix', 'Check dependency patch suffix guardrails', REQUIRED_BUILD_SNIPPETS[6:7]),
+        ('validate-deps-cache-suffix', 'Check release needs guardrails', REQUIRED_BUILD_SNIPPETS[7:8]),
+        ('validate-deps-cache-suffix', 'Check PGO metadata/consume guardrails', REQUIRED_BUILD_SNIPPETS[8:9]),
+        ('build', 'Get Latest Tag', REQUIRED_BUILD_SNIPPETS[9:10]),
+        ('build', 'Compile X265', REQUIRED_BUILD_SNIPPETS[10:16]),
+        ('build', 'Threaded ME Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[21:28]),
+        ('build', 'GOP Output Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[28:39]),
+        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[39:41] + REQUIRED_BUILD_SNIPPETS[43:51]),
+        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[51:53]),
+        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:43] + REQUIRED_BUILD_SNIPPETS[53:]),
+    )
+
+
+def profiling_step_requirements():
+    return (
+        ('validate-guardrails', 'Check CI guardrails', REQUIRED_BUILD_PROFILING_SNIPPETS[3:5]),
+        ('build', 'Get Latest Tag', REQUIRED_BUILD_PROFILING_SNIPPETS[5:6]),
+        ('build', 'Get CI Version', REQUIRED_BUILD_PROFILING_SNIPPETS[6:7]),
+        ('build', 'Package LLVM Profdata Tool', REQUIRED_BUILD_PROFILING_SNIPPETS[10:12]),
+        ('build', 'Smoke, Package, and Verify 8b-lib', REQUIRED_BUILD_PROFILING_SNIPPETS[7:9] + REQUIRED_BUILD_PROFILING_SNIPPETS[13:16] + REQUIRED_BUILD_PROFILING_SNIPPETS[22:23] + REQUIRED_BUILD_PROFILING_SNIPPETS[23:24] + REQUIRED_BUILD_PROFILING_SNIPPETS[25:26] + REQUIRED_BUILD_PROFILING_SNIPPETS[28:29]),
+        ('build', 'Smoke, Package, and Verify 12b-lib', REQUIRED_BUILD_PROFILING_SNIPPETS[7:8] + REQUIRED_BUILD_PROFILING_SNIPPETS[9:10] + REQUIRED_BUILD_PROFILING_SNIPPETS[16:19] + REQUIRED_BUILD_PROFILING_SNIPPETS[22:23] + REQUIRED_BUILD_PROFILING_SNIPPETS[23:24] + REQUIRED_BUILD_PROFILING_SNIPPETS[26:27] + REQUIRED_BUILD_PROFILING_SNIPPETS[28:29]),
+        ('build', 'Smoke, Package, and Verify All', REQUIRED_BUILD_PROFILING_SNIPPETS[7:8] + REQUIRED_BUILD_PROFILING_SNIPPETS[12:13] + REQUIRED_BUILD_PROFILING_SNIPPETS[19:24] + REQUIRED_BUILD_PROFILING_SNIPPETS[27:]),
+    )
+
+
+def validate_workflow_steps(repo_root, relative_path, context, requirements):
+    path = repo_root / relative_path
+    parsed = load_yaml(repo_root, relative_path)
+    for job_name, step_name, required_items in requirements:
+        step = named_step(workflow_steps(parsed, path, job_name), step_name, path, required_items, job_name)
+        script = required_run(step, path, step_name)
+        for required in required_items:
+            require_run_text(script, required, path, context)
+    return parsed
+
+
 def validate_required_snippets(repo_root):
-    build_text = read_text(repo_root / BUILD_WORKFLOW)
-    for snippet in REQUIRED_BUILD_SNIPPETS:
-        if snippet not in build_text:
-            fail(f'missing required Build workflow guard snippet: {snippet}', repo_root / BUILD_WORKFLOW)
+    validate_workflow_steps(repo_root, BUILD_WORKFLOW, 'Build workflow guard', build_step_requirements())
+    build_profiling = validate_workflow_steps(repo_root, BUILD_PROFILING_WORKFLOW, 'Build Profiling workflow guard', profiling_step_requirements())
+    validate_workflow_steps(repo_root, UPDATE_DEPS_WORKFLOW, 'update-deps guard', (
+        ('update-deps', 'Check CI guardrails', REQUIRED_UPDATE_DEPS_SNIPPETS[:3]),
+        ('update-deps', 'Update Dependency Refs', REQUIRED_UPDATE_DEPS_SNIPPETS[3:8]),
+        ('update-deps', 'Validate Dependency Ref Diff', REQUIRED_UPDATE_DEPS_SNIPPETS[8:]),
+    ))
 
-    build_profiling_text = read_text(repo_root / BUILD_PROFILING_WORKFLOW)
-    for snippet in REQUIRED_BUILD_PROFILING_SNIPPETS:
-        if snippet not in build_profiling_text:
-            fail(f'missing required Build Profiling workflow guard snippet: {snippet}', repo_root / BUILD_PROFILING_WORKFLOW)
+    build_profiling_path = repo_root / BUILD_PROFILING_WORKFLOW
+    jobs = workflow_jobs(build_profiling, build_profiling_path)
+    if jobs.get('build', {}).get('needs') != 'validate-guardrails':
+        fail('Build Profiling build job must need validate-guardrails', build_profiling_path)
+    if jobs.get('publish-release', {}).get('needs') != ['build', 'validate-guardrails']:
+        fail('Build Profiling publish-release job must need build and validate-guardrails', build_profiling_path)
+    profiling_action = load_yaml(repo_root, BUILD_PROFILING_ACTION)
+    profiling_action_path = repo_root / BUILD_PROFILING_ACTION
+    for step_name, required_items in (
+        ('Build 8b-lib profiling CLI', REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[:3] + REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[5:]),
+        ('Build 12b-lib profiling CLI', REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[:2] + REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[3:4]),
+        ('Build all profiling CLI', REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[:2] + REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[4:5]),
+    ):
+        step = named_step(action_steps(profiling_action, profiling_action_path), step_name, profiling_action_path)
+        script = required_run(step, profiling_action_path, step_name)
+        for required in required_items:
+            require_run_text(script, required, profiling_action_path, 'Build Profiling action guard')
 
-    build_profiling_action_text = read_text(repo_root / BUILD_PROFILING_ACTION)
-    for snippet in REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS:
-        if snippet not in build_profiling_action_text:
-            fail(f'missing required Build Profiling action guard snippet: {snippet}', repo_root / BUILD_PROFILING_ACTION)
-
-    update_deps_text = read_text(repo_root / UPDATE_DEPS_WORKFLOW)
-    for snippet in REQUIRED_UPDATE_DEPS_SNIPPETS:
-        if snippet not in update_deps_text:
-            fail(f'missing required update-deps guard snippet: {snippet}', repo_root / UPDATE_DEPS_WORKFLOW)
-
-    windows_deps_text = read_text(repo_root / WINDOWS_DEPS_ACTION)
-    for snippet in REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS:
-        if snippet not in windows_deps_text:
-            fail(f'missing required setup-windows-deps guard snippet: {snippet}', repo_root / WINDOWS_DEPS_ACTION)
-    print('Required CI guard snippets validated')
+    windows_deps = load_yaml(repo_root, WINDOWS_DEPS_ACTION)
+    windows_deps_path = repo_root / WINDOWS_DEPS_ACTION
+    for step_name, required_items in (
+        ('Verify MSYS2 Toolchain', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[:5]),
+        ('Compile L-SMASH', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[5:8]),
+        ('Compile GOP muxer', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[8:]),
+    ):
+        step = named_step(action_steps(windows_deps, windows_deps_path), step_name, windows_deps_path)
+        script = required_run(step, windows_deps_path, step_name)
+        for required in required_items:
+            require_run_text(script, required, windows_deps_path, 'setup-windows-deps guard')
+    print('Required CI guard steps validated')
 
 
 def main():
@@ -406,6 +597,7 @@ def main():
         validate_scan_helper(repo_root, bash)
         validate_dependency_update_anchors(repo_root)
         validate_required_snippets(repo_root)
+        validate_threaded_me_smoke(repo_root)
         validate_dependency_suffixes(repo_root, args.before, args.after)
     except GuardFailure as exc:
         report_failure(exc)

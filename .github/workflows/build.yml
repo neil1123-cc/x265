@@ -355,8 +355,10 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=12 \
             --required-file-substring=source/output/output.cpp \
             --required-file-substring=source/dynamicHDR10/ \
-            --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1 \
-            --required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
           ninja -C build/cxx20-warning-scan-all cli
@@ -459,6 +461,7 @@ jobs:
             --required-file-substring=source/common/ \
             --required-file-substring=source/input/ \
             --required-file-substring=source/output/ \
+            --required-file-substring=source/output/reconplay.cpp \
             --required-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
@@ -503,6 +506,8 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=12 \
             --required-file-substring=source/encoder/api.cpp \
             --required-file-substring=source/common/version.cpp \
+            --required-file-substring=source/common/winxp.cpp \
+            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP \
             --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1 \
             --forbidden-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/ \
@@ -533,8 +538,10 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=12 \
             --required-file-substring=source/output/output.cpp \
             --required-file-substring=source/dynamicHDR10/ \
-            --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1 \
-            --required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
           ninja -C build/cxx20-gcc-compile-commands-all cli
@@ -588,7 +595,9 @@ jobs:
             --required-file-substring=source/common/ \
             --required-file-substring=source/input/ \
             --required-file-substring=source/output/ \
+            --required-file-substring=source/output/reconplay.cpp \
             --required-file-substring=source/dynamicHDR10/ \
+            --forbidden-file-substring=source/common/winxp.cpp \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
           ninja -C build/cxx20-linux-gcc-compile-commands cli
@@ -599,6 +608,7 @@ jobs:
           Path('build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv').write_bytes(frame)
           PY
           build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc 2>&1 | tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
+          test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
           grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
 

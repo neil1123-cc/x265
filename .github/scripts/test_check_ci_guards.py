@@ -50,6 +50,40 @@ jobs:
           set -euo pipefail
           echo "::warning::No numeric version tag found; using $version as CI fallback"
           echo "version=0.0-gabc1234" >> "$GITHUB_OUTPUT"
+  cxx20-warning-scan:
+    runs-on: windows-latest
+    steps:
+      - name: Run C++20 shared and all-bit-depth warning scans
+        shell: bash
+        run: |
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib
+          ninja -C build/cxx20-warning-scan-all-12b-lib x265-static
+          check_cxx20_commands_clang build/cxx20-warning-scan-all \
+            --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
+  cxx20-gcc-compile-commands:
+    runs-on: windows-latest
+    steps:
+      - name: Run GCC C++20 compile command diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit
+          ninja -C build/cxx20-gcc-compile-commands-12bit x265-static
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib \
+            --required-file-substring=source/common/winxp.cpp \
+            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP
+          ninja -C build/cxx20-gcc-compile-commands-8bit-lib x265-static
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all \
+            --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
+          ninja -C build/cxx20-gcc-compile-commands-all cli
   cxx20-linux-gcc-compile-commands:
     runs-on: ubuntu-latest
     steps:
@@ -57,20 +91,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands
+          check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands \
+            --forbidden-flag-substring=-Wno-deprecated-declarations \
+            --forbidden-flag-substring=-Wno-error=deprecated-declarations \
+            --required-file-substring=source/output/reconplay.cpp \
+            --forbidden-file-substring=source/common/winxp.cpp
           ninja -C build/cxx20-linux-gcc-compile-commands cli
-          build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output smoke_linux_gcc.hevc 2>&1 | tee smoke_linux_gcc.log
+          build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc 2>&1 | tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
+          test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
-          grep -Fq 'encoded 1 frames' smoke_linux_gcc.log
+          grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib
           ninja -C build/cxx20-warning-scan-all-12b-lib x265-static
           check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit
           ninja -C build/cxx20-gcc-compile-commands-12bit x265-static
-          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib \
+            --required-file-substring=source/common/winxp.cpp \
+            --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP
+          ninja -C build/cxx20-gcc-compile-commands-8bit-lib x265-static
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all \
+            --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
           ninja -C build/cxx20-gcc-compile-commands-all cli
   build:
     runs-on: windows-latest
     steps:
+      - name: Get CI Version
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::No numeric version tag found; using $version as CI fallback"
+          echo "version=0.0-gabc1234" >> "$GITHUB_OUTPUT"
       - name: Build
         shell: bash
         run: |
@@ -87,10 +141,12 @@ jobs:
           check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50
           check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60
           check_cxx20_commands_clang build/all \
-            --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1 \
-            --required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
             --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
-      - name: Threaded ME Smoke
+      - name: Threaded ME Smoke (All CLI)
         shell: bash
         run: |
           ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_threaded_me.y4m
@@ -100,7 +156,7 @@ jobs:
           ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
           ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
           grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
-      - name: GOP Output Smoke
+      - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
           gop_muxer.exe smoke_gop.gop
@@ -209,7 +265,7 @@ jobs:
           head_hash=$(git rev-parse --short HEAD)
           version="${{ steps.tag.outputs.version }}-g${head_hash}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Setup Windows deps
+      - name: Setup Shared Dependencies
         uses: ./.github/actions/setup-windows-deps
         with:
           enable-lsmash: 'ON'
@@ -462,8 +518,14 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'gop_muxer.exe smoke_gop.gop', 'echo skip-gop-muxer')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: gop_muxer.exe smoke_gop.gop')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt", "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 16 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt\n          # --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress")
+        expect_fail(run_checker(repo), 'Threaded ME smoke --pools must be 32, got 16')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt", "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt\n          # --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress")
+        expect_fail(run_checker(repo), 'missing Threaded ME smoke argument: --threaded-me')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -480,8 +542,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1', '--required-file-substring=source/output/output.cpp')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1', '--required-file-substring=source/output/output.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -506,6 +568,24 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'echo skip-gcc-12bit-lib-shape')
         expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-substring=source/output/reconplay.cpp', '--required-file-substring=source/output/')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-substring=source/output/reconplay.cpp')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP', '--required-file-substring=source/common/winxp.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINXP')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-file-substring=source/common/winxp.cpp', '--required-file-substring=source/common/winxp.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --forbidden-file-substring=source/common/winxp.cpp')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -535,7 +615,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'needs: validate-guardrails', '# needs removed')
-        expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: needs: validate-guardrails')
+        expect_fail(run_checker(repo), 'Build Profiling build job must need validate-guardrails')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

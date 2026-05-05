@@ -4,6 +4,8 @@ set -euo pipefail
 cxx20_common_check_args=(
   --forbidden-flag-substring=-Wno-deprecated
   --forbidden-flag-substring=-Wno-error=deprecated
+  --forbidden-flag-substring=-Wno-deprecated-declarations
+  --forbidden-flag-substring=-Wno-error=deprecated-declarations
   --forbidden-flag-substring=-Wno-volatile
   --forbidden-flag-substring=-Wno-error=volatile
   --depth-exclude-path=dynamicHDR10/
