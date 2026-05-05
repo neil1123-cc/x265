@@ -48,7 +48,7 @@ def ci_shape_records(build_dir, root, overrides=None):
         ('source/encoder/api.cpp', ['-DEXPORT_C_API=1', '-DX265_DEPTH=8']),
         ('source/encoder/encoder.cpp', ['-DX265_DEPTH=8']),
         ('source/encoder/ratecontrol.cpp', ['-DX265_DEPTH=8', '-Werror=deprecated-volatile']),
-        ('source/output/output.cpp', ['-DLINKED_8BIT=1', '-DLINKED_12BIT=1', '-DX265_DEPTH=10']),
+        ('source/output/output.cpp', ['-DX265_DEPTH=10']),
         ('source/output/reconplay.cpp', ['-DX265_DEPTH=8', '-Werror=deprecated-volatile']),
         ('source/common/winxp.cpp', ['-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '-DX265_DEPTH=8']),
         ('source/common/cpu.cpp', ['-march=znver5', '-DX265_DEPTH=8']),
@@ -86,8 +86,6 @@ CI_SHAPE_ARGS = (
     '--required-file-flag=source/encoder/encoder.cpp=-DX265_DEPTH=8',
     '--required-file-flag=source/encoder/ratecontrol.cpp=-Werror=deprecated-volatile',
     '--required-file-flag=source/encoder/ratecontrol.cpp=-DX265_DEPTH=8',
-    '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1',
-    '--required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1',
     '--required-file-flag=source/output/output.cpp=-DX265_DEPTH=10',
     '--required-file-flag=source/output/reconplay.cpp=-Werror=deprecated-volatile',
     '--required-file-flag=source/output/reconplay.cpp=-DX265_DEPTH=8',
@@ -268,7 +266,7 @@ def main():
         all_depth_forbidden_dir = root / 'ci-shape-all-bit-depth-arguments-forbidden-depth'
         write_compile_commands_records(all_depth_forbidden_dir, ci_shape_records(all_depth_forbidden_dir, root, {
             'source/output/output.cpp': {
-                'argument_flags': ['-DLINKED_8BIT=1', '-DLINKED_12BIT=1', '-DX265_DEPTH=10', '-DX265_DEPTH=8'],
+                'argument_flags': ['-DX265_DEPTH=10', '-DX265_DEPTH=8'],
             },
         }))
         expect_fail(run_ci_shape_checker(all_depth_forbidden_dir), 'forbidden flag -DX265_DEPTH=8 for file substring source/output/output.cpp')
@@ -406,21 +404,30 @@ def main():
         expect_fail(run_checker(lib_only_mixed_depth_dir, *lib_only_shape_args), 'forbidden flag -DX265_DEPTH=8')
 
         all_bit_depth_shape_entries = (
-            ('source/output/output.cpp', ['-DX265_DEPTH=10', '-DLINKED_8BIT=1', '-DLINKED_12BIT=1']),
+            ('source/output/output.cpp', ['-DX265_DEPTH=10']),
             ('source/dynamicHDR10/metadataFromJson.cpp', ['-DX265_DEPTH=10']),
+            ('source/common/version.cpp', ['-DX265_DEPTH=10', '-DLINKED_8BIT=1', '-DLINKED_12BIT=1']),
+            ('source/encoder/api.cpp', ['-DX265_DEPTH=10', '-DLINKED_8BIT=1', '-DLINKED_12BIT=1']),
             ('source/encoder/encoder.cpp', ['-DX265_DEPTH=10']),
         )
         all_bit_depth_shape_args = (
-            '--min-cpp-commands=3',
+            '--min-cpp-commands=5',
             '--required-depth-define=-DX265_DEPTH=10',
             '--forbidden-flag=-DX265_DEPTH=8',
             '--forbidden-flag=-DX265_DEPTH=12',
             '--required-file-substring=source/output/output.cpp',
             '--required-file-substring=source/dynamicHDR10/',
-            '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1',
-            '--required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1',
+            '--required-file-substring=source/common/version.cpp',
+            '--required-file-substring=source/encoder/api.cpp',
+            '--required-file-flag=source/output/output.cpp=-DX265_DEPTH=10',
+            '--required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1',
+            '--required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1',
+            '--required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1',
+            '--required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1',
             '--forbidden-file-substring=source/input/lavf.cpp',
             '--forbidden-file-substring=source/output/mp4.cpp',
+            '--forbidden-file-flag=source/output/output.cpp=-DLINKED_8BIT=1',
+            '--forbidden-file-flag=source/output/output.cpp=-DLINKED_12BIT=1',
             '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LAVF',
             '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LSMASH',
         )
@@ -436,17 +443,29 @@ def main():
         ])
         expect_pass(run_checker(all_bit_depth_shape_dir, *all_bit_depth_shape_args))
 
-        all_bit_depth_missing_linked_dir = root / 'ci-shape-all-bit-depth-command-missing-linked-12bit'
+        all_bit_depth_missing_linked_dir = root / 'ci-shape-all-bit-depth-command-missing-version-linked-12bit'
         write_compile_commands_records(all_bit_depth_missing_linked_dir, [
             {
                 'directory': str(all_bit_depth_missing_linked_dir),
-                'command': f"c++ -std=gnu++20 {' '.join([flag for flag in flags if flag != '-DLINKED_12BIT=1'])} -c {file_path}",
+                'command': f"c++ -std=gnu++20 {' '.join([flag for flag in flags if not (file_path == 'source/common/version.cpp' and flag == '-DLINKED_12BIT=1')])} -c {file_path}",
                 'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
                 'file': str(root / file_path),
             }
             for file_path, flags in all_bit_depth_shape_entries
         ])
-        expect_fail(run_checker(all_bit_depth_missing_linked_dir, *all_bit_depth_shape_args), 'missing required flag -DLINKED_12BIT=1 for file substring source/output/output.cpp')
+        expect_fail(run_checker(all_bit_depth_missing_linked_dir, *all_bit_depth_shape_args), 'missing required flag -DLINKED_12BIT=1 for file substring source/common/version.cpp')
+
+        all_bit_depth_output_linked_leak_dir = root / 'ci-shape-all-bit-depth-output-linked-leak'
+        write_compile_commands_records(all_bit_depth_output_linked_leak_dir, [
+            {
+                'directory': str(all_bit_depth_output_linked_leak_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags + (['-DLINKED_8BIT=1'] if file_path == 'source/output/output.cpp' else []))} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in all_bit_depth_shape_entries
+        ])
+        expect_fail(run_checker(all_bit_depth_output_linked_leak_dir, *all_bit_depth_shape_args), 'forbidden flag -DLINKED_8BIT=1 for file substring source/output/output.cpp')
 
         all_bit_depth_cli_macro_leak_dir = root / 'ci-shape-all-bit-depth-encoder-cli-macro-leak'
         write_compile_commands_records(all_bit_depth_cli_macro_leak_dir, [
