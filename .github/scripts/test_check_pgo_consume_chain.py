@@ -38,6 +38,10 @@ def write_metadata(path, metadata=None):
     path.write_text(json.dumps(metadata or VALID_METADATA))
 
 
+def clone_metadata():
+    return json.loads(json.dumps(VALID_METADATA))
+
+
 def write_compile_commands(build_dir, flag):
     build_dir.mkdir(parents=True, exist_ok=True)
     (build_dir / 'compile_commands.json').write_text(json.dumps([
@@ -106,6 +110,17 @@ def expect_fail(result, expected):
         raise AssertionError(result.stdout)
 
 
+def expect_metadata_failure(mutator, expected, *extra_args):
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        mutated_metadata = clone_metadata()
+        mutator(mutated_metadata)
+        write_metadata(metadata, mutated_metadata)
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', *extra_args), expected)
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -113,8 +128,7 @@ def main():
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
         expect_pass(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'))
 
-        stale_metadata = dict(VALID_METADATA)
-        stale_metadata['dependencies'] = dict(VALID_METADATA['dependencies'])
+        stale_metadata = clone_metadata()
         stale_metadata['dependencies']['ffmpeg_cache_key'] = 'ffmpeg-stale-full-v4-clang'
         write_metadata(metadata, stale_metadata)
         stale_result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', require_dependency_fields=False)
@@ -123,12 +137,22 @@ def main():
             raise AssertionError(stale_result.stdout)
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profdata dependency cache key mismatch')
 
+    expect_metadata_failure(lambda metadata: metadata.pop('layout'), 'missing profdata metadata field: layout')
+    expect_metadata_failure(lambda metadata: metadata.pop('window'), 'missing profdata metadata field: window')
+    expect_metadata_failure(lambda metadata: metadata.pop('profile_target'), 'missing profdata metadata field: profile_target')
+    expect_metadata_failure(lambda metadata: metadata.__setitem__('layout', 'single-branch'), 'profdata layout mismatch')
+    expect_metadata_failure(lambda metadata: metadata['window'].__setitem__('slots', 8), 'profdata window mismatch field=slots')
+    expect_metadata_failure(lambda metadata: metadata['window'].__setitem__('fresh_slot', 'x265.profdata'), 'profdata window mismatch field=fresh_slot')
+    expect_metadata_failure(lambda metadata: metadata['window'].__setitem__('weights_newest_to_oldest', [1, 1, 1, 1]), 'profdata window mismatch field=weights_newest_to_oldest')
+    expect_metadata_failure(lambda metadata: metadata.__setitem__('profdata_branch', 'profdata-x86-64-all'), 'profdata_branch mismatch')
+    expect_metadata_failure(lambda metadata: metadata.__setitem__('profile_target', 'all'), 'profile_target mismatch')
+    expect_metadata_failure(lambda metadata: metadata.pop('llvm_profdata_version'), 'missing profdata metadata field: llvm_profdata_version')
+
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
-        partial_dependencies = dict(VALID_METADATA)
-        partial_dependencies['dependencies'] = dict(VALID_METADATA['dependencies'])
+        partial_dependencies = clone_metadata()
         partial_dependencies['dependencies'].pop('gop_muxer_cache_key')
         write_metadata(metadata, partial_dependencies)
         partial_result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', require_dependency_fields=False)
@@ -162,7 +186,7 @@ def main():
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
-        stale_target_metadata = dict(VALID_METADATA)
+        stale_target_metadata = clone_metadata()
         stale_target_metadata['profile_target'] = '12b-lib'
         write_metadata(metadata, stale_target_metadata)
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profile_target mismatch')
@@ -171,7 +195,7 @@ def main():
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
-        stale_toolchain_metadata = dict(VALID_METADATA)
+        stale_toolchain_metadata = clone_metadata()
         stale_toolchain_metadata['profdata_toolchain'] = 'llvm-19.1'
         write_metadata(metadata, stale_toolchain_metadata)
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profdata_toolchain mismatch')
@@ -180,7 +204,7 @@ def main():
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
-        stale_branch_metadata = dict(VALID_METADATA)
+        stale_branch_metadata = clone_metadata()
         stale_branch_metadata['profdata_branch'] = 'profdata-x86-64-12b-lib'
         write_metadata(metadata, stale_branch_metadata)
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profdata_branch mismatch')
@@ -224,7 +248,7 @@ def main():
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
-        metadata_without_dependencies = dict(VALID_METADATA)
+        metadata_without_dependencies = clone_metadata()
         metadata_without_dependencies.pop('dependencies')
         write_metadata(metadata, metadata_without_dependencies)
         result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', require_dependency_fields=False)
@@ -237,7 +261,7 @@ def main():
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
-        source_commit_metadata = dict(VALID_METADATA)
+        source_commit_metadata = clone_metadata()
         source_commit_metadata['source_commit'] = 'old-commit'
         write_metadata(metadata, source_commit_metadata)
         result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', '--current-commit=new-commit')
