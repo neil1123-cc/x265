@@ -27,8 +27,8 @@
 #include "input.h"
 #include "threading.h"
 #include <atomic>
+#include <cstdio>
 #include <fstream>
-#include <stdio.h>
 
 #define QUEUE_SIZE 5
 

@@ -23,6 +23,8 @@ DEPENDENCY_RULES = (
         'suffix_field': 'lsmash-cache-suffix',
         'action_snippets': (
             'key: lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}',
+        ),
+        'active_action_lines': (
             'git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}',
             'git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}',
             'git diff --check -- ${{ inputs.lsmash-patch-check-paths }}',
@@ -48,6 +50,8 @@ DEPENDENCY_RULES = (
         'suffix_field': 'gop-muxer-cache-suffix',
         'action_snippets': (
             'key: gop-muxer-${{ inputs.gop-muxer-repository }}-${{ inputs.gop-muxer-ref }}-${{ inputs.gop-muxer-cache-suffix }}',
+        ),
+        'active_action_lines': (
             'git -c core.autocrlf=false reset --hard HEAD',
             'git apply --check ${{ inputs.gop-muxer-patch-path }}',
             'git apply ${{ inputs.gop-muxer-patch-path }}',
@@ -158,12 +162,20 @@ def validate_current_mapping(repo_root):
             fail(f"{rule['name']} patch file is missing", patch_file)
 
 
+def shell_active_lines(text):
+    return {line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith('#')}
+
+
 def validate_action_snippets(repo_root):
     text = action_text_at(repo_root)
+    active_lines = shell_active_lines(text)
     for rule in PATCH_SUFFIX_RULES:
         for snippet in rule['action_snippets']:
             if snippet not in text:
                 fail(f"setup-windows-deps action is missing {rule['name']} patch preflight snippet: {snippet}", ACTION_PATH)
+        for line in rule['active_action_lines']:
+            if line not in active_lines:
+                fail(f"setup-windows-deps action is missing active {rule['name']} patch preflight line: {line}", ACTION_PATH)
     print('Dependency patch preflight snippets validated')
 
 

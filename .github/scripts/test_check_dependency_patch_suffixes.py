@@ -264,7 +264,7 @@ def main():
             'git -c core.autocrlf=false reset --hard HEAD',
             'git reset --hard HEAD',
         )
-        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing GOP muxer patch preflight snippet: git -c core.autocrlf=false reset --hard HEAD')
+        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing active GOP muxer patch preflight line: git -c core.autocrlf=false reset --hard HEAD')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -297,9 +297,36 @@ def main():
         replace_text(
             repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
             "grep -Fq 'lsmash_qtff_box_type_value' core/box.c",
-            "grep -Fq 'lsmash_isom_box_type_value' core/box.c",
+            "# grep -Fq 'lsmash_qtff_box_type_value' core/box.c",
         )
-        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing L-SMASH patch preflight snippet')
+        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing active L-SMASH patch preflight line')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(
+            repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml',
+            "grep -Fq 'lsmash_add_box(lsmash_root_as_box(p_root), free_box)' gop_muxer.cpp",
+            "echo \"grep -Fq 'lsmash_add_box(lsmash_root_as_box(p_root), free_box)' gop_muxer.cpp\"",
+        )
+        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing active GOP muxer patch preflight line')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        git(repo, 'init')
+        git(repo, 'config', 'user.name', 'test')
+        git(repo, 'config', 'user.email', 'test@example.com')
+        git(repo, 'add', '.')
+        git(repo, 'commit', '-m', 'base')
+        base = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+
+        (repo / '.github' / 'patches' / 'l-smash-clang-coff-refptr.patch').write_text('lsmash patch v2\n')
+        (repo / '.github' / 'patches' / 'gop-muxer-lsmash-add-box.patch').write_text('gop patch v2\n')
+        git(repo, 'add', '.')
+        git(repo, 'commit', '-m', 'both patches without suffixes')
+        no_suffix = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+        expect_fail(run('--repo-root', str(repo), '--before', base, '--after', no_suffix), 'changed without bumping lsmash-cache-suffix')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -309,7 +336,7 @@ def main():
             'echo "Validated GOP muxer patch anchors"',
             'echo "GOP muxer patch applied"',
         )
-        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing GOP muxer patch preflight snippet')
+        expect_fail(run('--repo-root', str(repo)), 'setup-windows-deps action is missing active GOP muxer patch preflight line')
 
 
 if __name__ == '__main__':
