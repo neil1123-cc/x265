@@ -577,6 +577,14 @@ def main():
         }])
         expect_pass(run_checker(msvc_arguments_dir, '--min-cpp-commands=1'))
 
+        msvc_latest_arguments_dir = root / 'msvc-latest-arguments'
+        write_compile_commands_records(msvc_latest_arguments_dir, [{
+            'directory': str(msvc_latest_arguments_dir),
+            'arguments': ['clang-cl', '/std:c++latest', '/c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(msvc_latest_arguments_dir), 'old standard flag /std:c++latest')
+
         both_fields_dir = root / 'pass-command-arguments-same-std'
         write_compile_commands_records(both_fields_dir, [{
             'directory': str(both_fields_dir),
@@ -867,6 +875,26 @@ def main():
         }])
         expect_fail(run_checker(file_forbidden_command_only_dir, '--forbidden-file-flag=source/common/common.cpp=-DENABLE_LAVF'), 'forbidden flag -DENABLE_LAVF for file substring source/common/common.cpp')
 
+        file_flag_response_dir = root / 'file-flag-response-file'
+        file_flag_response_dir.mkdir()
+        (file_flag_response_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF')
+        write_compile_commands_records(file_flag_response_dir, [{
+            'directory': str(file_flag_response_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source/input/lavf.cpp'],
+            'file': str(root / 'source/input/lavf.cpp'),
+        }])
+        expect_pass(run_checker(file_flag_response_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'))
+
+        file_flag_response_missing_dir = root / 'file-flag-response-file-missing'
+        file_flag_response_missing_dir.mkdir()
+        (file_flag_response_missing_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(file_flag_response_missing_dir, [{
+            'directory': str(file_flag_response_missing_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source/input/lavf.cpp'],
+            'file': str(root / 'source/input/lavf.cpp'),
+        }])
+        expect_fail(run_checker(file_flag_response_missing_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
+
         multi_match_file_flag_dir = root / 'multi-match-file-flag'
         write_compile_commands_entries(multi_match_file_flag_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
@@ -958,6 +986,26 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_pass(run_checker(quoted_arguments_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        windows_arguments_response_dir = root / 'windows-arguments-response-file'
+        windows_arguments_response_dir.mkdir()
+        (windows_arguments_response_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands_records(windows_arguments_response_dir, [{
+            'directory': str(windows_arguments_response_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source\\common\\common.cpp'],
+            'file': str(root / 'source\\common\\common.cpp'),
+        }])
+        expect_pass(run_checker(windows_arguments_response_dir, '--required-file-substring=source/common/common.cpp', '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        quoted_response_missing_flag_dir = root / 'quoted-response-file-arguments-missing-flag'
+        quoted_response_missing_flag_dir.mkdir()
+        (quoted_response_missing_flag_dir / 'args file.rsp').write_text('"-std=gnu++20" "-Wdeprecated" "-DX265_DEPTH=8"')
+        write_compile_commands_records(quoted_response_missing_flag_dir, [{
+            'directory': str(quoted_response_missing_flag_dir),
+            'arguments': ['c++', '@args file.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(quoted_response_missing_flag_dir, '--required-flag=-Werror=deprecated'), 'missing required flag -Werror=deprecated')
 
         missing_response_dir = root / 'missing-response-file'
         missing_response_dir.mkdir()
@@ -1074,8 +1122,10 @@ def main():
         write_compile_commands_entries(duplicate_source_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DSECOND_PASS=1 -c source/common/common.cpp', 'source/common/common.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/encoder/encoder.cpp', 'source/encoder/encoder.cpp'),
         ])
-        expect_fail(run_checker(duplicate_source_dir, '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
+        expect_pass(run_checker(duplicate_source_dir, '--min-cpp-commands=2'))
+        expect_fail(run_checker(duplicate_source_dir, '--min-cpp-commands=3'), 'expected at least 3 unique C++ compile commands')
 
         expect_fail(run_checker(root / 'pass', '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
 
