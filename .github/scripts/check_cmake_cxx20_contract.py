@@ -250,11 +250,12 @@ def is_compile_flag_variable(variable):
     if CXX_FLAG_VARIABLE_RE.search(variable):
         return True
     variable_tokens = {token for token in re.split(r'[^A-Z0-9]+', variable.upper()) if token}
+    if {'DOC', 'DOCS', 'DOCUMENTATION', 'HELP', 'COMMENT', 'COMMENTS', 'DESCRIPTION', 'DESCRIPTIONS', 'EXAMPLE', 'EXAMPLES'} & variable_tokens:
+        return False
     for marker in COMPILE_FLAG_VARIABLE_MARKERS:
         marker_tokens = marker.split('_')
         if len(marker_tokens) <= len(variable_tokens) and all(token in variable_tokens for token in marker_tokens):
-            if not ({'DOC', 'DOCS', 'DOCUMENTATION', 'HELP'} & variable_tokens):
-                return True
+            return True
     return False
 
 
@@ -288,10 +289,13 @@ def has_manual_standard_flag(command):
             index = property_index + 1
             while index < len(parts):
                 if upper_parts[index] in COMPILE_FLAG_PROPERTIES:
-                    if index + 1 < len(parts) and contains_manual_standard_flag([parts[index + 1]]):
-                        return True
+                    value_start = index + 1
+                    if value_start >= len(parts):
+                        return False
                     if upper_parts[property_index] == 'PROPERTY':
-                        break
+                        return contains_manual_standard_flag(parts[value_start:])
+                    if contains_manual_standard_flag([parts[value_start]]):
+                        return True
                     index += 2
                 else:
                     index += 2
@@ -306,7 +310,7 @@ def has_target_feature_override(command):
     parts = tokenize_cmake_body(command)
     if parts is None:
         return False
-    return any('cxx_std_' in part for part in parts)
+    return any(re.search(r'(?<![A-Za-z0-9_])cxx_std_[0-9]+(?![A-Za-z0-9_])', part) for part in parts)
 
 
 def iter_source_cmake_files(root):

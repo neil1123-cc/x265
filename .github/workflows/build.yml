@@ -302,6 +302,7 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=12 \
             --required-file-substring=source/encoder/api.cpp \
             --required-file-substring=source/common/version.cpp \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1 \
             --forbidden-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/ \
             --forbidden-file-substring=source/output/ \
@@ -325,6 +326,7 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=10 \
             --required-file-substring=source/encoder/api.cpp \
             --required-file-substring=source/common/version.cpp \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1 \
             --forbidden-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/ \
             --forbidden-file-substring=source/output/ \
@@ -353,6 +355,8 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=12 \
             --required-file-substring=source/output/output.cpp \
             --required-file-substring=source/dynamicHDR10/ \
+            --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1 \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
           ninja -C build/cxx20-warning-scan-all cli
@@ -476,6 +480,7 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=10 \
             --required-file-substring=source/encoder/api.cpp \
             --required-file-substring=source/common/version.cpp \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1 \
             --forbidden-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/ \
             --forbidden-file-substring=source/output/ \
@@ -498,6 +503,7 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=12 \
             --required-file-substring=source/encoder/api.cpp \
             --required-file-substring=source/common/version.cpp \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1 \
             --forbidden-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/ \
             --forbidden-file-substring=source/output/ \
@@ -527,6 +533,8 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=12 \
             --required-file-substring=source/output/output.cpp \
             --required-file-substring=source/dynamicHDR10/ \
+            --required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1 \
+            --required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1 \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
           ninja -C build/cxx20-gcc-compile-commands-all cli
@@ -610,6 +618,7 @@ jobs:
             --forbidden-flag=-DX265_DEPTH=10 \
             --required-file-substring=source/encoder/api.cpp \
             --required-file-substring=source/common/version.cpp \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1 \
             --forbidden-file-substring=source/dynamicHDR10/ \
             --forbidden-file-substring=source/input/ \
             --forbidden-file-substring=source/output/ \

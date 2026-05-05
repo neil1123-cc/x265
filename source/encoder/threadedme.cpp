@@ -31,6 +31,9 @@
 
 namespace X265_NS {
 int g_puStartIdx[TME_PU_START_IDX_SIZE][NUM_PART_SIZES] = {{0}};
+static_assert(NUM_PART_SIZES == 8, "update threaded-me PU table when PartSize changes");
+static_assert(sizeof(g_puStartIdx) / sizeof(g_puStartIdx[0]) == TME_PU_START_IDX_SIZE, "threaded-me PU table row count mismatch");
+static_assert(sizeof(g_puStartIdx[0]) / sizeof(g_puStartIdx[0][0]) == NUM_PART_SIZES, "threaded-me PU table PartSize dimension mismatch");
 
 bool ThreadedME::create()
 {
