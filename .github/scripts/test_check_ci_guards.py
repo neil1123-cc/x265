@@ -88,7 +88,7 @@ jobs:
   cxx20-linux-gcc-compile-commands:
     runs-on: ubuntu-latest
     steps:
-      - name: Smoke
+      - name: Run Linux GCC C++20 compile command diagnostics
         shell: bash
         run: |
           set -euo pipefail
@@ -476,7 +476,8 @@ def write_repo(repo):
     (setup_action / 'action.yml').write_text(ACTION_YML)
     (profiling_action / 'action.yml').write_text(PROFILING_ACTION_YML)
     (scripts / 'check_dependency_patch_suffixes.py').write_text(Path(__file__).with_name('check_dependency_patch_suffixes.py').read_text())
-    (scripts / 'cxx20_scan_helpers.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n')
+    helper_text = Path(__file__).with_name('cxx20_scan_helpers.sh').read_text()
+    (scripts / 'cxx20_scan_helpers.sh').write_text(helper_text)
     (repo / '.github' / 'deps-cache.json').write_text('''{
   "lsmash": "04e39f1fb232c332d4b04a1043c02c7c2d282d00",
   "obuparse": "v2.0.2",
@@ -502,6 +503,18 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         expect_pass(run_checker(repo))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'scripts' / 'cxx20_scan_helpers.sh', '--forbidden-flag=-fprofile-instr-use', '--forbidden-flag=-fprofile-instr-generate')
+        expect_fail(run_checker(repo), 'missing profiling compile_commands guard: --forbidden-flag=-fprofile-instr-use')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'scripts' / 'cxx20_scan_helpers.sh', '--forbidden-flag-substring=-fprofile-instr-use=', '--forbidden-flag-substring=-fprofile-instr-generate=')
+        expect_fail(run_checker(repo), 'missing profiling compile_commands guard: --forbidden-flag-substring=-fprofile-instr-use=')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -626,8 +639,20 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'update-deps.yml', 'python .github/scripts/test_check_ci_guards.py', 'echo skip-ci-guard-self-test')
-        expect_fail(run_checker(repo), 'missing required update-deps guard snippet: python .github/scripts/test_check_ci_guards.py')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands', 'echo skip-linux-gcc-compile-commands\n          # check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands')
+        expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively check compile commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape\n          # configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure all 12-bit lib')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'echo skip-gcc-12bit-lib-shape\n          # check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
+        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check 12-bit compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

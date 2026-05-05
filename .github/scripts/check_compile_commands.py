@@ -34,6 +34,10 @@ def entry_file_path(entry):
     return str(entry['file']).replace('\\', '/')
 
 
+def normalize_path_fragment(fragment):
+    return str(fragment).replace('\\', '/')
+
+
 def canonical_standard_flag(flag):
     if flag in ACCEPTED_STANDARD_FLAGS[:2]:
         return 'gnu++20'
@@ -211,7 +215,7 @@ def parse_file_flag_rules(values):
         file_substring, flag = value.split('=', 1)
         if not file_substring or not flag:
             fail(f'invalid file flag rule {value!r}; expected FILE_SUBSTRING=FLAG')
-        rules.append((file_substring, flag))
+        rules.append((normalize_path_fragment(file_substring), flag))
     return rules
 
 
@@ -281,6 +285,9 @@ def main():
     entry_token_map = {id(entry): entry_tokens(entry) for entry in cpp}
     required_file_flags = parse_file_flag_rules(args.required_file_flag)
     forbidden_file_flag_rules = parse_file_flag_rules(args.forbidden_file_flag)
+    required_file_substrings = [normalize_path_fragment(substring) for substring in args.required_file_substring]
+    forbidden_file_substrings_arg = [normalize_path_fragment(substring) for substring in args.forbidden_file_substring]
+    depth_exclude_paths = [normalize_path_fragment(path) for path in args.depth_exclude_path]
 
     old_std = []
     gnu_dialect_drift = []
@@ -311,11 +318,11 @@ def main():
         for flag_prefix in args.required_flag_prefix
         if entry_missing_required_flag_prefix(entry, flag_prefix)
     ]
-    missing_file_substrings = [substring for substring in args.required_file_substring if not any(substring in entry_file_path(entry) for entry in cpp)]
+    missing_file_substrings = [substring for substring in required_file_substrings if not any(substring in entry_file_path(entry) for entry in cpp)]
     forbidden_file_substrings = [
         (entry, substring)
         for entry in cpp
-        for substring in args.forbidden_file_substring
+        for substring in forbidden_file_substrings_arg
         if substring in entry_file_path(entry)
     ]
     missing_file_flag_matches = []
@@ -352,7 +359,7 @@ def main():
     if args.required_depth_define:
         for entry in cpp:
             path = entry_file_path(entry)
-            if any(excluded in path for excluded in args.depth_exclude_path):
+            if any(excluded in path for excluded in depth_exclude_paths):
                 continue
             depth_checked += 1
             unexpected_depth_flags = []
@@ -367,18 +374,18 @@ def main():
 
     required_flags = ','.join(args.required_flag) if args.required_flag else '<none>'
     required_flag_prefixes = ','.join(args.required_flag_prefix) if args.required_flag_prefix else '<none>'
-    required_file_substrings = ','.join(args.required_file_substring) if args.required_file_substring else '<none>'
-    forbidden_file_substrings_text = ','.join(args.forbidden_file_substring) if args.forbidden_file_substring else '<none>'
+    required_file_substrings_text = ','.join(required_file_substrings) if required_file_substrings else '<none>'
+    forbidden_file_substrings_text = ','.join(forbidden_file_substrings_arg) if forbidden_file_substrings_arg else '<none>'
     required_file_flag_rules = format_file_flag_rules(required_file_flags)
     forbidden_file_flag_rules_text = format_file_flag_rules(forbidden_file_flag_rules)
     forbidden_flags_text = ','.join(args.forbidden_flag) if args.forbidden_flag else '<none>'
     forbidden_flag_substrings = ','.join(args.forbidden_flag_substring) if args.forbidden_flag_substring else '<none>'
     depth_rule = args.required_depth_define or '<none>'
-    depth_excludes = ','.join(args.depth_exclude_path) if args.depth_exclude_path else '<none>'
+    depth_excludes = ','.join(depth_exclude_paths) if depth_exclude_paths else '<none>'
     min_cpp_commands = args.min_cpp_commands if args.min_cpp_commands is not None else '<none>'
     accepted_standards = ','.join(ACCEPTED_STANDARD_FLAGS)
     checked_sources = unique_source_count(cpp)
-    print(f'{args.build_dir}: accepted_standards={accepted_standards} checked_cpp_commands={len(cpp)} checked_cpp_sources={checked_sources} min_cpp_commands={min_cpp_commands} required_flags={required_flags} required_flag_prefixes={required_flag_prefixes} required_file_substrings={required_file_substrings} forbidden_file_substrings={forbidden_file_substrings_text} required_file_flags={required_file_flag_rules} forbidden_file_flags={forbidden_file_flag_rules_text} forbidden_flags={forbidden_flags_text} forbidden_flag_substrings={forbidden_flag_substrings} required_depth_define={depth_rule} depth_checked_commands={depth_checked} depth_exclude_paths={depth_excludes}')
+    print(f'{args.build_dir}: accepted_standards={accepted_standards} checked_cpp_commands={len(cpp)} checked_cpp_sources={checked_sources} min_cpp_commands={min_cpp_commands} required_flags={required_flags} required_flag_prefixes={required_flag_prefixes} required_file_substrings={required_file_substrings_text} forbidden_file_substrings={forbidden_file_substrings_text} required_file_flags={required_file_flag_rules} forbidden_file_flags={forbidden_file_flag_rules_text} forbidden_flags={forbidden_flags_text} forbidden_flag_substrings={forbidden_flag_substrings} required_depth_define={depth_rule} depth_checked_commands={depth_checked} depth_exclude_paths={depth_excludes}')
     if args.min_cpp_commands is not None and checked_sources < args.min_cpp_commands:
         fail(f'{args.build_dir}: expected at least {args.min_cpp_commands} unique C++ compile commands, found {checked_sources}')
     if duplicate_std:
