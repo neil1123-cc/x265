@@ -27,6 +27,8 @@
 #include "level.h"
 #include "svt.h"
 
+#include <string.h>
+
 namespace X265_NS {
 typedef struct
 {

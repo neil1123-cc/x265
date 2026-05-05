@@ -26,6 +26,8 @@
 #include "bitstream.h"
 #include "nal.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 NALList::NALList()
