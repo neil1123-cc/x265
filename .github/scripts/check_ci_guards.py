@@ -159,18 +159,19 @@ TME_SMOKE_FLAGS = (
     '--no-progress',
 )
 TME_SMOKE_OPTIONS = (
+    ('--input', 'smoke_threaded_me.y4m'),
     ('--input-res', '160x90'),
     ('--fps', '24'),
     ('--frames', '16'),
     ('--preset', 'medium'),
     ('--pools', '32'),
     ('--frame-threads', '1'),
+    ('--output', 'smoke_threaded_me.hevc'),
 )
-TME_SMOKE_REQUIRED_LINES = (
-    'test -s smoke_threaded_me.hevc',
-    "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt",
-    "! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt",
-    "grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt",
+TME_GENERATOR_OPTIONS = (
+    ('-i', 'testsrc2=size=160x90:rate=24'),
+    ('-frames:v', '16'),
+    ('-pix_fmt', 'yuv420p'),
 )
 GITHUB_EXPR = re.compile(r'\$\{\{.*?\}\}', re.DOTALL)
 RUN_LINE = re.compile(r'^(?P<indent>\s*)run:\s*(?P<value>.*)$')
@@ -457,6 +458,21 @@ def validate_dependency_update_anchors(repo_root):
     print('Dependency update anchors validated')
 
 
+def shell_active_lines(script):
+    return [line.strip() for line in script.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+
+def validate_pgo_consume_helper(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    blocks = [block for path, line, block in collect_run_blocks(build) if 'check_pgo_consume_commands()' in block]
+    if len(blocks) != 1:
+        fail(f'expected exactly one PGO consume helper run block, found {len(blocks)}', build)
+    active_lines = shell_active_lines(blocks[0])
+    required = 'check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"'
+    if required not in active_lines:
+        fail(f'PGO consume helper must actively run: {required}', build)
+    print('PGO consume helper guard validated')
+
+
 def validate_threaded_me_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_threaded_me' in block]
@@ -464,7 +480,25 @@ def validate_threaded_me_smoke(repo_root):
         fail(f'expected exactly one Threaded ME smoke run block, found {len(blocks)}', build)
 
     script = blocks[0]
-    command_lines = [line.strip() for line in script.splitlines() if 'x265.exe' in line and 'smoke_threaded_me' in line]
+    active_lines = shell_active_lines(script)
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_threaded_me.y4m' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one Threaded ME input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse Threaded ME input generator command: {exc}', build)
+    for option, expected in TME_GENERATOR_OPTIONS:
+        try:
+            actual = generator_args[generator_args.index(option) + 1]
+        except (ValueError, IndexError):
+            fail(f'missing Threaded ME input generator value for {option}', build)
+        if actual != expected:
+            fail(f'Threaded ME input generator {option} must be {expected}, got {actual}', build)
+    if generator_args[-1] != 'smoke_threaded_me.y4m':
+        fail(f'Threaded ME input generator must write smoke_threaded_me.y4m, got {generator_args[-1]}', build)
+
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_threaded_me' in line]
     if len(command_lines) != 1:
         fail(f'expected exactly one Threaded ME x265 command, found {len(command_lines)}', build)
 
@@ -476,6 +510,9 @@ def validate_threaded_me_smoke(repo_root):
         fail(f'could not parse Threaded ME smoke command: {exc}', build)
 
     args = [token for token in tokens if token not in ('2>&1',)]
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'Threaded ME smoke must run build/all/x265.exe, got {actual}', build)
     for expected in TME_SMOKE_FLAGS:
         if expected not in args:
             fail(f'missing Threaded ME smoke argument: {expected}', build)
@@ -487,12 +524,18 @@ def validate_threaded_me_smoke(repo_root):
         if actual != expected:
             fail(f'Threaded ME smoke {option} must be {expected}, got {actual}', build)
 
-    for required in TME_SMOKE_REQUIRED_LINES:
-        if required not in script:
-            fail(f'missing Threaded ME smoke check: {required}', build)
+    active_required = {
+        "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt": 'Threaded ME smoke must require enabled threaded-me log',
+        "! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt": 'Threaded ME smoke must reject disabled threaded-me log',
+        "grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt": 'Threaded ME smoke must require 16 decoded frames',
+    }
+    for required, message in active_required.items():
+        if required not in active_lines:
+            fail(message, build)
     if 'tee smoke_threaded_me_log.txt' not in command:
         fail('Threaded ME smoke must capture x265 log to smoke_threaded_me_log.txt', build)
-    if 'ffprobe -v error -count_frames' not in script or 'smoke_threaded_me.hevc > smoke_threaded_me_count.txt' not in script:
+    ffprobe_lines = [line for line in active_lines if 'ffprobe ' in line and 'smoke_threaded_me.hevc > smoke_threaded_me_count.txt' in line]
+    if len(ffprobe_lines) != 1 or ' -count_frames ' not in f' {ffprobe_lines[0]} ':
         fail('Threaded ME smoke must count frames from smoke_threaded_me.hevc', build)
     print('Threaded ME smoke guard validated')
 
@@ -598,6 +641,7 @@ def main():
         validate_scan_helper(repo_root, bash)
         validate_dependency_update_anchors(repo_root)
         validate_required_snippets(repo_root)
+        validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
         validate_dependency_suffixes(repo_root, args.before, args.after)
     except GuardFailure as exc:

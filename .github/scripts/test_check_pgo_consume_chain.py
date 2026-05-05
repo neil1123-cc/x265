@@ -165,6 +165,27 @@ def main():
         root = Path(tmp)
         profdata_flag_path = '/tmp/x265.profdata'
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        metadata.unlink()
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing PGO metadata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        metadata.write_text('')
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing PGO metadata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        profdata.unlink()
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing PGO profdata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
         (root / 'profiles' / '0.profdata').unlink()
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing profdata fresh slot')
 
@@ -275,8 +296,21 @@ def main():
         metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
         write_compile_commands_records(build, [{
             'directory': str(build),
-            'command': f'c++ -std=gnu++20 -fprofile-instr-use={profdata_flag_path} -c source/common/common.cpp',
-            'arguments': ['c++', '-std=gnu++20', '-fprofile-instr-use=/tmp/stale.profdata', '-c', 'source/common/common.cpp'],
+            'command': 'c++ -std=gnu++20 -fprofile-instr-use=/tmp/stale.profdata -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', f'-fprofile-instr-use={profdata_flag_path}', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing required flag -fprofile-instr-use=/tmp/x265.profdata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        (build / 'pgo.rsp').write_text('-std=gnu++20 -fprofile-instr-use=/tmp/stale.profdata')
+        write_compile_commands_records(build, [{
+            'directory': str(build),
+            'command': 'c++ @pgo.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', f'-fprofile-instr-use={profdata_flag_path}', '-c', 'source/common/common.cpp'],
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'missing required flag -fprofile-instr-use=/tmp/x265.profdata')
@@ -292,6 +326,43 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'forbidden flag -fprofile-update=atomic')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        (build / 'pgo.rsp').write_text(f'-std=gnu++20 -fprofile-instr-use={profdata_flag_path}')
+        write_compile_commands_records(build, [{
+            'directory': str(build),
+            'command': 'c++ @pgo.rsp -c source/common/common.cpp',
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        (build / 'pgo.rsp').write_text(f'-std=gnu++20 -fprofile-instr-use={profdata_flag_path} -fprofile-update=atomic')
+        write_compile_commands_records(build, [{
+            'directory': str(build),
+            'arguments': ['c++', '@pgo.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'forbidden flag -fprofile-update=atomic')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        (build / 'compile_commands.json').write_text(json.dumps([
+            {
+                'directory': str(build),
+                'command': 'cc -std=c11 -c source/common/pixel.c',
+                'file': str(root / 'source/common/pixel.c'),
+            }
+        ]))
+        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'no C++ compile commands')
 
     print('PGO metadata/consume chain guardrails validated')
 

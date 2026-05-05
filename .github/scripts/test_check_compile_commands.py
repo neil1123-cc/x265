@@ -1029,7 +1029,22 @@ def main():
         missing_response_dir = root / 'missing-response-file'
         missing_response_dir.mkdir()
         write_compile_commands(missing_response_dir, 'c++ @missing.rsp -c source/common/common.cpp')
-        expect_fail(run_checker(missing_response_dir), 'missing GNU++20 dialect')
+        expect_fail(run_checker(missing_response_dir), 'missing response file')
+
+        nested_missing_response_dir = root / 'nested-missing-response-file'
+        nested_missing_response_dir.mkdir()
+        (nested_missing_response_dir / 'args.rsp').write_text('-std=gnu++20 @missing-nested.rsp')
+        write_compile_commands(nested_missing_response_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(nested_missing_response_dir), 'missing response file')
+
+        missing_arguments_response_dir = root / 'missing-response-file-arguments'
+        missing_arguments_response_dir.mkdir()
+        write_compile_commands_records(missing_arguments_response_dir, [{
+            'directory': str(missing_arguments_response_dir),
+            'arguments': ['c++', '@missing.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(missing_arguments_response_dir), 'missing response file')
 
         uppercase_suffix_dir = root / 'uppercase-cpp-suffix'
         write_compile_commands_records(uppercase_suffix_dir, [{
@@ -1093,6 +1108,45 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(response_mixed_fields_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'), 'missing required flag -Werror=deprecated')
+
+        response_dual_field_equivalent_std_dir = root / 'response-dual-field-equivalent-std'
+        response_dual_field_equivalent_std_dir.mkdir()
+        (response_dual_field_equivalent_std_dir / 'std.rsp').write_text('--std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_equivalent_std_dir, [{
+            'directory': str(response_dual_field_equivalent_std_dir),
+            'command': 'c++ @std.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '-std', 'gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(response_dual_field_equivalent_std_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        response_dual_field_std_mismatch_dir = root / 'response-dual-field-std-mismatch'
+        response_dual_field_std_mismatch_dir.mkdir()
+        (response_dual_field_std_mismatch_dir / 'std.rsp').write_text('--std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_std_mismatch_dir, [{
+            'directory': str(response_dual_field_std_mismatch_dir),
+            'command': 'c++ @std.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '-std=c++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_std_mismatch_dir), 'duplicate standard flags -std=c++20,--std=gnu++20')
+
+        response_duplicate_std_dir = root / 'response-file-duplicate-std'
+        response_duplicate_std_dir.mkdir()
+        (response_duplicate_std_dir / 'args.rsp').write_text('-std=gnu++20 -std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands(response_duplicate_std_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(response_duplicate_std_dir), 'duplicate standard flags -std=gnu++20,-std=gnu++20')
+
+        response_command_missing_std_dir = root / 'response-command-missing-std-dual-field'
+        response_command_missing_std_dir.mkdir()
+        (response_command_missing_std_dir / 'args.rsp').write_text('-Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_command_missing_std_dir, [{
+            'directory': str(response_command_missing_std_dir),
+            'command': 'c++ @args.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_command_missing_std_dir), 'missing GNU++20 dialect')
 
         response_missing_flag_dir = root / 'response-file-missing-required-flag'
         response_missing_flag_dir.mkdir()

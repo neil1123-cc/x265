@@ -263,7 +263,16 @@ def contains_manual_standard_flag(parts):
     return any(marker in part for part in parts for marker in MANUAL_STANDARD_MARKERS)
 
 
-def has_manual_standard_flag(command):
+def references_variable(parts, variable):
+    return any(f'${{{variable}}}' in part for part in parts)
+
+
+def contains_manual_standard_variable(parts, manual_standard_variables):
+    return any(references_variable(parts, variable) for variable in manual_standard_variables)
+
+
+def has_manual_standard_flag(command, manual_standard_variables=None):
+    manual_standard_variables = manual_standard_variables or set()
     name = cmake_command_name(command)
     parts = tokenize_cmake_body(command)
     if parts is None:
@@ -271,17 +280,17 @@ def has_manual_standard_flag(command):
     if name == 'set' and parts:
         variable = parts[0]
         if is_compile_flag_variable(variable):
-            return contains_manual_standard_flag(parts[1:])
+            return contains_manual_standard_flag(parts[1:]) or contains_manual_standard_variable(parts[1:], manual_standard_variables)
     if name == 'list' and len(parts) >= 3 and parts[0].lower() in LIST_COMPILE_FLAG_SUBCOMMANDS:
         variable = parts[1]
         if is_compile_flag_variable(variable):
-            return contains_manual_standard_flag(parts[2:])
+            return contains_manual_standard_flag(parts[2:]) or contains_manual_standard_variable(parts[2:], manual_standard_variables)
     if name == 'string' and len(parts) >= 3 and parts[0].lower() in STRING_COMPILE_FLAG_SUBCOMMANDS:
         variable = parts[1]
         if is_compile_flag_variable(variable):
-            return contains_manual_standard_flag(parts[2:])
+            return contains_manual_standard_flag(parts[2:]) or contains_manual_standard_variable(parts[2:], manual_standard_variables)
     if name in COMPILE_FLAG_COMMANDS:
-        return contains_manual_standard_flag(parts)
+        return contains_manual_standard_flag(parts) or contains_manual_standard_variable(parts, manual_standard_variables)
     if name in COMPILE_FLAG_PROPERTY_COMMANDS:
         upper_parts = [part.upper() for part in parts]
         property_indices = [index for index, part in enumerate(upper_parts) if part in ('PROPERTIES', 'PROPERTY')]
@@ -293,14 +302,14 @@ def has_manual_standard_flag(command):
                     if value_start >= len(parts):
                         return False
                     if upper_parts[property_index] == 'PROPERTY':
-                        return contains_manual_standard_flag(parts[value_start:])
-                    if contains_manual_standard_flag([parts[value_start]]):
+                        return contains_manual_standard_flag(parts[value_start:]) or contains_manual_standard_variable(parts[value_start:], manual_standard_variables)
+                    if contains_manual_standard_flag([parts[value_start]]) or contains_manual_standard_variable([parts[value_start]], manual_standard_variables):
                         return True
                     index += 2
                 else:
                     index += 2
     if name not in WRAPPED_FLAG_COMMAND_ALLOWLIST and any(marker in name for marker in WRAPPED_FLAG_COMMAND_MARKERS):
-        return contains_manual_standard_flag(parts)
+        return contains_manual_standard_flag(parts) or contains_manual_standard_variable(parts, manual_standard_variables)
     return False
 
 
@@ -361,6 +370,32 @@ def check_contract(source_dir):
         if value != expected:
             fail(f'top-level GNU++20 contract drift: set({name} {value})', top, index)
 
+    manual_standard_variables = set()
+    changed = True
+    while changed:
+        changed = False
+        for path in iter_source_cmake_files(root):
+            for index, command in cmake_commands(path):
+                name = cmake_command_name(command)
+                parts = tokenize_cmake_body(command)
+                if parts is None:
+                    continue
+                manual_variable = None
+                values = ()
+                if name == 'set' and len(parts) >= 2 and not is_compile_flag_variable(parts[0]):
+                    manual_variable = parts[0]
+                    values = parts[1:]
+                elif name == 'list' and len(parts) >= 3 and parts[0].lower() in LIST_COMPILE_FLAG_SUBCOMMANDS and not is_compile_flag_variable(parts[1]):
+                    manual_variable = parts[1]
+                    values = parts[2:]
+                elif name == 'string' and len(parts) >= 3 and parts[0].lower() in STRING_COMPILE_FLAG_SUBCOMMANDS and not is_compile_flag_variable(parts[1]):
+                    manual_variable = parts[1]
+                    values = parts[2:]
+                if manual_variable and manual_variable not in manual_standard_variables:
+                    if contains_manual_standard_flag(values) or contains_manual_standard_variable(values, manual_standard_variables):
+                        manual_standard_variables.add(manual_variable)
+                        changed = True
+
     target_overrides = []
     manual_standard_flags = []
     extension_overrides = []
@@ -377,7 +412,7 @@ def check_contract(source_dir):
                 parsed_value = normalize_contract_value(parsed[0], parsed[1])
                 if parsed_value != REQUIRED_TOP_LEVEL_CONTRACT[parsed[0]] or path != top:
                     extension_overrides.append((path, index, command))
-            if has_manual_standard_flag(command):
+            if has_manual_standard_flag(command, manual_standard_variables):
                 manual_standard_flags.append((path, index, command))
 
     repo_root = root.parent
