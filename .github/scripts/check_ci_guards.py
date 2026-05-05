@@ -421,6 +421,11 @@ def validate_scan_helper(repo_root, bash):
     if not helper.is_file():
         fail('missing C++20 warning scan helper', helper)
     bash_check(bash, helper, helper, 1)
+    text = read_text(helper)
+    tokens = shlex.split(sanitize_github_expressions(text))
+    for required in ('--forbidden-flag=-fprofile-instr-use', '--forbidden-flag-substring=-fprofile-instr-use='):
+        if required not in tokens:
+            fail(f'missing profiling compile_commands guard: {required}', helper)
     print(f'{SCAN_HELPER.as_posix()}: bash syntax validated')
 
 
@@ -458,8 +463,64 @@ def validate_dependency_update_anchors(repo_root):
     print('Dependency update anchors validated')
 
 
+def strip_shell_comment(line):
+    stripped = []
+    in_single_quote = False
+    in_double_quote = False
+    escaped = False
+    for char in line:
+        if escaped:
+            stripped.append(char)
+            escaped = False
+            continue
+        if char == '\\' and in_double_quote:
+            stripped.append(char)
+            escaped = True
+            continue
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            stripped.append(char)
+            continue
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            stripped.append(char)
+            continue
+        if char == '#' and not in_single_quote and not in_double_quote:
+            break
+        stripped.append(char)
+    return ''.join(stripped).strip()
+
+
 def shell_active_lines(script):
-    return [line.strip() for line in script.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+    lines = []
+    for line in script.splitlines():
+        stripped = strip_shell_comment(line)
+        if stripped:
+            lines.append(stripped)
+    return lines
+
+
+def shell_active_logical_lines(script):
+    logical_lines = []
+    current = ''
+    for line in shell_active_lines(script):
+        if current:
+            current += ' ' + line
+        else:
+            current = line
+        if current.endswith('\\'):
+            current = current[:-1].rstrip()
+            continue
+        logical_lines.append(current)
+        current = ''
+    if current:
+        logical_lines.append(current)
+    return logical_lines
+
+
+def require_active_line_contains(active_lines, required, path, message):
+    if not any(required in line for line in active_lines):
+        fail(message, path)
 
 def validate_pgo_consume_helper(repo_root):
     build = repo_root / BUILD_WORKFLOW
@@ -538,6 +599,60 @@ def validate_threaded_me_smoke(repo_root):
     if len(ffprobe_lines) != 1 or ' -count_frames ' not in f' {ffprobe_lines[0]} ':
         fail('Threaded ME smoke must count frames from smoke_threaded_me.hevc', build)
     print('Threaded ME smoke guard validated')
+
+
+def validate_gnu20_diagnostic_steps(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    requirements = (
+        (
+            'cxx20-gcc-compile-commands',
+            'Run GCC C++20 compile command diagnostics',
+            (
+                ('check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'Windows GCC diagnostics must actively check 12-bit compile commands'),
+                ('ninja -C build/cxx20-gcc-compile-commands-12bit x265-static', 'Windows GCC diagnostics must actively build 12-bit static target'),
+                ('check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib', 'Windows GCC diagnostics must actively check 8-bit lib compile commands'),
+                ('--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7', 'Windows GCC diagnostics must actively require Win7 winxp.cpp macro'),
+                ('--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP', 'Windows GCC diagnostics must actively reject WinXP winxp.cpp macro'),
+                ('ninja -C build/cxx20-gcc-compile-commands-8bit-lib x265-static', 'Windows GCC diagnostics must actively build 8-bit lib static target'),
+                ('check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all', 'Windows GCC diagnostics must actively check all-bit-depth compile commands'),
+                ('--required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1', 'Windows GCC diagnostics must actively require linked 8-bit version macro'),
+                ('--required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1', 'Windows GCC diagnostics must actively require linked 12-bit version macro'),
+                ('ninja -C build/cxx20-gcc-compile-commands-all cli', 'Windows GCC diagnostics must actively build all-bit-depth CLI'),
+            ),
+        ),
+        (
+            'cxx20-linux-gcc-compile-commands',
+            'Run Linux GCC C++20 compile command diagnostics',
+            (
+                ('check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands', 'Linux GCC diagnostics must actively check compile commands'),
+                ('--required-file-substring=source/output/reconplay.cpp', 'Linux GCC diagnostics must actively require reconplay.cpp'),
+                ('--forbidden-file-substring=source/common/winxp.cpp', 'Linux GCC diagnostics must actively reject winxp.cpp'),
+                ('ninja -C build/cxx20-linux-gcc-compile-commands cli', 'Linux GCC diagnostics must actively build CLI'),
+                ('build/cxx20-linux-gcc-compile-commands/x265 --input', 'Linux GCC diagnostics must actively run x265 smoke'),
+                ("grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log", 'Linux GCC diagnostics must actively require encoded-frame smoke log'),
+            ),
+        ),
+        (
+            'cxx20-warning-scan',
+            'Run C++20 shared and all-bit-depth warning scans',
+            (
+                ('configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'C++20 warning scan must actively configure all 12-bit lib'),
+                ('ninja -C build/cxx20-warning-scan-all-12b-lib x265-static', 'C++20 warning scan must actively build all 12-bit static target'),
+                ('--required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1', 'C++20 warning scan must actively require linked 8-bit version macro'),
+                ('--required-file-flag=source/common/version.cpp=-DLINKED_12BIT=1', 'C++20 warning scan must actively require linked 12-bit version macro'),
+                ('--required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1', 'C++20 warning scan must actively require linked 8-bit API macro'),
+                ('--required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1', 'C++20 warning scan must actively require linked 12-bit API macro'),
+                ('--forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1', 'C++20 warning scan must actively reject exported API macro'),
+            ),
+        ),
+    )
+    for job_name, step_name, required_items in requirements:
+        step = named_step(workflow_steps(parsed, build, job_name), step_name, build, job_name=job_name)
+        active_lines = shell_active_logical_lines(required_run(step, build, step_name))
+        for required, message in required_items:
+            require_active_line_contains(active_lines, required, build, message)
+    print('GNU++20 diagnostic step active commands validated')
 
 
 def build_step_requirements():
@@ -643,6 +758,7 @@ def main():
         validate_required_snippets(repo_root)
         validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
+        validate_gnu20_diagnostic_steps(repo_root)
         validate_dependency_suffixes(repo_root, args.before, args.after)
     except GuardFailure as exc:
         report_failure(exc)

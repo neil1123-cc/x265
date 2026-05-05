@@ -267,8 +267,15 @@ def references_variable(parts, variable):
     return any(f'${{{variable}}}' in part for part in parts)
 
 
+def variable_references(parts):
+    variables = set()
+    for part in parts:
+        variables.update(re.findall(r'\$\{([^}]+)\}', part))
+    return variables
+
+
 def contains_manual_standard_variable(parts, manual_standard_variables):
-    return any(references_variable(parts, variable) for variable in manual_standard_variables)
+    return bool(variable_references(parts) & manual_standard_variables)
 
 
 def has_manual_standard_flag(command, manual_standard_variables=None):
@@ -395,6 +402,19 @@ def check_contract(source_dir):
                     if contains_manual_standard_flag(values) or contains_manual_standard_variable(values, manual_standard_variables):
                         manual_standard_variables.add(manual_variable)
                         changed = True
+                if name in ('function', 'macro') and len(parts) >= 2:
+                    tainted_parameters = variable_references(parts[1:]) & manual_standard_variables
+                    new_parameters = {parameter for parameter in parts[1:] if parameter in tainted_parameters}
+                    if not new_parameters.issubset(manual_standard_variables):
+                        manual_standard_variables.update(new_parameters)
+                        changed = True
+                if name == 'foreach' and len(parts) >= 2:
+                    loop_variable = parts[0]
+                    if loop_variable not in manual_standard_variables:
+                        values = parts[1:]
+                        if contains_manual_standard_flag(values) or contains_manual_standard_variable(values, manual_standard_variables):
+                            manual_standard_variables.add(loop_variable)
+                            changed = True
 
     target_overrides = []
     manual_standard_flags = []

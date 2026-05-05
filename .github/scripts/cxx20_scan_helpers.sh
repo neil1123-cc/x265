@@ -8,6 +8,7 @@ cxx20_common_check_args=(
   --forbidden-flag-substring=-Wno-error=deprecated-declarations
   --forbidden-flag-substring=-Wno-volatile
   --forbidden-flag-substring=-Wno-error=volatile
+  --forbidden-flag=-w
   --depth-exclude-path=dynamicHDR10/
 )
 
@@ -55,6 +56,8 @@ check_cxx20_commands_profiling() {
   python "${CXX20_CHECK_SCRIPT:-x265/.github/scripts/check_compile_commands.py}" "$build_dir" \
     --required-flag=-fprofile-instr-generate \
     --required-flag=-fprofile-update=atomic \
+    --forbidden-flag=-fprofile-instr-use \
+    --forbidden-flag-substring=-fprofile-instr-use= \
     "$@"
 }
 

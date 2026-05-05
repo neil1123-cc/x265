@@ -477,6 +477,41 @@ def main():
         ''')
         expect_fail(run_checker(foreach_list_insert_source), 'manual C++ standard flag in CMake')
 
+        function_parameter_forward_source = write_source(root / 'function-parameter-forward-standard-flag')
+        function_parameter_forward_nested = function_parameter_forward_source / 'cmake'
+        function_parameter_forward_nested.mkdir()
+        (function_parameter_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        function(add_cli_flags flag)
+          target_compile_options(cli PRIVATE ${flag})
+        endfunction()
+        add_cli_flags(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(function_parameter_forward_source), 'manual C++ standard flag in CMake')
+
+        macro_parameter_forward_source = write_source(root / 'macro-parameter-forward-standard-flag')
+        macro_parameter_forward_nested = macro_parameter_forward_source / 'cmake'
+        macro_parameter_forward_nested.mkdir()
+        (macro_parameter_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        macro(add_cli_flags flag)
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${flag})
+        endmacro()
+        add_cli_flags(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(macro_parameter_forward_source), 'manual C++ standard flag in CMake')
+
+        foreach_variable_forward_source = write_source(root / 'foreach-variable-forward-standard-flag')
+        foreach_variable_forward_nested = foreach_variable_forward_source / 'cmake'
+        foreach_variable_forward_nested.mkdir()
+        (foreach_variable_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        foreach(flag ${LOCAL_STD_FLAG})
+          target_compile_options(cli PRIVATE ${flag})
+        endforeach()
+        ''')
+        expect_fail(run_checker(foreach_variable_forward_source), 'manual C++ standard flag in CMake')
+
         included_manual_standard_source = write_source(root / 'included-manual-standard', BASE_CMAKELISTS + 'include(cmake/flags.cmake)\n')
         included_manual_standard_nested = included_manual_standard_source / 'cmake'
         included_manual_standard_nested.mkdir()
