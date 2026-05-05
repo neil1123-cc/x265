@@ -37,7 +37,7 @@ ReconFile* ReconFile::open(const char *fname, int width, int height, uint32_t bi
 {
     const char * s = strrchr(fname, '.');
 
-    if (s && !strcmp(s, ".y4m"))
+    if (s && !std::strcmp(s, ".y4m"))
         return new Y4MOutput(fname, width, height, bitdepth, fpsNum, fpsDenom, csp, sourceBitDepth);
     else
         return new YUVOutput(fname, width, height, bitdepth, csp, sourceBitDepth);
@@ -54,14 +54,14 @@ OutputFile* OutputFile::open(const char *fname, InputFileInfo& inputInfo)
     const char * s = strrchr(fname, '.');
 
 #ifdef ENABLE_MKV
-    if (s && !strcmp(s, ".mkv"))
+    if (s && !std::strcmp(s, ".mkv"))
         return new MKVOutput(fname, inputInfo);
 #endif
 #ifdef ENABLE_LSMASH
-    if (s && !strcmp(s, ".mp4"))
+    if (s && !std::strcmp(s, ".mp4"))
         return new MP4Output(fname, inputInfo);
 #endif
-    if (s && !strcmp(s, ".gop"))
+    if (s && !std::strcmp(s, ".gop"))
         return new GOPOutput(fname, inputInfo);
 
     return new RAWOutput(fname, inputInfo);

@@ -74,7 +74,7 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
         x265_log(NULL, X265_LOG_ERROR, "yuv: width, height, and FPS must be specified\n");
         return;
     }
-    if (!strcmp(info.filename, "-"))
+    if (!std::strcmp(info.filename, "-"))
     {
         ifs = stdin;
 #if _WIN32

@@ -60,7 +60,7 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
     framesize = 0;
 
     ifs = nullptr;
-    if (!strcmp(info.filename, "-"))
+    if (!std::strcmp(info.filename, "-"))
     {
         ifs = stdin;
 #if _WIN32
@@ -348,7 +348,7 @@ bool Y4MInput::populateFrameQueue()
         return false;
     /* strip off the FRAME\n header */
     char hbuf[sizeof(header) + 1];
-    if (fread(hbuf, sizeof(hbuf), 1, ifs) != 1 || memcmp(hbuf, header, sizeof(header)))
+    if (fread(hbuf, sizeof(hbuf), 1, ifs) != 1 || std::memcmp(hbuf, header, sizeof(header)))
     {
         if (!feof(ifs))
             x265_log(nullptr, X265_LOG_ERROR, "y4m: frame header missing\n");

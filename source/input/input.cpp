@@ -42,34 +42,34 @@ InputFile* InputFile::open(InputFileInfo& info, bool bForceY4m, bool alpha, int 
 {
     const char * s = strrchr(info.filename, '.');
 
-    if (bForceY4m || (s && !strcmp(s, ".y4m")))
+    if (bForceY4m || (s && !std::strcmp(s, ".y4m")))
         return new Y4MInput(info, alpha, format);
 
 #ifdef ENABLE_AVISYNTH
-    if (s && !strcmp(s, ".avs"))
+    if (s && !std::strcmp(s, ".avs"))
         return new AVSInput(info);
 #endif
 
 #ifdef ENABLE_VPYSYNTH
-    if (s && !strcmp(s, ".vpy"))
+    if (s && !std::strcmp(s, ".vpy"))
         return new VPYInput(info);
 #endif
 
 #ifdef ENABLE_LAVF
     if (s &&
-        ( !strcmp(s, ".mp4")
-        ||!strcmp(s, ".mkv")
-        ||!strcmp(s, ".mpg")
-        ||!strcmp(s, ".m1v")
-        ||!strcmp(s, ".m2v")
-        ||!strcmp(s, ".mpeg")
-        ||!strcmp(s, ".m4v")
-        ||!strcmp(s, ".m2ts")
-        ||!strcmp(s, ".ts")
-        ||!strcmp(s, ".avs")
-        ||!strcmp(s, ".avi")
-        ||!strcmp(s, ".ogv")
-        ||!strcmp(s, ".wmv")
+        ( !std::strcmp(s, ".mp4")
+        ||!std::strcmp(s, ".mkv")
+        ||!std::strcmp(s, ".mpg")
+        ||!std::strcmp(s, ".m1v")
+        ||!std::strcmp(s, ".m2v")
+        ||!std::strcmp(s, ".mpeg")
+        ||!std::strcmp(s, ".m4v")
+        ||!std::strcmp(s, ".m2ts")
+        ||!std::strcmp(s, ".ts")
+        ||!std::strcmp(s, ".avs")
+        ||!std::strcmp(s, ".avi")
+        ||!std::strcmp(s, ".ogv")
+        ||!std::strcmp(s, ".wmv")
         ))
         return new LavfInput(info);
 #endif

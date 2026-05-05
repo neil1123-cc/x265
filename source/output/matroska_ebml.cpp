@@ -126,7 +126,7 @@ static int mk_append_context_data( mk_context *c, const void *data, unsigned siz
         c->d_max = dn;
     }
 
-    memcpy( (char*)c->data + c->d_cur, data, size );
+    std::memcpy( (char*)c->data + c->d_cur, data, size );
 
     c->d_cur = ns;
 
@@ -256,7 +256,7 @@ static void mk_destroy_contexts( mk_writer *w )
 
 static int mk_write_string( mk_context *c, unsigned id, const char *str )
 {
-    size_t len = strlen( str );
+    size_t len = std::strlen( str );
 
     CHECK( mk_write_id( c, id ) );
     CHECK( mk_write_size( c, len ) );
@@ -332,7 +332,7 @@ mk_writer *mk_create_writer( const char *filename )
         return NULL;
     }
 
-    if( !strcmp( filename, "-" ) )
+    if( !std::strcmp( filename, "-" ) )
         w->fp = stdout;
     else
         w->fp = fopen( filename, "wb" );

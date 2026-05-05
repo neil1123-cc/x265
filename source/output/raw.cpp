@@ -38,7 +38,7 @@ using namespace std;
 RAWOutput::RAWOutput(const char* fname, InputFileInfo&)
 {
     b_fail = false;
-    if (!strcmp(fname, "-"))
+    if (!std::strcmp(fname, "-"))
     {
         ofs = stdout;
 #if _WIN32
