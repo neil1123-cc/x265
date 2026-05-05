@@ -26,6 +26,8 @@
 #include "search.h"
 #include "threadedme.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 FrameData::FrameData()

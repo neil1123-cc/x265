@@ -27,6 +27,8 @@
 #include "slice.h"
 #include "primitives.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 PicYuv::PicYuv()

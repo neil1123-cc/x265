@@ -29,6 +29,8 @@
 #include "slice.h"
 #include "mv.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 #define DEBLOCK_SMALLEST_BLOCK  8

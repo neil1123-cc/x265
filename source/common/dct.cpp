@@ -32,6 +32,8 @@
 #include "contexts.h"   // costCoeffNxN_c
 #include "threading.h"  // BSR
 
+#include <string.h>
+
 using namespace X265_NS;
 
 #if _MSC_VER

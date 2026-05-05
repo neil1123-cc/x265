@@ -30,6 +30,8 @@
 
 #include "reference.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 MotionReference::MotionReference()

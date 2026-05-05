@@ -69,6 +69,16 @@ def main():
         lowercase_cache_source = write_source(root / 'lowercase-cache-contract', lowercase_cache_top_text)
         expect_pass(run_checker(lowercase_cache_source))
 
+        quoted_contract_top_text = '''
+        cmake_minimum_required(VERSION 3.20)
+        project(x265)
+        set(CMAKE_CXX_STANDARD "20")
+        set(CMAKE_CXX_STANDARD_REQUIRED [=[ON]=])
+        set(CMAKE_CXX_EXTENSIONS "ON")
+        '''
+        quoted_contract_source = write_source(root / 'quoted-contract-values', quoted_contract_top_text)
+        expect_pass(run_checker(quoted_contract_source))
+
         inline_cache_top_text = '''
         cmake_minimum_required(VERSION 3.20)
         project(x265)
@@ -112,6 +122,22 @@ def main():
         get_property(current TARGET cli PROPERTY CXX_STANDARD)
         ''')
         expect_pass(run_checker(bracket_comment_source))
+
+        unterminated_bracket_comment_source = write_source(root / 'unterminated-bracket-comment')
+        unterminated_bracket_comment_nested = unterminated_bracket_comment_source / 'cmake'
+        unterminated_bracket_comment_nested.mkdir()
+        (unterminated_bracket_comment_nested / 'noisy.cmake').write_text('''
+        #[=[
+        set(CMAKE_CXX_STANDARD 17)
+        target_compile_options(cli PRIVATE -std=gnu++17)
+        ''')
+        expect_pass(run_checker(unterminated_bracket_comment_source))
+
+        closed_bracket_comment_then_command_source = write_source(root / 'closed-bracket-comment-then-command')
+        closed_bracket_comment_then_command_nested = closed_bracket_comment_then_command_source / 'cmake'
+        closed_bracket_comment_then_command_nested.mkdir()
+        (closed_bracket_comment_then_command_nested / 'flags.cmake').write_text('#[[ target_compile_options(cli PRIVATE -std=gnu++17) ]] add_compile_options(-std=gnu++17)\n')
+        expect_fail(run_checker(closed_bracket_comment_then_command_source), 'manual C++ standard flag in CMake')
 
         legal_property_source = write_source(root / 'legal-target-properties')
         legal_property_nested = legal_property_source / 'cmake'
@@ -395,6 +421,12 @@ def main():
         included_source_property_nested.mkdir()
         (included_source_property_nested / 'properties.cmake').write_text('set_property(SOURCE probe.cpp PROPERTY COMPILE_FLAGS -std=gnu++17)\n')
         expect_fail(run_checker(included_source_property_source), 'manual C++ standard flag in CMake')
+
+        directory_compile_property_source = write_source(root / 'directory-compile-property-generator')
+        directory_compile_property_nested = directory_compile_property_source / 'cmake'
+        directory_compile_property_nested.mkdir()
+        (directory_compile_property_nested / 'properties.cmake').write_text('set_property(DIRECTORY PROPERTY COMPILE_OPTIONS "$<$<CONFIG:Debug>:-Wextra>")\n')
+        expect_pass(run_checker(directory_compile_property_source))
 
         target_properties_compile_flag_source = write_source(root / 'target-properties-compile-flag')
         target_properties_compile_flag_nested = target_properties_compile_flag_source / 'cmake'

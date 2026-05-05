@@ -62,6 +62,12 @@ jobs:
           build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output smoke_linux_gcc.hevc 2>&1 | tee smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
           grep -Fq 'encoded 1 frames' smoke_linux_gcc.log
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib
+          ninja -C build/cxx20-warning-scan-all-12b-lib x265-static
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit
+          ninja -C build/cxx20-gcc-compile-commands-12bit x265-static
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all
+          ninja -C build/cxx20-gcc-compile-commands-all cli
   build:
     runs-on: windows-latest
     steps:
@@ -87,15 +93,26 @@ jobs:
       - name: Threaded ME Smoke
         shell: bash
         run: |
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_threaded_me.y4m
           build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt
           test -s smoke_threaded_me.hevc
           grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt
           ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
           grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
       - name: GOP Output Smoke
         shell: bash
         run: |
           gop_muxer.exe smoke_gop.gop
+          test -s smoke_gop.gop
+          test -s smoke_gop.options
+          test -s smoke_gop.headers
+          test -s smoke_gop-000000.hevc-gop-data
+          test -s smoke_gop-000008.hevc-gop-data
+          printf '%s\\n' smoke_gop-*.hevc-gop-data > smoke_gop_data_files.txt
+          grep -Fxq 'smoke_gop-000000.hevc-gop-data' smoke_gop_data_files.txt
+          grep -Fxq 'smoke_gop-000008.hevc-gop-data' smoke_gop_data_files.txt
+          grep -q 'format_name=mov,mp4,m4a,3gp,3g2,mj2' smoke_gop_mux_format.txt
           test -s smoke_gop.mp4
           grep -q 'nb_read_frames=16' smoke_gop_mux_count.txt
 
@@ -136,6 +153,10 @@ jobs:
               exit 1
             fi
           done
+          lsmash_suffix=$(sed -n '/lsmash-cache-suffix:/,/lsmash-path:/p' "$action" | sed -n 's/^ *default: //p' | head -1)
+          gop_muxer_suffix=$(sed -n '/gop-muxer-cache-suffix:/,/gop-muxer-path:/p' "$action" | sed -n 's/^ *default: //p' | head -1)
+          echo "Current L-SMASH cache suffix: ${lsmash_suffix}"
+          echo "Current GOP muxer cache suffix: ${gop_muxer_suffix}"
           sed -i "/lsmash-ref:/,/lsmash-cache-suffix:/s/default: [0-9a-f]\\{40\\}/default: ${{ steps.lsmash.outputs.sha }}/" "$action"
           sed -i "/gop-muxer-ref:/,/gop-muxer-cache-suffix:/s/default: [0-9a-f]\\{40\\}/default: ${{ steps.gop_muxer.outputs.sha }}/" "$action"
       - name: Update Deps Cache
@@ -200,6 +221,11 @@ jobs:
             *) echo "Unexpected llvm-profdata path: $llvm_profdata" >&2; exit 1 ;;
           esac
           test -s smoke_profile_8b.mp4
+          ffmpeg -hide_banner -loglevel error -i smoke_profile_8b.mp4 -c:v rawvideo -pix_fmt yuv420p -strict -1 smoke_profile_roundtrip_8b.y4m
+          test -s smoke_profile_roundtrip_8b.y4m
+          frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_8b.y4m | wc -l || true)
+          echo "8b-lib roundtrip FRAME tokens: ${frame_count:-missing}"
+          test "$frame_count" = "12"
           test -s "$LLVM_PROFILE_FILE"
           test -s profile-smoke-8b.profdata
           ./profdata-dist/llvm-profdata.exe show profile-smoke-8b.profdata >/dev/null
@@ -209,6 +235,11 @@ jobs:
         shell: bash
         run: |
           test -s smoke_profile_12b.mp4
+          ffmpeg -hide_banner -loglevel error -i smoke_profile_12b.mp4 -c:v rawvideo -pix_fmt yuv420p12le -strict -1 smoke_profile_roundtrip_12b.y4m
+          test -s smoke_profile_roundtrip_12b.y4m
+          frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_12b.y4m | wc -l || true)
+          echo "12b-lib roundtrip FRAME tokens: ${frame_count:-missing}"
+          test "$frame_count" = "12"
           test -s "$LLVM_PROFILE_FILE"
           test -s profile-smoke-12b.profdata
           ./profdata-dist/llvm-profdata.exe show profile-smoke-12b.profdata >/dev/null
@@ -218,6 +249,11 @@ jobs:
         shell: bash
         run: |
           test -s smoke_profile_all.mp4
+          ffmpeg -hide_banner -loglevel error -i smoke_profile_all.mp4 -c:v rawvideo -pix_fmt yuv420p10le -strict -1 smoke_profile_roundtrip_all.y4m
+          test -s smoke_profile_roundtrip_all.y4m
+          frame_count=$(grep -aob 'FRAME' smoke_profile_roundtrip_all.y4m | wc -l || true)
+          echo "all roundtrip FRAME tokens: ${frame_count:-missing}"
+          test "$frame_count" = "12"
           test -s "$LLVM_PROFILE_FILE"
           test -s profile-smoke-all.profdata
           ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null
@@ -288,6 +324,8 @@ runs:
         git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
         git diff --check -- ${{ inputs.lsmash-patch-check-paths }}
         grep -Fq 'lsmash_local_isom_box_type' codecs/description.c
+        grep -Fq "LSMASH_4CC( 'h', 'v', 'c', 'C' )" codecs/hevc.c
+        grep -Fq 'lsmash_isom_box_type_value' core/box.c
         grep -Fq 'return isom_get_sample_group_description_common( list, ISOM_GROUP_TYPE_PROL );' core/isom.c
     - name: Compile GOP muxer
       shell: msys2 {0}
@@ -456,6 +494,24 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands', 'echo skip-linux-gcc-compile-commands')
         expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'echo skip-gcc-12bit-lib-shape')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all', 'echo skip-gcc-all-bit-depth-shape')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

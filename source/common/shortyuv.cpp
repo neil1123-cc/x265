@@ -28,6 +28,8 @@
 
 #include "x265.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 ShortYuv::ShortYuv()
