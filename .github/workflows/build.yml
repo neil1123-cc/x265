@@ -164,6 +164,16 @@ jobs:
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
           ninja -C build/cxx20-warning-scan cli
+          python - <<'PY'
+          from pathlib import Path
+          width = height = 96
+          frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
+          Path('build/cxx20-warning-scan/smoke_zimg.yuv').write_bytes(frame)
+          PY
+          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log
+          test -s build/cxx20-warning-scan/smoke_zimg.hevc
+          grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log
+          grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log
 
           configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
             -DENABLE_CLI=ON \

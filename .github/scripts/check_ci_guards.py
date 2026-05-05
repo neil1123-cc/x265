@@ -85,6 +85,9 @@ REQUIRED_BUILD_SNIPPETS = (
     '-DENABLE_ZIMG=ON',
     '--required-file-substring=source/filters/zimgfilter.cpp',
     '--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG',
+    '--vf "zimg:lanczos(64,64)"',
+    "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log",
+    "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log",
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit',
     'ninja -C build/cxx20-gcc-compile-commands-12bit x265-static',
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all',
@@ -642,6 +645,9 @@ def validate_gnu20_diagnostic_steps(repo_root):
                 ('-DENABLE_ZIMG=ON', 'C++20 warning scan must actively enable ZIMG'),
                 ('--required-file-substring=source/filters/zimgfilter.cpp', 'C++20 warning scan must actively require zimgfilter.cpp'),
                 ('--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG', 'C++20 warning scan must actively require ENABLE_ZIMG on zimgfilter.cpp'),
+                ('--vf "zimg:lanczos(64,64)"', 'C++20 warning scan must actively run ZIMG filter smoke'),
+                ("grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log", 'C++20 warning scan must actively require ZIMG resize smoke log'),
+                ("grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log", 'C++20 warning scan must actively require ZIMG encoded-frame smoke log'),
             ),
         ),
         (
@@ -681,9 +687,9 @@ def build_step_requirements():
         ('build', 'Threaded ME Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[21:28]),
         ('build', 'GOP Output Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[28:39]),
         ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[39:41] + REQUIRED_BUILD_SNIPPETS[44:52]),
-        ('cxx20-warning-scan', 'Run C++20 CLI and dependency warning scans', REQUIRED_BUILD_SNIPPETS[85:88]),
+        ('cxx20-warning-scan', 'Run C++20 CLI and dependency warning scans', REQUIRED_BUILD_SNIPPETS[85:91]),
         ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[84:85]),
-        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:44] + REQUIRED_BUILD_SNIPPETS[88:]),
+        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:44] + REQUIRED_BUILD_SNIPPETS[91:]),
     )
 
 

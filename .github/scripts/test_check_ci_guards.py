@@ -67,6 +67,9 @@ jobs:
           check_cxx20_commands_clang build/cxx20-warning-scan \
             --required-file-substring=source/filters/zimgfilter.cpp \
             --required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG
+          build/cxx20-warning-scan/x265.exe --vf "zimg:lanczos(64,64)" 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log
+          grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log
+          grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log
       - name: Run C++20 shared and all-bit-depth warning scans
         shell: bash
         run: |
@@ -659,6 +662,12 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape\n          # configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure all 12-bit lib')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '-DENABLE_ZIMG=ON', '# -DENABLE_ZIMG=ON')
         expect_fail(run_checker(repo), 'C++20 warning scan must actively enable ZIMG')
 
@@ -677,8 +686,14 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape\n          # configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure all 12-bit lib')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--vf "zimg:lanczos(64,64)"', '# --vf "zimg:lanczos(64,64)"')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively run ZIMG filter smoke')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log", "grep -Fq 'zimg [info]' build/cxx20-warning-scan/smoke_zimg.log")
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively require ZIMG resize smoke log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
