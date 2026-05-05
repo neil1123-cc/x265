@@ -77,6 +77,10 @@ def split_shell_words(text):
     return shlex.split(text, posix=True)
 
 
+def should_expand_response_file(path):
+    return path.suffix.lower() in ('.rsp', '.response')
+
+
 def expand_response_files(tokens, directory=None, seen=None):
     if seen is None:
         seen = set()
@@ -86,6 +90,9 @@ def expand_response_files(tokens, directory=None, seen=None):
         normalized = strip_quotes(str(token))
         if normalized.startswith('@') and len(normalized) > 1:
             response_path = Path(strip_quotes(normalized[1:]))
+            if not should_expand_response_file(response_path):
+                expanded.append(normalized)
+                continue
             if not response_path.is_absolute() and directory is not None:
                 response_path = Path(directory) / response_path
             if not response_path.is_file():

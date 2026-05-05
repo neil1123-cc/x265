@@ -1046,6 +1046,11 @@ def main():
         }])
         expect_fail(run_checker(missing_arguments_response_dir), 'missing response file')
 
+        modmap_reference_dir = root / 'modmap-reference-not-response-file'
+        modmap_reference_dir.mkdir()
+        write_compile_commands(modmap_reference_dir, 'c++ -std=gnu++20 @encoderCMakeFilesencoder.diranalysis.cpp.obj.modmap -c source/encoder/analysis.cpp', 'source/encoder/analysis.cpp')
+        expect_pass(run_checker(modmap_reference_dir, '--min-cpp-commands=1'))
+
         uppercase_suffix_dir = root / 'uppercase-cpp-suffix'
         write_compile_commands_records(uppercase_suffix_dir, [{
             'directory': str(uppercase_suffix_dir),
