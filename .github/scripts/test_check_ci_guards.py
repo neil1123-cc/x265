@@ -107,7 +107,20 @@ jobs:
         run: |
           set -euo pipefail
           python .github/scripts/check_ci_guards.py
+          python .github/scripts/test_check_ci_guards.py
           python .github/scripts/check_dependency_patch_suffixes.py
+      - name: Get Latest L-SMASH Commit
+        id: lsmash
+        shell: bash
+        run: |
+          SHA=$(curl -fsSL "https://api.github.com/repos/vimeo/l-smash/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+      - name: Get Latest GOP muxer Commit
+        id: gop_muxer
+        shell: bash
+        run: |
+          SHA=$(curl -fsSL "https://api.github.com/repos/msg7086/gop_muxer/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
       - name: Update Dependency Refs
         shell: bash
         run: |
@@ -117,6 +130,18 @@ jobs:
               exit 1
             fi
           done
+          sed -i "/lsmash-ref:/,/lsmash-cache-suffix:/s/default: [0-9a-f]\\{40\\}/default: ${{ steps.lsmash.outputs.sha }}/" "$action"
+          sed -i "/gop-muxer-ref:/,/gop-muxer-cache-suffix:/s/default: [0-9a-f]\\{40\\}/default: ${{ steps.gop_muxer.outputs.sha }}/" "$action"
+      - name: Update Deps Cache
+        shell: bash
+        run: |
+          cat > .github/deps-cache.json << EOF
+          {
+            "lsmash": "${{ steps.lsmash.outputs.sha }}",
+            "obuparse": "${{ steps.obuparse.outputs.tag }}",
+            "gop_muxer": "${{ steps.gop_muxer.outputs.sha }}"
+          }
+          EOF
       - name: Validate Dependency Ref Diff
         shell: bash
         run: |
@@ -206,12 +231,18 @@ inputs:
     default: v3.3.2
   obuparse-ref:
     default: v2.0.2
+  lsmash-repository:
+    default: vimeo/l-smash
   lsmash-ref:
     default: 04e39f1fb232c332d4b04a1043c02c7c2d282d00
   lsmash-cache-suffix:
     default: clang-coff-refptr-v2
+  lsmash-patch-check-paths:
+    default: codecs/description.c core/isom.c
   lsmash-patch-path:
     default: ../x265/.github/patches/l-smash-clang-coff-refptr.patch
+  gop-muxer-repository:
+    default: msg7086/gop_muxer
   gop-muxer-ref:
     default: 5677cf5ef905c2412ed31de300cd1a08b341d21d
   gop-muxer-cache-suffix:
@@ -231,13 +262,21 @@ runs:
     - name: Compile L-SMASH
       shell: msys2 {0}
       run: |
+        key: lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}
         git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}
+        git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
+        git diff --check -- ${{ inputs.lsmash-patch-check-paths }}
+        grep -Fq 'lsmash_local_isom_box_type' codecs/description.c
+        grep -Fq 'return isom_get_sample_group_description_common( list, ISOM_GROUP_TYPE_PROL );' core/isom.c
     - name: Compile GOP muxer
       shell: msys2 {0}
       run: |
         git -c core.autocrlf=false reset --hard HEAD
+        key: gop-muxer-${{ inputs.gop-muxer-repository }}-${{ inputs.gop-muxer-ref }}-${{ inputs.gop-muxer-cache-suffix }}
         git apply --check ${{ inputs.gop-muxer-patch-path }}
         git apply ${{ inputs.gop-muxer-patch-path }}
+        git diff --check -- gop_muxer.cpp
+        grep -Fq 'lsmash_add_box(lsmash_root_as_box(p_root), free_box)' gop_muxer.cpp
         c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o
 '''
 
@@ -317,6 +356,11 @@ def write_repo(repo):
     (profiling_action / 'action.yml').write_text(PROFILING_ACTION_YML)
     (scripts / 'check_dependency_patch_suffixes.py').write_text(Path(__file__).with_name('check_dependency_patch_suffixes.py').read_text())
     (scripts / 'cxx20_scan_helpers.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n')
+    (repo / '.github' / 'deps-cache.json').write_text('''{
+  "lsmash": "04e39f1fb232c332d4b04a1043c02c7c2d282d00",
+  "obuparse": "v2.0.2",
+  "gop_muxer": "5677cf5ef905c2412ed31de300cd1a08b341d21d"
+}\n''')
     (patches / 'l-smash-clang-coff-refptr.patch').write_text('lsmash patch\n')
     (patches / 'gop-muxer-lsmash-add-box.patch').write_text('gop patch\n')
 
@@ -371,6 +415,12 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'update-deps.yml', 'python .github/scripts/test_check_ci_guards.py', 'echo skip-ci-guard-self-test')
+        expect_fail(run_checker(repo), 'missing required update-deps guard snippet: python .github/scripts/test_check_ci_guards.py')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'update-deps.yml', 'python .github/scripts/check_ci_guards.py', 'python .github/scripts/check_dependency_patch_suffixes.py')
         expect_fail(run_checker(repo), 'missing required update-deps guard snippet: python .github/scripts/check_ci_guards.py')
 
@@ -391,6 +441,18 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', './profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null', 'test -s profile-smoke-all.profdata')
         expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: ./profdata-dist/llvm-profdata.exe show profile-smoke-all.profdata >/dev/null')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'test -s profile-smoke-8b.profdata', 'echo skip-profile-8b-profdata')
+        expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: test -s profile-smoke-8b.profdata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build-profiling.yml', 'test -s smoke_profile_12b.mp4', 'echo skip-profile-12b-mp4')
+        expect_fail(run_checker(repo), 'missing required Build Profiling workflow guard snippet: test -s smoke_profile_12b.mp4')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

@@ -252,12 +252,18 @@ def main():
             fail(f'compile command entry #{index} must be an object', commands_path)
         if 'file' not in entry:
             fail(f'compile command entry #{index} is missing file field', commands_path)
+        if not isinstance(entry['file'], str):
+            fail(f'compile command entry #{index} file field must be a string', commands_path)
+        if 'directory' in entry and not isinstance(entry['directory'], str):
+            fail(f'compile command entry #{index} directory field must be a string', commands_path)
         if 'command' not in entry and 'arguments' not in entry:
             fail(f'compile command entry #{index} is missing command or arguments field', commands_path)
         if 'command' in entry and not isinstance(entry['command'], str):
             fail(f'compile command entry #{index} command field must be a string', commands_path)
         if 'arguments' in entry and not isinstance(entry['arguments'], list):
             fail(f'compile command entry #{index} arguments field must be a list', commands_path)
+        if 'arguments' in entry and not all(isinstance(argument, str) for argument in entry['arguments']):
+            fail(f'compile command entry #{index} arguments field must contain only strings', commands_path)
     cpp = [entry for entry in commands if is_cpp_entry(entry)]
     if not cpp:
         fail(f'no C++ compile commands: {commands_path}')

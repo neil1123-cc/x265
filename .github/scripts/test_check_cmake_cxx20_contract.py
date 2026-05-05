@@ -59,6 +59,16 @@ def main():
         cache_source = write_source(root / 'cache-contract', cache_top_text)
         expect_pass(run_checker(cache_source))
 
+        lowercase_cache_top_text = '''
+        cmake_minimum_required(VERSION 3.20)
+        project(x265)
+        set(CMAKE_CXX_STANDARD 20 CACHE STRING "" FORCE)
+        set(CMAKE_CXX_STANDARD_REQUIRED on CACHE BOOL "" FORCE)
+        set(CMAKE_CXX_EXTENSIONS on CACHE BOOL "" FORCE)
+        '''
+        lowercase_cache_source = write_source(root / 'lowercase-cache-contract', lowercase_cache_top_text)
+        expect_pass(run_checker(lowercase_cache_source))
+
         inline_cache_top_text = '''
         cmake_minimum_required(VERSION 3.20)
         project(x265)
@@ -110,9 +120,61 @@ def main():
         set_target_properties(cli PROPERTIES
                               OUTPUT_NAME x265
                               RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-        set_property(TARGET cli PROPERTY FOLDER tools)
+        set_property(TARGET cli PROPERTY FOLDER tools) # target_compile_options(cli PRIVATE -std=gnu++17)
+        set_property(TARGET cli PROPERTY LABELS keep) #[[ set_property(TARGET cli PROPERTY CXX_STANDARD 17) ]]
         ''')
         expect_pass(run_checker(legal_property_source))
+
+        bracket_argument_source = write_source(root / 'bracket-argument-values')
+        bracket_argument_nested = bracket_argument_source / 'cmake'
+        bracket_argument_nested.mkdir()
+        (bracket_argument_nested / 'properties.cmake').write_text('''
+        set_target_properties(cli PROPERTIES
+                              OUTPUT_NAME [=[x 265]=]
+                              RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+        string(APPEND MY_CXX_FLAGS_DOC [=[ -std=gnu++17 appears in docs ]=])
+        ''')
+        expect_pass(run_checker(bracket_argument_source))
+
+        legal_feature_source = write_source(root / 'legal-target-features')
+        legal_feature_nested = legal_feature_source / 'cmake'
+        legal_feature_nested.mkdir()
+        (legal_feature_nested / 'features.cmake').write_text('target_compile_features(cli PRIVATE cxx_constexpr cxx_lambdas)\n')
+        expect_pass(run_checker(legal_feature_source))
+
+        bracket_argument_override_source = write_source(root / 'bracket-argument-standard-override')
+        bracket_argument_override_nested = bracket_argument_override_source / 'cmake'
+        bracket_argument_override_nested.mkdir()
+        (bracket_argument_override_nested / 'properties.cmake').write_text('''
+        set_target_properties(cli PROPERTIES
+                              OUTPUT_NAME [=[x 265]=]
+                              CXX_STANDARD 17)
+        ''')
+        expect_fail(run_checker(bracket_argument_override_source), 'target-level C++ standard override')
+
+        append_property_override_source = write_source(root / 'append-property-standard-override')
+        append_property_override_nested = append_property_override_source / 'cmake'
+        append_property_override_nested.mkdir()
+        (append_property_override_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND PROPERTY CXX_STANDARD 20)\n')
+        expect_fail(run_checker(append_property_override_source), 'target-level C++ standard override')
+
+        append_string_property_override_source = write_source(root / 'append-string-property-standard-override')
+        append_string_property_override_nested = append_string_property_override_source / 'cmake'
+        append_string_property_override_nested.mkdir()
+        (append_string_property_override_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY CXX_EXTENSIONS ON)\n')
+        expect_fail(run_checker(append_string_property_override_source), 'target-level C++ standard override')
+
+        lowercase_property_override_source = write_source(root / 'lowercase-property-standard-override')
+        lowercase_property_override_nested = lowercase_property_override_source / 'cmake'
+        lowercase_property_override_nested.mkdir()
+        (lowercase_property_override_nested / 'properties.cmake').write_text('set_property(target cli append_string property cxx_extensions ON)\n')
+        expect_fail(run_checker(lowercase_property_override_source), 'target-level C++ standard override')
+
+        lowercase_compile_property_source = write_source(root / 'lowercase-compile-property-standard-flag')
+        lowercase_compile_property_nested = lowercase_compile_property_source / 'cmake'
+        lowercase_compile_property_nested.mkdir()
+        (lowercase_compile_property_nested / 'flags.cmake').write_text('set_source_files_properties(probe.cpp properties compile_options -std=gnu++17)\n')
+        expect_fail(run_checker(lowercase_compile_property_source), 'manual C++ standard flag in CMake')
 
         property_value_source = write_source(root / 'property-values')
         property_value_nested = property_value_source / 'cmake'
@@ -127,6 +189,27 @@ def main():
         set_property(SOURCE probe.cpp PROPERTY CXX_STANDARD documentation-only)
         ''')
         expect_pass(run_checker(property_value_source))
+
+        with_script_source = write_source(root / 'script-scan-py-sh-pass')
+        scripts = root / '.github' / 'scripts'
+        scripts.mkdir(parents=True)
+        (scripts / 'helper.py').write_text('print("GNU++20 helper without manual flags")\n')
+        (scripts / 'helper.sh').write_text('cmake -S source # docs mention -DCMAKE_CXX_STANDARD_REQUIRED=OFF as forbidden\n')
+        expect_pass(run_checker(with_script_source))
+
+        bad_python_root = root / 'script-scan-py-fail'
+        bad_python_script_source = write_source(bad_python_root)
+        bad_scripts = bad_python_root / '.github' / 'scripts'
+        bad_scripts.mkdir(parents=True)
+        (bad_scripts / 'helper.py').write_text('flags = "-std=gnu++17"\n')
+        expect_fail(run_checker(bad_python_script_source), 'manual C++ standard flag in workflow/helper')
+
+        bad_shell_root = root / 'script-scan-sh-fail'
+        bad_shell_script_source = write_source(bad_shell_root)
+        bad_scripts = bad_shell_root / '.github' / 'scripts'
+        bad_scripts.mkdir(parents=True)
+        (bad_scripts / 'helper.sh').write_text('cmake -DCMAKE_CXX_EXTENSIONS=OFF source\n')
+        expect_fail(run_checker(bad_shell_script_source), 'manual C++ standard flag in workflow/helper')
 
         generator_expression_source = write_source(root / 'generator-expression-string')
         generator_expression_nested = generator_expression_source / 'cmake'
@@ -480,6 +563,29 @@ def main():
         nested.mkdir()
         (nested / 'flags.cmake').write_text('set_source_files_properties(probe.cpp PROPERTIES COMPILE_OPTIONS -std=gnu++17)\n')
         expect_fail(run_checker(source), 'manual C++ standard flag in CMake')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        workflow = root / '.github' / 'workflows'
+        workflow.mkdir(parents=True)
+        (workflow / 'build.yml').write_text('run: cmake -S source # docs mention -DCMAKE_CXX_STANDARD_REQUIRED=OFF as forbidden\n')
+        expect_pass(run_checker(source))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        action = root / '.github' / 'actions' / 'quoted-comment'
+        action.mkdir(parents=True)
+        (action / 'action.yml').write_text('''
+        name: action
+        runs:
+          using: composite
+          steps:
+            - shell: bash
+              run: printf '%s\\n' "# keep literal -std=gnu++17 visible"
+        ''')
+        expect_fail(run_checker(source), 'manual C++ standard flag in workflow/helper')
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
