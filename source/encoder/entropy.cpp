@@ -32,6 +32,8 @@
 #include "sao.h"
 #include "entropy.h"
 
+#include <string.h>
+
 #define CU_DQP_TU_CMAX 5 // max number bins for truncated unary
 #define CU_DQP_EG_k    0 // exp-golomb order
 #define START_VALUE    8 // start value for dpcm mode

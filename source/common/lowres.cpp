@@ -26,6 +26,8 @@
 #include "lowres.h"
 #include "mv.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 /*

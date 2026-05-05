@@ -338,6 +338,128 @@ def main():
         ])
         expect_fail(run_checker(shared_deps_common_leak_dir, *shared_deps_args), 'forbidden flag -DENABLE_LSMASH for file substring source/common/common.cpp')
 
+        lib_only_shape_entries = (
+            ('source/encoder/api.cpp', ['-DX265_DEPTH=12']),
+            ('source/common/version.cpp', ['-DX265_DEPTH=12']),
+            ('source/encoder/encoder.cpp', ['-DX265_DEPTH=12']),
+        )
+        lib_only_shape_args = (
+            '--min-cpp-commands=3',
+            '--required-depth-define=-DX265_DEPTH=12',
+            '--forbidden-flag=-DX265_DEPTH=8',
+            '--forbidden-flag=-DX265_DEPTH=10',
+            '--required-file-substring=source/encoder/api.cpp',
+            '--required-file-substring=source/common/version.cpp',
+            '--forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1',
+            '--forbidden-file-substring=source/input/',
+            '--forbidden-file-substring=source/output/',
+            '--forbidden-file-substring=source/abrEncApp.cpp',
+            '--forbidden-file-substring=source/x265.cpp',
+            '--forbidden-file-substring=source/x265cli.cpp',
+        )
+        lib_only_shape_dir = root / 'ci-shape-12bit-lib-only-dual-field-pass'
+        write_compile_commands_records(lib_only_shape_dir, [
+            {
+                'directory': str(lib_only_shape_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags)} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in lib_only_shape_entries
+        ])
+        expect_pass(run_checker(lib_only_shape_dir, *lib_only_shape_args))
+
+        lib_only_cli_leak_dir = root / 'ci-shape-12bit-lib-only-cli-source-leak'
+        write_compile_commands_records(lib_only_cli_leak_dir, [
+            {
+                'directory': str(lib_only_cli_leak_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags)} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in (*lib_only_shape_entries, ('source/x265.cpp', ['-DX265_DEPTH=12']))
+        ])
+        expect_fail(run_checker(lib_only_cli_leak_dir, *lib_only_shape_args), 'forbidden compile command for file substring source/x265.cpp')
+
+        lib_only_export_leak_dir = root / 'ci-shape-12bit-lib-only-api-export-leak'
+        write_compile_commands_records(lib_only_export_leak_dir, [
+            {
+                'directory': str(lib_only_export_leak_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags + (['-DEXPORT_C_API=1'] if file_path == 'source/encoder/api.cpp' else []))} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in lib_only_shape_entries
+        ])
+        expect_fail(run_checker(lib_only_export_leak_dir, *lib_only_shape_args), 'forbidden flag -DEXPORT_C_API=1 for file substring source/encoder/api.cpp')
+
+        lib_only_mixed_depth_dir = root / 'ci-shape-12bit-lib-only-arguments-mixed-depth'
+        write_compile_commands_records(lib_only_mixed_depth_dir, [
+            {
+                'directory': str(lib_only_mixed_depth_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags)} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *(flags + (['-DX265_DEPTH=8'] if file_path == 'source/encoder/encoder.cpp' else [])), '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in lib_only_shape_entries
+        ])
+        expect_fail(run_checker(lib_only_mixed_depth_dir, *lib_only_shape_args), 'forbidden flag -DX265_DEPTH=8')
+
+        all_bit_depth_shape_entries = (
+            ('source/output/output.cpp', ['-DX265_DEPTH=10', '-DLINKED_8BIT=1', '-DLINKED_12BIT=1']),
+            ('source/dynamicHDR10/metadataFromJson.cpp', ['-DX265_DEPTH=10']),
+            ('source/encoder/encoder.cpp', ['-DX265_DEPTH=10']),
+        )
+        all_bit_depth_shape_args = (
+            '--min-cpp-commands=3',
+            '--required-depth-define=-DX265_DEPTH=10',
+            '--forbidden-flag=-DX265_DEPTH=8',
+            '--forbidden-flag=-DX265_DEPTH=12',
+            '--required-file-substring=source/output/output.cpp',
+            '--required-file-substring=source/dynamicHDR10/',
+            '--required-file-flag=source/output/output.cpp=-DLINKED_8BIT=1',
+            '--required-file-flag=source/output/output.cpp=-DLINKED_12BIT=1',
+            '--forbidden-file-substring=source/input/lavf.cpp',
+            '--forbidden-file-substring=source/output/mp4.cpp',
+            '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LAVF',
+            '--forbidden-file-flag=source/encoder/encoder.cpp=-DENABLE_LSMASH',
+        )
+        all_bit_depth_shape_dir = root / 'ci-shape-all-bit-depth-dual-field-pass'
+        write_compile_commands_records(all_bit_depth_shape_dir, [
+            {
+                'directory': str(all_bit_depth_shape_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags)} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in all_bit_depth_shape_entries
+        ])
+        expect_pass(run_checker(all_bit_depth_shape_dir, *all_bit_depth_shape_args))
+
+        all_bit_depth_missing_linked_dir = root / 'ci-shape-all-bit-depth-command-missing-linked-12bit'
+        write_compile_commands_records(all_bit_depth_missing_linked_dir, [
+            {
+                'directory': str(all_bit_depth_missing_linked_dir),
+                'command': f"c++ -std=gnu++20 {' '.join([flag for flag in flags if flag != '-DLINKED_12BIT=1'])} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *flags, '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in all_bit_depth_shape_entries
+        ])
+        expect_fail(run_checker(all_bit_depth_missing_linked_dir, *all_bit_depth_shape_args), 'missing required flag -DLINKED_12BIT=1 for file substring source/output/output.cpp')
+
+        all_bit_depth_cli_macro_leak_dir = root / 'ci-shape-all-bit-depth-encoder-cli-macro-leak'
+        write_compile_commands_records(all_bit_depth_cli_macro_leak_dir, [
+            {
+                'directory': str(all_bit_depth_cli_macro_leak_dir),
+                'command': f"c++ -std=gnu++20 {' '.join(flags)} -c {file_path}",
+                'arguments': ['c++', '-std=gnu++20', *(flags + (['-DENABLE_LAVF'] if file_path == 'source/encoder/encoder.cpp' else [])), '-c', file_path],
+                'file': str(root / file_path),
+            }
+            for file_path, flags in all_bit_depth_shape_entries
+        ])
+        expect_fail(run_checker(all_bit_depth_cli_macro_leak_dir, *all_bit_depth_shape_args), 'forbidden flag -DENABLE_LAVF for file substring source/encoder/encoder.cpp')
+
         write_compile_commands(root / 'profiling-flags', 'c++ -std=gnu++20 -fprofile-instr-generate -fprofile-update=atomic -c source/common/common.cpp')
         expect_pass(run_checker(root / 'profiling-flags', '--required-flag=-fprofile-instr-generate', '--required-flag=-fprofile-update=atomic'))
 
@@ -571,6 +693,24 @@ def main():
         }])
         expect_fail(run_checker(missing_command_std_dir), 'missing GNU++20 dialect')
 
+        empty_arguments_dir = root / 'command-empty-arguments-std'
+        write_compile_commands_records(empty_arguments_dir, [{
+            'directory': str(empty_arguments_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+            'arguments': [],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(empty_arguments_dir), 'missing GNU++20 dialect')
+
+        empty_command_dir = root / 'empty-command-field-std'
+        write_compile_commands_records(empty_command_dir, [{
+            'directory': str(empty_command_dir),
+            'command': '',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(empty_command_dir), 'missing GNU++20 dialect')
+
         arguments_dir = root / 'pass-arguments'
         write_compile_commands_records(arguments_dir, [{
             'directory': str(arguments_dir),
@@ -797,6 +937,12 @@ def main():
         write_compile_commands(response_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_pass(run_checker(response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
+        response_split_std_dir = root / 'response-file-split-std'
+        response_split_std_dir.mkdir()
+        (response_split_std_dir / 'args.rsp').write_text('--std gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands(response_split_std_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_pass(run_checker(response_split_std_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
         quoted_response_dir = root / 'quoted-response-file'
         quoted_response_dir.mkdir()
         (quoted_response_dir / 'args file.rsp').write_text('"-std=gnu++20" "-Wdeprecated" "-Werror=deprecated" "-DX265_DEPTH=8"')
@@ -904,6 +1050,13 @@ def main():
         (response_cycle_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated @args.rsp')
         write_compile_commands(response_cycle_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_pass(run_checker(response_cycle_dir, '--required-flag=-Werror=deprecated'))
+
+        two_file_response_cycle_dir = root / 'two-file-response-cycle'
+        two_file_response_cycle_dir.mkdir()
+        (two_file_response_cycle_dir / 'a.rsp').write_text('-std=gnu++20 -Wdeprecated @b.rsp')
+        (two_file_response_cycle_dir / 'b.rsp').write_text('-Werror=deprecated @a.rsp')
+        write_compile_commands(two_file_response_cycle_dir, 'c++ @a.rsp -c source/common/common.cpp')
+        expect_pass(run_checker(two_file_response_cycle_dir, '--required-flag=-Werror=deprecated'))
 
         write_compile_commands_entries(root / 'depth-exclude', [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/dynamicHDR10/json11.cpp', 'source/dynamicHDR10/json11.cpp'),

@@ -24,6 +24,8 @@
 #include "common.h"
 #include "primitives.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 /* standard dct transformations */

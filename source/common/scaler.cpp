@@ -23,6 +23,8 @@
 
 #include "scaler.h"
 
+#include <string.h>
+
 #if _MSC_VER
 #pragma warning(disable: 4706) // assignment within conditional
 #pragma warning(disable: 4244) // '=' : possible loss of data

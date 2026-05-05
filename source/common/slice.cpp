@@ -27,6 +27,8 @@
 #include "picyuv.h"
 #include "slice.h"
 
+#include <string.h>
+
 using namespace X265_NS;
 
 #if ENABLE_MULTIVIEW

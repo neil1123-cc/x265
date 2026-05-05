@@ -928,8 +928,12 @@ void FrameEncoder::compressFrame(int layer)
      * filters runs behind the CTU compression and reconstruction */
 
     for (uint32_t sliceId = 0; sliceId < m_param->maxSlices; sliceId++)
-        m_rows[m_sliceBaseRow[sliceId]].active = true;
-    
+    {
+        CTURow& row = m_rows[m_sliceBaseRow[sliceId]];
+        ScopedLock lock(row.lock);
+        row.active = true;
+    }
+
     if (m_param->bEnableWavefront)
     {
         int i = 0;
