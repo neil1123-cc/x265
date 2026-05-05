@@ -384,7 +384,10 @@ runs:
         grep -Fq 'lsmash_local_isom_box_type' codecs/description.c
         grep -Fq "LSMASH_4CC( 'h', 'v', 'c', 'C' )" codecs/hevc.c
         grep -Fq 'lsmash_isom_box_type_value' core/box.c
+        grep -Fq 'lsmash_qtff_box_type_value' core/box.c
         grep -Fq 'return isom_get_sample_group_description_common( list, ISOM_GROUP_TYPE_PROL );' core/isom.c
+        grep -Fq 'return isom_get_sample_to_group_common( list, ISOM_GROUP_TYPE_PROL );' core/isom.c
+        echo "Validated L-SMASH patch anchors"
     - name: Compile GOP muxer
       shell: msys2 {0}
       run: |
@@ -394,6 +397,7 @@ runs:
         git apply ${{ inputs.gop-muxer-patch-path }}
         git diff --check -- gop_muxer.cpp
         grep -Fq 'lsmash_add_box(lsmash_root_as_box(p_root), free_box)' gop_muxer.cpp
+        echo "Validated GOP muxer patch anchors"
         c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o
 '''
 
@@ -502,20 +506,38 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress', '--threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"', ': # check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"')
+        expect_fail(run_checker(repo), 'PGO consume helper must actively run: check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt", "grep -Fq 'threaded-me' smoke_threaded_me_log.txt")
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: frame threads / pool features       : 1 / threaded-me')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/all/x265.exe --input smoke_threaded_me.y4m', 'build/8b/x265.exe --input smoke_threaded_me.y4m')
+        expect_fail(run_checker(repo), 'Threaded ME smoke must run build/all/x265.exe, got build/8b/x265.exe')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q \'nb_read_frames=16\' smoke_threaded_me_count.txt', 'grep -q \'nb_read_frames=2\' smoke_threaded_me_count.txt')
-        expect_fail(run_checker(repo), "missing required Build workflow guard snippet: grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt")
+        replace_text(repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml', 'c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o', 'c++ -O2 --std=gnu++20 --std=gnu++17 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
+        expect_fail(run_checker(repo), 'missing required setup-windows-deps guard snippet: c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'testsrc2=size=160x90:rate=24', 'testsrc2=size=80x45:rate=24')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_threaded_me.y4m')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt", "grep -Fq 'threaded-me' smoke_threaded_me_log.txt\n          # grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt")
+        expect_fail(run_checker(repo), 'Threaded ME smoke must require enabled threaded-me log')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q \'nb_read_frames=16\' smoke_threaded_me_count.txt', 'grep -q \'nb_read_frames=2\' smoke_threaded_me_count.txt\n          # grep -q \'nb_read_frames=16\' smoke_threaded_me_count.txt')
+        expect_fail(run_checker(repo), 'Threaded ME smoke must require 16 decoded frames')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

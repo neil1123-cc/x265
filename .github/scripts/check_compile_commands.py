@@ -88,16 +88,17 @@ def expand_response_files(tokens, directory=None, seen=None):
             response_path = Path(strip_quotes(normalized[1:]))
             if not response_path.is_absolute() and directory is not None:
                 response_path = Path(directory) / response_path
-            if response_path.is_file():
-                resolved = response_path.resolve()
-                if resolved in seen:
-                    expanded.append(normalized)
-                    continue
-                seen.add(resolved)
-                response_tokens = split_shell_words(response_path.read_text())
-                expanded.extend(expand_response_files(response_tokens, response_path.parent, seen))
-                seen.remove(resolved)
+            if not response_path.is_file():
+                fail(f'missing response file: {response_path}')
+            resolved = response_path.resolve()
+            if resolved in seen:
+                expanded.append(normalized)
                 continue
+            seen.add(resolved)
+            response_tokens = split_shell_words(response_path.read_text())
+            expanded.extend(expand_response_files(response_tokens, response_path.parent, seen))
+            seen.remove(resolved)
+            continue
         expanded.append(normalized)
     return expanded
 

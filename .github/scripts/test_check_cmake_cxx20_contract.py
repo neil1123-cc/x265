@@ -341,6 +341,72 @@ def main():
         ''')
         expect_fail(run_checker(quoted_paren_manual_source), 'manual C++ standard flag in CMake')
 
+        indirect_standard_flag_source = write_source(root / 'indirect-standard-flag')
+        indirect_standard_flag_nested = indirect_standard_flag_source / 'cmake'
+        indirect_standard_flag_nested.mkdir()
+        (indirect_standard_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        target_compile_options(cli PRIVATE ${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(indirect_standard_flag_source), 'manual C++ standard flag in CMake')
+
+        indirect_wrapper_flag_source = write_source(root / 'indirect-wrapper-standard-flag')
+        indirect_wrapper_flag_nested = indirect_wrapper_flag_source / 'cmake'
+        indirect_wrapper_flag_nested.mkdir()
+        (indirect_wrapper_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        x265_add_option(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(indirect_wrapper_flag_source), 'manual C++ standard flag in CMake')
+
+        indirect_property_flag_source = write_source(root / 'indirect-property-standard-flag')
+        indirect_property_flag_nested = indirect_property_flag_source / 'cmake'
+        indirect_property_flag_nested.mkdir()
+        (indirect_property_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(indirect_property_flag_source), 'manual C++ standard flag in CMake')
+
+        chained_indirect_standard_flag_source = write_source(root / 'chained-indirect-standard-flag')
+        chained_indirect_standard_flag_nested = chained_indirect_standard_flag_source / 'cmake'
+        chained_indirect_standard_flag_nested.mkdir()
+        (chained_indirect_standard_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set(LOCAL_CXX_OPTIONS ${LOCAL_STD_FLAG})
+        target_compile_options(cli PRIVATE ${LOCAL_CXX_OPTIONS})
+        ''')
+        expect_fail(run_checker(chained_indirect_standard_flag_source), 'manual C++ standard flag in CMake')
+
+        chained_compile_variable_source = write_source(root / 'chained-compile-variable-standard-flag')
+        chained_compile_variable_nested = chained_compile_variable_source / 'cmake'
+        chained_compile_variable_nested.mkdir()
+        (chained_compile_variable_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set(X265_CXX_FLAGS ${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(chained_compile_variable_source), 'manual C++ standard flag in CMake')
+
+        chained_interface_property_source = write_source(root / 'chained-interface-property-standard-flag')
+        chained_interface_property_nested = chained_interface_property_source / 'cmake'
+        chained_interface_property_nested.mkdir()
+        (chained_interface_property_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set(LOCAL_INTERFACE_FLAGS ${LOCAL_STD_FLAG})
+        set_property(TARGET cli APPEND PROPERTY INTERFACE_COMPILE_OPTIONS ${LOCAL_INTERFACE_FLAGS})
+        ''')
+        expect_fail(run_checker(chained_interface_property_source), 'manual C++ standard flag in CMake')
+
+        chained_target_properties_flag_source = write_source(root / 'chained-target-properties-standard-flag')
+        chained_target_properties_flag_nested = chained_target_properties_flag_source / 'cmake'
+        chained_target_properties_flag_nested.mkdir()
+        (chained_target_properties_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set(LOCAL_COMPILE_FLAGS ${LOCAL_STD_FLAG})
+        set_target_properties(cli PROPERTIES COMPILE_FLAGS ${LOCAL_COMPILE_FLAGS})
+        ''')
+        expect_fail(run_checker(chained_target_properties_flag_source), 'manual C++ standard flag in CMake')
+
         wrapped_compile_option_source = write_source(root / 'wrapped-compile-option')
         wrapped_compile_option_nested = wrapped_compile_option_source / 'cmake'
         wrapped_compile_option_nested.mkdir()
