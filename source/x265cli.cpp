@@ -469,9 +469,9 @@ namespace X265_NS {
     void CLIOptions::destroy()
     {
         if(argString && argString != orgArgv)
-            free(argString);
+            std::free(argString);
         if (stringPool)
-            free(stringPool);
+            std::free(stringPool);
 
         for (int i = 0; i < MAX_VIEWS; i++)
         {
@@ -651,7 +651,7 @@ namespace X265_NS {
             return true;
         }
 
-        memcpy(globalParam->rc.zones[zonefileCount].zoneParam, globalParam, sizeof(x265_param));
+        std::memcpy(globalParam->rc.zones[zonefileCount].zoneParam, globalParam, sizeof(x265_param));
 
         if (zonefileCount == 0)
             globalParam->rc.zones[zonefileCount].keyframeMax = globalParam->keyframeMax;
@@ -722,7 +722,7 @@ namespace X265_NS {
         for (int view = 0; view < MAX_VIEWS; view++)
         {
             inputfn[view] = X265_MALLOC(char, sizeof(char) * 1024);
-            memset(inputfn[view], 0, sizeof(char) * 1024);
+            std::memset(inputfn[view], 0, sizeof(char) * 1024);
         }
         const char* reconfn[MAX_LAYERS] = { NULL };
         const char *outputfn = NULL;
@@ -818,7 +818,7 @@ namespace X265_NS {
             case 'V':
                 printVersion(param, api);
                 x265_report_simd(param);
-                exit(0);
+                std::exit(0);
 
             default:
                 if (long_options_index < 0 && c > 0)
@@ -973,7 +973,7 @@ namespace X265_NS {
             if (!this->parseMultiViewConfig(inputfn))
             {
                 x265_log(NULL, X265_LOG_ERROR, "Unable to parse multiview config file \n");
-                fclose(this->multiViewConfig);
+                std::fclose(this->multiViewConfig);
                 this->multiViewConfig = NULL;
             }
         }
@@ -1199,13 +1199,13 @@ namespace X265_NS {
         pic_org.sliceType = X265_TYPE_AUTO;
         while (num < pic_org.poc)
         {
-            filePos = ftell(qpfile);
+            filePos = std::ftell(qpfile);
             qp = -1;
             ret = fscanf(qpfile, "%d %c%*[ \t]%d\n", &num, &type, &qp);
 
             if (num > pic_org.poc || ret == EOF)
             {
-                fseek(qpfile, filePos, SEEK_SET);
+                std::fseek(qpfile, filePos, SEEK_SET);
                 break;
             }
             if (num < pic_org.poc && ret >= 2)
@@ -1270,7 +1270,7 @@ namespace X265_NS {
                     cliopt.destroy();
                     if (cliopt.api)
                         cliopt.api->param_free(cliopt.param);
-                    exit(1);
+                    std::exit(1);
                 }
                 break;
             }
@@ -1361,7 +1361,7 @@ namespace X265_NS {
                 cliopt.destroy();
                 if (cliopt.api)
                     cliopt.api->param_free(cliopt.param);
-                exit(1);
+                std::exit(1);
             }
             break;
         }
@@ -1573,8 +1573,8 @@ namespace X265_NS {
             {
                 if (api)
                     api->param_free(param);
-                free(args);
-                exit(1);
+                std::free(args);
+                std::exit(1);
             }
             linenum++;
         }
@@ -1583,10 +1583,10 @@ namespace X265_NS {
             x265_log(NULL, X265_LOG_WARNING, "Number of Input files does not match with the given format <%d>\n", param->format);
             if (api)
                 api->param_free(param);
-            free(args);
-            exit(1);
+            std::free(args);
+            std::exit(1);
         }
-        free(args);
+        std::free(args);
         return 1;
     }
 
