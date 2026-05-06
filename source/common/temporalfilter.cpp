@@ -29,6 +29,9 @@
 #include "framedata.h"
 #include "analysis.h"
 
+#include <cmath>
+#include <cstdlib>
+
 using namespace X265_NS;
 
 void OrigPicBuffer::addPicture(Frame* inFrame)
@@ -224,7 +227,7 @@ int MotionEstimatorTLD::motionErrorLumaSAD(MotionEstimatorTLD& m_metld,
             for (int x1 = 0; x1 < bs; x1++)
             {
                 int diff = origRowStart[x1] - bufferRowStart[x1];
-                error += abs(diff);
+                error += std::abs(diff);
             }
 
             origRowStart += origStride;
@@ -287,7 +290,7 @@ int MotionEstimatorTLD::motionErrorLumaSAD(MotionEstimatorTLD& m_metld,
                 iSum = (iSum + (1 << 11)) >> 12;
                 iSum = iSum < 0 ? 0 : (iSum > maxSampleValue ? maxSampleValue : iSum);
 
-                error += abs(iSum - origRow[x + x1]);
+                error += std::abs(iSum - origRow[x + x1]);
             }
             if (error > besterror)
             {
@@ -605,7 +608,7 @@ void TemporalFilter::bilateralFilter(Frame* frame,
                             }
                         }
 
-                        refPicInfo->noise[(y / blkSize) * refPicInfo->mvsStride + (x / blkSize)] = (int)round((300 * variance + 50) / (10 * diffsum + 50));
+                        refPicInfo->noise[(y / blkSize) * refPicInfo->mvsStride + (x / blkSize)] = (int)std::round((300 * variance + 50) / (10 * diffsum + 50));
                     }
                 }
 
@@ -636,13 +639,13 @@ void TemporalFilter::bilateralFilter(Frame* frame,
                     ww *= (error < 50) ? 1.2 : ((error > 100) ? 0.8 : 1);
                     sw *= (error < 50) ? 1.3 : 1;
                     ww *= ((minError + 1) / (error + 1));
-                    const double weight = weightScaling * s_refStrengths[refStrengthRow][index] * ww * exp(-diffSq / (2 * sw * sigmaSq));
+                    const double weight = weightScaling * s_refStrengths[refStrengthRow][index] * ww * std::exp(-diffSq / (2 * sw * sigmaSq));
 
                     newVal += weight * refVal;
                     temporalWeightSum += weight;
                 }
                 newVal /= temporalWeightSum;
-                double sampleVal = round(newVal);
+                double sampleVal = std::round(newVal);
                 sampleVal = (sampleVal < 0 ? 0 : (sampleVal > maxSampleValue ? maxSampleValue : sampleVal));
                 *srcPel = (pixel)sampleVal;
             }
