@@ -29,6 +29,7 @@
 #include "mv.h"
 #include "cudata.h"
 
+#include <cstdlib>
 #include <cstring>
 #define MAX_MV 1 << 14
 
@@ -2238,7 +2239,7 @@ MV CUData::scaleMvByPOCDist(const MV& inMV, int curPOC, int curRefPOC, int colPO
     {
         int tdb   = x265_clip3(-128, 127, diffPocB);
         int tdd   = x265_clip3(-128, 127, diffPocD);
-        int x     = (0x4000 + abs(tdd / 2)) / tdd;
+        int x     = (0x4000 + std::abs(tdd / 2)) / tdd;
         int scale = x265_clip3(-4096, 4095, (tdb * x + 32) >> 6);
         return scaleMv(inMV, scale);
     }

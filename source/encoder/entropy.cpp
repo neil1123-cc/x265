@@ -32,6 +32,7 @@
 #include "sao.h"
 #include "entropy.h"
 
+#include <cstdlib>
 #include <cstring>
 
 #define CU_DQP_TU_CMAX 5 // max number bins for truncated unary
@@ -1633,7 +1634,7 @@ void Entropy::codeSaoOffset(const SaoCtuParam& ctuParam, int plane)
         if (typeIdx == SAO_BO)
         {
             for (int i = 0; i < SAO_NUM_OFFSET; i++)
-                codeSaoMaxUvlc(abs(ctuParam.offset[i]), OFFSET_THRESH - 1);
+                codeSaoMaxUvlc(std::abs(ctuParam.offset[i]), OFFSET_THRESH - 1);
 
             for (int i = 0; i < SAO_NUM_OFFSET; i++)
                 if (ctuParam.offset[i] != 0)
@@ -1682,7 +1683,7 @@ void Entropy::codeSaoOffsetBO(int *offset, int bandPos, int plane)
     enum { OFFSET_THRESH = 1 << X265_MIN(X265_DEPTH - 5, 5) };
 
     for (int i = 0; i < SAO_NUM_OFFSET; i++)
-        codeSaoMaxUvlc(abs(offset[i]), OFFSET_THRESH - 1);
+        codeSaoMaxUvlc(std::abs(offset[i]), OFFSET_THRESH - 1);
 
     for (int i = 0; i < SAO_NUM_OFFSET; i++)
         if (offset[i] != 0)
@@ -2328,7 +2329,7 @@ void Entropy::codeCoeffNxN(const CUData& cu, const coeff_t* coeff, uint32_t absP
     std::memset(absCoeff, 0, sizeof(absCoeff));
 #endif
 
-    absCoeff[0] = (uint16_t)abs(coeff[posLast]);
+    absCoeff[0] = (uint16_t)std::abs(coeff[posLast]);
 
     for (int subSet = lastScanSet; subSet >= 0; subSet--)
     {
@@ -2416,10 +2417,10 @@ void Entropy::codeCoeffNxN(const CUData& cu, const coeff_t* coeff, uint32_t absP
                 // TODO: accelerate by PABSW
                 for (int i = 0; i < MLS_CG_SIZE; i++)
                 {
-                    tmpCoeff[i * MLS_CG_SIZE + 0] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 0]);
-                    tmpCoeff[i * MLS_CG_SIZE + 1] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 1]);
-                    tmpCoeff[i * MLS_CG_SIZE + 2] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 2]);
-                    tmpCoeff[i * MLS_CG_SIZE + 3] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 3]);
+                    tmpCoeff[i * MLS_CG_SIZE + 0] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 0]);
+                    tmpCoeff[i * MLS_CG_SIZE + 1] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 1]);
+                    tmpCoeff[i * MLS_CG_SIZE + 2] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 2]);
+                    tmpCoeff[i * MLS_CG_SIZE + 3] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 3]);
                 }
 
                 if (log2TrSize == 2)

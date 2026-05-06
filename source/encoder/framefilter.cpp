@@ -30,6 +30,8 @@
 #include "frameencoder.h"
 #include "wavefront.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 static float calculateSSIM(pixel *pix1, intptr_t stride1, pixel *pix2, intptr_t stride2, uint32_t width, uint32_t height, void *buf, uint32_t& cnt);
@@ -301,7 +303,7 @@ void FrameFilter::ParallelFilter::copySaoAboveRef(const CUData *ctu, PicYuv* rec
     const pixel* recY = reconPic->getPlaneAddr(0, cuAddr) - (ctu->m_bFirstRowInSlice ? 0 : reconPic->m_stride);
 
     // Luma
-    memcpy(&m_sao.m_tmpU[0][col * ctuWidth], recY, ctuWidth * sizeof(pixel));
+    std::memcpy(&m_sao.m_tmpU[0][col * ctuWidth], recY, ctuWidth * sizeof(pixel));
     X265_CHECK(col * ctuWidth + ctuWidth <= m_sao.m_numCuInWidth * ctuWidth, "m_tmpU buffer beyond bound write detected");
 
     // Chroma
@@ -311,8 +313,8 @@ void FrameFilter::ParallelFilter::copySaoAboveRef(const CUData *ctu, PicYuv* rec
 
         const pixel* recU = reconPic->getPlaneAddr(1, cuAddr) - (ctu->m_bFirstRowInSlice ? 0 : reconPic->m_strideC);
         const pixel* recV = reconPic->getPlaneAddr(2, cuAddr) - (ctu->m_bFirstRowInSlice ? 0 : reconPic->m_strideC);
-        memcpy(&m_sao.m_tmpU[1][col * ctuWidth], recU, ctuWidth * sizeof(pixel));
-        memcpy(&m_sao.m_tmpU[2][col * ctuWidth], recV, ctuWidth * sizeof(pixel));
+        std::memcpy(&m_sao.m_tmpU[1][col * ctuWidth], recU, ctuWidth * sizeof(pixel));
+        std::memcpy(&m_sao.m_tmpU[2][col * ctuWidth], recV, ctuWidth * sizeof(pixel));
 
         X265_CHECK(col * ctuWidth + ctuWidth <= m_sao.m_numCuInWidth * ctuWidth, "m_tmpU buffer beyond bound write detected");
     }
@@ -400,14 +402,14 @@ void FrameFilter::ParallelFilter::processPostCu(int col) const
     if (m_row == 0)
     {
         for (uint32_t y = 0; y < lumaMarginY; y++)
-            memcpy(pixY - (y + 1) * stride, pixY, copySizeY * sizeof(pixel));
+            std::memcpy(pixY - (y + 1) * stride, pixY, copySizeY * sizeof(pixel));
 
         if (m_frameFilter->m_param->internalCsp != X265_CSP_I400)
         {
             for (uint32_t y = 0; y < chromaMarginY; y++)
             {
-                memcpy(pixU - (y + 1) * strideC, pixU, copySizeC * sizeof(pixel));
-                memcpy(pixV - (y + 1) * strideC, pixV, copySizeC * sizeof(pixel));
+                std::memcpy(pixU - (y + 1) * strideC, pixU, copySizeC * sizeof(pixel));
+                std::memcpy(pixV - (y + 1) * strideC, pixV, copySizeC * sizeof(pixel));
             }
         }
     }
@@ -419,14 +421,14 @@ void FrameFilter::ParallelFilter::processPostCu(int col) const
         pixU += ((realH >> vChromaShift) - 1) * strideC;
         pixV += ((realH >> vChromaShift) - 1) * strideC;
         for (uint32_t y = 0; y < lumaMarginY; y++)
-            memcpy(pixY + (y + 1) * stride, pixY, copySizeY * sizeof(pixel));
+            std::memcpy(pixY + (y + 1) * stride, pixY, copySizeY * sizeof(pixel));
 
         if (m_frameFilter->m_param->internalCsp != X265_CSP_I400)
         {
             for (uint32_t y = 0; y < chromaMarginY; y++)
             {
-                memcpy(pixU + (y + 1) * strideC, pixU, copySizeC * sizeof(pixel));
-                memcpy(pixV + (y + 1) * strideC, pixV, copySizeC * sizeof(pixel));
+                std::memcpy(pixU + (y + 1) * strideC, pixU, copySizeC * sizeof(pixel));
+                std::memcpy(pixV + (y + 1) * strideC, pixV, copySizeC * sizeof(pixel));
             }
         }
     }
@@ -751,7 +753,7 @@ void FrameFilter::computeMEIntegral(int row, int layer)
         if (!row)
         {
             for (int i = 0; i < INTEGRAL_PLANE_NUM; i++)
-                memset(m_frame->m_encData->m_meIntegral[i] - padY * stride - padX, 0, stride * sizeof(uint32_t));
+                std::memset(m_frame->m_encData->m_meIntegral[i] - padY * stride - padX, 0, stride * sizeof(uint32_t));
             startRow = -padY;
         }
 

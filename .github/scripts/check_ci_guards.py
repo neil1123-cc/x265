@@ -178,6 +178,18 @@ TME_GENERATOR_OPTIONS = (
     ('-frames:v', '16'),
     ('-pix_fmt', 'yuv420p'),
 )
+MKV_SMOKE_OPTIONS = (
+    ('--input', 'smoke_mkv.y4m'),
+    ('--input-res', '160x90'),
+    ('--fps', '24'),
+    ('--frames', '12'),
+    ('--output', 'smoke_mkv.mkv'),
+)
+MKV_GENERATOR_OPTIONS = (
+    ('-i', 'testsrc2=size=160x90:rate=24'),
+    ('-frames:v', '12'),
+    ('-pix_fmt', 'yuv420p'),
+)
 ZIMG_SMOKE_OPTIONS = (
     ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
     ('--input-res', '96x96'),
@@ -668,6 +680,60 @@ def validate_threaded_me_smoke(repo_root):
     print('Threaded ME smoke guard validated')
 
 
+def validate_mkv_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'MKV Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'MKV Smoke (All CLI)'))
+
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_mkv.y4m' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one MKV input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse MKV input generator command: {exc}', build)
+    for option, expected in MKV_GENERATOR_OPTIONS:
+        option_value(generator_args, option, expected, build, 'MKV input generator')
+    if generator_args[-1] != 'smoke_mkv.y4m':
+        fail(f'MKV input generator must write smoke_mkv.y4m, got {generator_args[-1]}', build)
+
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_mkv' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one MKV x265 command, found {len(command_lines)}', build)
+    try:
+        args = shlex.split(command_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse MKV smoke command: {exc}', build)
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'MKV smoke must run build/all/x265.exe, got {actual}', build)
+    for option, expected in MKV_SMOKE_OPTIONS:
+        option_value(args, option, expected, build, 'MKV smoke')
+
+    active_required = {
+        'test -s smoke_mkv.mkv': 'MKV smoke must require non-empty MKV output',
+        'ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_format.txt': 'MKV smoke must capture format probe output',
+        'ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_stream.txt': 'MKV smoke must capture video stream probe output',
+        'ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_count.txt': 'MKV smoke must count decoded frames',
+        'grep -q "format_name=matroska,webm" smoke_mkv_format.txt': 'MKV smoke must require Matroska format',
+        'grep -q "codec_name=hevc" smoke_mkv_stream.txt': 'MKV smoke must require HEVC codec',
+        'grep -q "codec_type=video" smoke_mkv_stream.txt': 'MKV smoke must require video stream',
+        'grep -q "width=160" smoke_mkv_stream.txt': 'MKV smoke must require width 160',
+        'grep -q "height=90" smoke_mkv_stream.txt': 'MKV smoke must require height 90',
+        'grep -q "nb_read_frames=12" smoke_mkv_count.txt': 'MKV smoke must require 12 decoded frames',
+    }
+    for required, message in active_required.items():
+        if required not in active_lines:
+            fail(message, build)
+    print('MKV smoke guard validated')
+
+
 def validate_zimg_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_zimg' in block]
@@ -963,6 +1029,7 @@ def main():
         validate_warning_scan_dependencies(repo_root)
         validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
+        validate_mkv_smoke(repo_root)
         validate_zimg_smoke(repo_root)
         validate_linux_gcc_smoke(repo_root)
         validate_warning_scan_runtime_smokes(repo_root)

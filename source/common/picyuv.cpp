@@ -27,6 +27,7 @@
 #include "slice.h"
 #include "primitives.h"
 
+#include <cstdlib>
 #include <cstring>
 
 using namespace X265_NS;
@@ -409,7 +410,7 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
             if (isBase)
             {
                 uint16_t mask = (1 << X265_DEPTH) - 1;
-                int shift = abs(pic.bitDepth - X265_DEPTH);
+                int shift = std::abs(pic.bitDepth - X265_DEPTH);
                 pixel* yPixel = m_picOrg[0];
 
                 uint16_t* yShort = (uint16_t*)pic.planes[0];
@@ -450,7 +451,7 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
             {
                 /* defensive programming, mask off bits that are supposed to be zero */
                 uint16_t mask = (1 << X265_DEPTH) - 1;
-                int shift = abs(pic.bitDepth - X265_DEPTH);
+                int shift = std::abs(pic.bitDepth - X265_DEPTH);
                 pixel* yPixel = m_picOrg[0];
 
                 uint16_t* yShort = (uint16_t*)pic.planes[3];

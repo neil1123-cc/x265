@@ -188,6 +188,21 @@ jobs:
           ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
           ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
           grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
+      - name: MKV Smoke (All CLI)
+        shell: bash
+        run: |
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p smoke_mkv.y4m
+          build/all/x265.exe --input smoke_mkv.y4m --input-res 160x90 --fps 24 --frames 12 --output smoke_mkv.mkv
+          test -s smoke_mkv.mkv
+          ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_format.txt
+          ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_stream.txt
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_count.txt
+          grep -q "format_name=matroska,webm" smoke_mkv_format.txt
+          grep -q "codec_name=hevc" smoke_mkv_stream.txt
+          grep -q "codec_type=video" smoke_mkv_stream.txt
+          grep -q "width=160" smoke_mkv_stream.txt
+          grep -q "height=90" smoke_mkv_stream.txt
+          grep -q "nb_read_frames=12" smoke_mkv_count.txt
       - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
@@ -785,6 +800,36 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-warning-scan-all/smoke_all.hevc', '# test -s build/cxx20-warning-scan-all/smoke_all.hevc')
         expect_fail(run_checker(repo), 'all-bit-depth warning-scan smoke must require non-empty HEVC output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/all/x265.exe --input smoke_mkv.y4m --input-res 160x90', 'build/all/x265.exe --input smoke_mkv.y4m --input-res 128x72')
+        expect_fail(run_checker(repo), 'MKV smoke --input-res must be 160x90, got 128x72')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 12 --output smoke_mkv.mkv', '--frames 8 --output smoke_mkv.mkv')
+        expect_fail(run_checker(repo), 'MKV smoke --frames must be 12, got 8')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s smoke_mkv.mkv', '# test -s smoke_mkv.mkv')
+        expect_fail(run_checker(repo), 'MKV smoke must require non-empty MKV output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q "nb_read_frames=12" smoke_mkv_count.txt', 'grep -q "nb_read_frames=8" smoke_mkv_count.txt')
+        expect_fail(run_checker(repo), 'MKV smoke must require 12 decoded frames')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_stream.txt', 'ffprobe -v error -show_entries stream=codec_name,codec_type -select_streams v:0 -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_stream.txt')
+        expect_fail(run_checker(repo), 'MKV smoke must capture video stream probe output')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
