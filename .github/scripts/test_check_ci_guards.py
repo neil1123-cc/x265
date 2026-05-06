@@ -289,6 +289,42 @@ jobs:
           assert_common_mp4 smoke_zero 128 72 yuv420p 24/1 1 1/24000
           assert_mp4_markers smoke_zero.mp4 iso6 hvc1 hvcC
           assert_single_frame_mp4 smoke_zero 0.05 0.02 0.08
+      - name: MP4 Smoke (All CLI VUI Metadata)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_vui.y4m 24 4 yuv420p
+          build/all/x265.exe --input smoke_vui.y4m --input-res 128x72 --fps 24 --frames 4 --bframes 0 --keyint 4 --min-keyint 4 --sar 4:3 --range limited --colorprim bt709 --transfer bt709 --colormatrix bt709 --output smoke_vui.mp4
+          probe_mp4 smoke_vui smoke_vui.mp4 flags
+          assert_common_mp4 smoke_vui 128 72 yuv420p 24/1 4 1/24000
+          grep -q "sample_aspect_ratio=4:3" smoke_vui_stream.txt
+          grep -q "display_aspect_ratio=64:27" smoke_vui_stream.txt
+          grep -q "color_range=tv" smoke_vui_stream.txt
+          grep -q "color_space=bt709" smoke_vui_stream.txt
+          grep -q "color_transfer=bt709" smoke_vui_stream.txt
+          grep -q "color_primaries=bt709" smoke_vui_stream.txt
+          assert_mp4_markers smoke_vui.mp4 iso6 colr
+      - name: MP4 Smoke (All CLI 24000/1001)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_frac.y4m 24000/1001 24 yuv420p
+          build/all/x265.exe --input smoke_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 24 --bframes 4 --keyint 12 --min-keyint 12 --no-open-gop --output smoke_frac.mp4
+          probe_mp4 smoke_frac smoke_frac.mp4 pts_time,dts_time,flags
+          assert_common_mp4 smoke_frac 128 72 yuv420p 24000/1001 24 1/24000
+          assert_mp4_markers smoke_frac.mp4 iso6 hvc1 hvcC
+          awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 13) exit 1 } END { if (kf < 2) exit 1 }' smoke_frac_packets.csv
+          assert_duration_window smoke_frac 0.95 1.10
+      - name: MP4 Smoke (All CLI B-Pyramid)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_bpyramid.y4m 24 16 yuv420p
+          build/all/x265.exe --input smoke_bpyramid.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --b-pyramid --keyint 8 --min-keyint 8 --no-open-gop --output smoke_bpyramid.mp4
+          probe_mp4 smoke_bpyramid smoke_bpyramid.mp4 pts_time,dts_time,flags
+          assert_common_mp4 smoke_bpyramid 128 72 yuv420p 24/1 16 1/24000
+          awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_bpyramid_packets.csv
+          assert_duration_window smoke_bpyramid 0.60 0.75
       - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
@@ -1060,6 +1096,36 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4', '--frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4')
         expect_fail(run_checker(repo), 'MP4 frames=0 smoke --frames must be 0, got 1')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--sar 4:3 --range limited --colorprim bt709 --transfer bt709 --colormatrix bt709 --output smoke_vui.mp4', '--sar 1:1 --range limited --colorprim bt709 --transfer bt709 --colormatrix bt709 --output smoke_vui.mp4')
+        expect_fail(run_checker(repo), 'MP4 VUI smoke --sar must be 4:3, got 1:1')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q "color_primaries=bt709" smoke_vui_stream.txt', 'grep -q "color_primaries=unknown" smoke_vui_stream.txt')
+        expect_fail(run_checker(repo), 'MP4 VUI smoke must require bt709 primaries metadata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'make_y4m smoke_frac.y4m 24000/1001 24 yuv420p', 'make_y4m smoke_frac.y4m 24 24 yuv420p')
+        expect_fail(run_checker(repo), 'MP4 24000/1001 smoke must generate 24-frame yuv420p input')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 13) exit 1 } END { if (kf < 2) exit 1 }' smoke_frac_packets.csv", "awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frac_packets.csv")
+        expect_fail(run_checker(repo), 'MP4 24000/1001 smoke must require second key packet at packet 13')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--bframes 4 --b-pyramid --keyint 8', '--bframes 4 --keyint 8')
+        expect_fail(run_checker(repo), 'missing MP4 B-pyramid smoke argument: --b-pyramid')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
