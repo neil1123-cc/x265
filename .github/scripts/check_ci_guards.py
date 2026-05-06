@@ -322,6 +322,47 @@ MP4_BPYRAMID_SMOKE_OPTIONS = (
     ('--min-keyint', '8'),
     ('--output', 'smoke_bpyramid.mp4'),
 )
+MP4_AUD_SMOKE_FLAGS = (
+    '--aud',
+)
+MP4_AUD_SMOKE_OPTIONS = (
+    ('--input', 'smoke_aud.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--bframes', '4'),
+    ('--keyint', '8'),
+    ('--min-keyint', '8'),
+    ('--output', 'smoke_aud.mp4'),
+)
+MP4_EOS_SMOKE_FLAGS = (
+    '--eos',
+    '--eob',
+)
+MP4_EOS_SMOKE_OPTIONS = (
+    ('--input', 'smoke_eos.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--bframes', '4'),
+    ('--keyint', '8'),
+    ('--min-keyint', '8'),
+    ('--output', 'smoke_eos.mp4'),
+)
+MP4_RECOVERY_SMOKE_FLAGS = (
+    '--no-open-gop',
+    '--idr-recovery-sei',
+)
+MP4_RECOVERY_SMOKE_OPTIONS = (
+    ('--input', 'smoke_recovery.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--bframes', '0'),
+    ('--keyint', '8'),
+    ('--min-keyint', '8'),
+    ('--output', 'smoke_recovery.mp4'),
+)
 ZIMG_SMOKE_OPTIONS = (
     ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
     ('--input-res', '96x96'),
@@ -1163,6 +1204,61 @@ def validate_mp4_smokes(repo_root):
                 'assert_common_mp4 smoke_bpyramid 128 72 yuv420p 24/1 16 1/24000': 'MP4 B-pyramid smoke must require common MP4 stream properties',
                 "awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_bpyramid_packets.csv": 'MP4 B-pyramid smoke must require second key packet at packet 9',
                 'assert_duration_window smoke_bpyramid 0.60 0.75': 'MP4 B-pyramid smoke must require bounded duration',
+            },
+        ),
+        (
+            'MP4 AUD smoke',
+            'MP4 Smoke (All CLI AUD Request Stays Valid)',
+            'smoke_aud',
+            'smoke_aud.mp4',
+            'pts_time,dts_time,flags',
+            '24',
+            '16',
+            'yuv420p',
+            MP4_AUD_SMOKE_FLAGS,
+            MP4_AUD_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke_aud smoke_aud.mp4 pts_time,dts_time,flags': 'MP4 AUD smoke must probe timing and flags',
+                'assert_common_mp4 smoke_aud 128 72 yuv420p 24/1 16 1/24000': 'MP4 AUD smoke must require common MP4 stream properties',
+                "awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == \"N/A\") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_aud_packets.csv": 'MP4 AUD smoke must require second key packet timing window',
+                'assert_duration_window smoke_aud 0.60 0.75': 'MP4 AUD smoke must require bounded duration',
+            },
+        ),
+        (
+            'MP4 EOS/EOB smoke',
+            'MP4 Smoke (All CLI EOS/EOB Request Stays Valid)',
+            'smoke_eos',
+            'smoke_eos.mp4',
+            'pts_time,dts_time,flags',
+            '24',
+            '16',
+            'yuv420p',
+            MP4_EOS_SMOKE_FLAGS,
+            MP4_EOS_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke_eos smoke_eos.mp4 pts_time,dts_time,flags': 'MP4 EOS/EOB smoke must probe timing and flags',
+                'assert_common_mp4 smoke_eos 128 72 yuv420p 24/1 16 1/24000': 'MP4 EOS/EOB smoke must require common MP4 stream properties',
+                "awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == \"N/A\") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_eos_packets.csv": 'MP4 EOS/EOB smoke must require second key packet timing window',
+                'assert_duration_window smoke_eos 0.60 0.75': 'MP4 EOS/EOB smoke must require bounded duration',
+            },
+        ),
+        (
+            'MP4 IDR recovery smoke',
+            'MP4 Smoke (All CLI IDR Recovery SEI)',
+            'smoke_recovery',
+            'smoke_recovery.mp4',
+            'pts_time,dts_time,flags',
+            '24',
+            '16',
+            'yuv420p',
+            MP4_RECOVERY_SMOKE_FLAGS,
+            MP4_RECOVERY_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke_recovery smoke_recovery.mp4 pts_time,dts_time,flags': 'MP4 IDR recovery smoke must probe timing and flags',
+                'assert_common_mp4 smoke_recovery 128 72 yuv420p 24/1 16 1/24000': 'MP4 IDR recovery smoke must require common MP4 stream properties',
+                'assert_mp4_markers smoke_recovery.mp4 iso6 hvc1 hvcC': 'MP4 IDR recovery smoke must require MP4 HEVC markers',
+                "awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == \"N/A\") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_recovery_packets.csv": 'MP4 IDR recovery smoke must require second key packet timing window',
+                'assert_duration_window smoke_recovery 0.60 0.75': 'MP4 IDR recovery smoke must require bounded duration',
             },
         ),
     )

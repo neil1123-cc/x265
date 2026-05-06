@@ -325,6 +325,37 @@ jobs:
           assert_common_mp4 smoke_bpyramid 128 72 yuv420p 24/1 16 1/24000
           awk -F, '$3 ~ /K/ { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_bpyramid_packets.csv
           assert_duration_window smoke_bpyramid 0.60 0.75
+      - name: MP4 Smoke (All CLI AUD Request Stays Valid)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_aud.y4m 24 16 yuv420p
+          build/all/x265.exe --input smoke_aud.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --aud --output smoke_aud.mp4
+          probe_mp4 smoke_aud smoke_aud.mp4 pts_time,dts_time,flags
+          assert_common_mp4 smoke_aud 128 72 yuv420p 24/1 16 1/24000
+          awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_aud_packets.csv
+          assert_duration_window smoke_aud 0.60 0.75
+      - name: MP4 Smoke (All CLI EOS/EOB Request Stays Valid)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_eos.y4m 24 16 yuv420p
+          build/all/x265.exe --input smoke_eos.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --eos --eob --output smoke_eos.mp4
+          probe_mp4 smoke_eos smoke_eos.mp4 pts_time,dts_time,flags
+          assert_common_mp4 smoke_eos 128 72 yuv420p 24/1 16 1/24000
+          awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_eos_packets.csv
+          assert_duration_window smoke_eos 0.60 0.75
+      - name: MP4 Smoke (All CLI IDR Recovery SEI)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_recovery.y4m 24 16 yuv420p
+          build/all/x265.exe --input smoke_recovery.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --idr-recovery-sei --output smoke_recovery.mp4
+          probe_mp4 smoke_recovery smoke_recovery.mp4 pts_time,dts_time,flags
+          assert_common_mp4 smoke_recovery 128 72 yuv420p 24/1 16 1/24000
+          assert_mp4_markers smoke_recovery.mp4 iso6 hvc1 hvcC
+          awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_recovery_packets.csv
+          assert_duration_window smoke_recovery 0.60 0.75
       - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
@@ -1126,6 +1157,24 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--bframes 4 --b-pyramid --keyint 8', '--bframes 4 --keyint 8')
         expect_fail(run_checker(repo), 'missing MP4 B-pyramid smoke argument: --b-pyramid')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--aud --output smoke_aud.mp4', '--output smoke_aud.mp4')
+        expect_fail(run_checker(repo), 'missing MP4 AUD smoke argument: --aud')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--eos --eob --output smoke_eos.mp4', '--eos --output smoke_eos.mp4')
+        expect_fail(run_checker(repo), 'missing MP4 EOS/EOB smoke argument: --eob')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--no-open-gop --idr-recovery-sei --output smoke_recovery.mp4', '--no-open-gop --output smoke_recovery.mp4')
+        expect_fail(run_checker(repo), 'missing MP4 IDR recovery smoke argument: --idr-recovery-sei')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
