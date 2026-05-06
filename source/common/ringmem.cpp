@@ -26,7 +26,6 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
-#include <string.h>
 
 #ifndef _WIN32
 #include <fcntl.h>

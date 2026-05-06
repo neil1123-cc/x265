@@ -771,7 +771,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
     {
         // Fill top border with rec. samples
         const pixel* adiTemp = adiOrigin - picStride - 1;
-        memcpy(dst, adiTemp, refSize * sizeof(pixel));
+        std::memcpy(dst, adiTemp, refSize * sizeof(pixel));
 
         // Fill left border with rec. samples
         adiTemp = adiOrigin - 1;
@@ -821,7 +821,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
         adiTemp = adiOrigin - picStride;
         adi = adiLineBuffer + (leftUnits * unitHeight) + unitWidth;
         // NOTE: over copy here, but reduce condition operators
-        memcpy(adi, adiTemp, aboveUnits * unitWidth * sizeof(*adiTemp));
+        std::memcpy(adi, adiTemp, aboveUnits * unitWidth * sizeof(*adiTemp));
 
         // Pad reference samples when necessary
         int curr = 0;
@@ -864,7 +864,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
             if (curr < nextOrTop)
             {
                 const int fillSize = unitHeight * (nextOrTop - curr);
-                memset(adi, refSample, fillSize * sizeof(pixel));
+                std::memset(adi, refSample, fillSize * sizeof(pixel));
                 curr = nextOrTop;
                 adi += fillSize;
             }
@@ -872,7 +872,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
             if (curr < next)
             {
                 const int fillSize = unitWidth * (next - curr);
-                memset(adi, refSample, fillSize * sizeof(pixel));
+                std::memset(adi, refSample, fillSize * sizeof(pixel));
                 curr = next;
                 adi += fillSize;
             }
@@ -901,7 +901,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
 
         // Copy processed samples
         adi = adiLineBuffer + refSize + unitWidth - 2;
-        memcpy(dst, adi, refSize * sizeof(pixel));
+        std::memcpy(dst, adi, refSize * sizeof(pixel));
 
         adi = adiLineBuffer + refSize - 1;
         for (int i = 0; i < (int)refSize - 1; i++)

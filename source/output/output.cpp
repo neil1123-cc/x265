@@ -35,7 +35,7 @@ using namespace X265_NS;
 
 ReconFile* ReconFile::open(const char *fname, int width, int height, uint32_t bitdepth, uint32_t fpsNum, uint32_t fpsDenom, int csp, int sourceBitDepth)
 {
-    const char * s = strrchr(fname, '.');
+    const char * s = std::strrchr(fname, '.');
 
     if (s && !std::strcmp(s, ".y4m"))
         return new Y4MOutput(fname, width, height, bitdepth, fpsNum, fpsDenom, csp, sourceBitDepth);
@@ -51,7 +51,7 @@ ReconFile* ReconFile::open(const char *fname, int width, int height, uint32_t bi
 
 OutputFile* OutputFile::open(const char *fname, InputFileInfo& inputInfo)
 {
-    const char * s = strrchr(fname, '.');
+    const char * s = std::strrchr(fname, '.');
 
 #ifdef ENABLE_MKV
     if (s && !std::strcmp(s, ".mkv"))

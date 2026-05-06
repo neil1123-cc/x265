@@ -62,7 +62,7 @@ int RAWOutput::writeHeaders(const x265_nal* nal, uint32_t nalcount)
 
     for (uint32_t i = 0; i < nalcount; i++)
     {
-        fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
+        std::fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
         bytes += nal->sizeBytes;
         nal++;
     }
@@ -76,7 +76,7 @@ int RAWOutput::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture&)
 
     for (uint32_t i = 0; i < nalcount; i++)
     {
-        fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
+        std::fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
         bytes += nal->sizeBytes;
         nal++;
     }
@@ -87,5 +87,5 @@ int RAWOutput::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture&)
 void RAWOutput::closeFile(int64_t, int64_t)
 {
     if (ofs != stdout)
-        fclose(ofs);
+        std::fclose(ofs);
 }

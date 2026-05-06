@@ -1974,8 +1974,8 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         double q1 = m_curSlice->m_refFrameList[1][0]->m_encData->m_avgQpRc;
         bool i0 = prevRefSlice->m_sliceType == I_SLICE;
         bool i1 = nextRefSlice->m_sliceType == I_SLICE;
-        int dt0 = abs(m_curSlice->m_poc - prevRefSlice->m_poc);
-        int dt1 = abs(m_curSlice->m_poc - nextRefSlice->m_poc);
+        int dt0 = std::abs(m_curSlice->m_poc - prevRefSlice->m_poc);
+        int dt1 = std::abs(m_curSlice->m_poc - nextRefSlice->m_poc);
 
         // Skip taking a reference frame before the Scenecut if ABR has been reset.
         if (m_lastAbrResetPoc >= 0)
@@ -2820,7 +2820,7 @@ double RateControl::predictRowsSizeSum(Frame* curFrame, RateControlEntry* rce, d
                     && refRowBits > 0
                     && !m_param->rc.bEnableConstVbv)
                 {
-                    if (abs((int32_t)(refRowSatdCost - satdCostForPendingCus)) < (int32_t)satdCostForPendingCus / 2)
+                    if (std::abs((int32_t)(refRowSatdCost - satdCostForPendingCus)) < (int32_t)satdCostForPendingCus / 2)
                     {
                         double predTotal = refRowBits * satdCostForPendingCus / refRowSatdCost * refQScale / qScale;
                         totalSatdBits += (int32_t)((pred_s + predTotal) * 0.5);
@@ -3310,15 +3310,15 @@ int RateControl::writeRateControlFrameStats(Frame* curFrame, RateControlEntry* r
         int i, num = rpsWriter->numberOfPictures;
         char deltaPOC[128];
         char bUsed[40];
-        memset(deltaPOC, 0, sizeof(deltaPOC));
-        memset(bUsed, 0, sizeof(bUsed));
-        snprintf(deltaPOC, sizeof(deltaPOC), "deltapoc:~");
-        snprintf(bUsed, sizeof(bUsed), "bused:~");
+        std::memset(deltaPOC, 0, sizeof(deltaPOC));
+        std::memset(bUsed, 0, sizeof(bUsed));
+        std::snprintf(deltaPOC, sizeof(deltaPOC), "deltapoc:~");
+        std::snprintf(bUsed, sizeof(bUsed), "bused:~");
 
         for (i = 0; i < num; i++)
         {
-            snprintf(deltaPOC + strlen(deltaPOC), sizeof(deltaPOC) - strlen(deltaPOC), "%d~", rpsWriter->deltaPOC[i]);
-            snprintf(bUsed + strlen(bUsed), sizeof(bUsed) - strlen(bUsed), "%d~", rpsWriter->bUsed[i]);
+            std::snprintf(deltaPOC + std::strlen(deltaPOC), sizeof(deltaPOC) - std::strlen(deltaPOC), "%d~", rpsWriter->deltaPOC[i]);
+            std::snprintf(bUsed + std::strlen(bUsed), sizeof(bUsed) - std::strlen(bUsed), "%d~", rpsWriter->bUsed[i]);
         }
 
         if (fprintf(m_statFileOut,
