@@ -55,13 +55,13 @@ FILE* GOPOutput::open_file_for_write(const string fname, bool retry)
             break;
         // Retrying
         general_log(NULL, getName(), X265_LOG_WARNING,
-            "unable to open file %s for writing, error %d %s, retrying in %d seconds.\n", fname.c_str(), errno, strerror(errno), TIME_WAIT);
+            "unable to open file %s for writing, error %d %s, retrying in %d seconds.\n", fname.c_str(), errno, std::strerror(errno), TIME_WAIT);
         sleep(TIME_WAIT);
     }
     // Failed
     b_fail = true;
     general_log(NULL, getName(), X265_LOG_ERROR,
-        "unable to open file %s for writing, error %d %s.\n", fname.c_str(), errno, strerror(errno));
+        "unable to open file %s for writing, error %d %s.\n", fname.c_str(), errno, std::strerror(errno));
     return NULL;
 }
 
@@ -70,13 +70,13 @@ void GOPOutput::smart_fwrite(const void* data, size_t size, FILE* file)
     size_t written;
     while(true)
     {
-        written = fwrite(data, 1, size, file);
+        written = std::fwrite(data, 1, size, file);
         if(written == size)
             break;
         // ENOSPC
         general_log(NULL, getName(), X265_LOG_WARNING,
-            "unable to write, error %d %s, retrying in %d seconds.\n", errno, strerror(errno), TIME_WAIT);
-        fseek(file, data_pos, SEEK_SET);
+            "unable to write, error %d %s, retrying in %d seconds.\n", errno, std::strerror(errno), TIME_WAIT);
+        std::fseek(file, data_pos, SEEK_SET);
         sleep(TIME_WAIT);
     }
     // Worked
@@ -85,8 +85,8 @@ void GOPOutput::smart_fwrite(const void* data, size_t size, FILE* file)
 
 void GOPOutput::clean_up()
 {
-    if(data_file) fclose(data_file);
-    if(gop_file)  fclose(gop_file);
+    if(data_file) std::fclose(data_file);
+    if(gop_file)  std::fclose(gop_file);
 }
 
 int GOPOutput::openFile(const char* gop_filename)
@@ -121,26 +121,26 @@ void GOPOutput::setParam(x265_param *p_param)
 
     if (!options_written)
     {
-        fprintf(gop_file, "#options %s.options\n", filename_prefix.c_str());
+        std::fprintf(gop_file, "#options %s.options\n", filename_prefix.c_str());
         options_written = true;
     }
 
-    fprintf(opt_file, "b-frames %d\n",           p_param->bframes);
-    fprintf(opt_file, "b-pyramid %d\n",          p_param->bBPyramid);
-    fprintf(opt_file, "input-timebase-num %d\n", info.timebaseNum);
-    fprintf(opt_file, "input-timebase-den %d\n", info.timebaseDenom);
-    fprintf(opt_file, "output-fps-num %u\n",     p_param->fpsNum);
-    fprintf(opt_file, "output-fps-den %u\n",     p_param->fpsDenom);
-    fprintf(opt_file, "source-width %d\n",       p_param->sourceWidth);
-    fprintf(opt_file, "source-height %d\n",      p_param->sourceHeight);
-    fprintf(opt_file, "sar-width %d\n",          p_param->vui.sarWidth);
-    fprintf(opt_file, "sar-height %d\n",         p_param->vui.sarHeight);
-    fprintf(opt_file, "primaries-index %d\n",    p_param->vui.colorPrimaries);
-    fprintf(opt_file, "transfer-index %d\n",     p_param->vui.transferCharacteristics);
-    fprintf(opt_file, "matrix-index %d\n",       p_param->vui.matrixCoeffs >= 0 ? p_param->vui.matrixCoeffs : GOP_ISOM_MATRIX_INDEX_UNSPECIFIED);
-    fprintf(opt_file, "full-range %d\n",         p_param->vui.bEnableVideoFullRangeFlag >= 0 ? p_param->vui.bEnableVideoFullRangeFlag : 0);
+    std::fprintf(opt_file, "b-frames %d\n",           p_param->bframes);
+    std::fprintf(opt_file, "b-pyramid %d\n",          p_param->bBPyramid);
+    std::fprintf(opt_file, "input-timebase-num %d\n", info.timebaseNum);
+    std::fprintf(opt_file, "input-timebase-den %d\n", info.timebaseDenom);
+    std::fprintf(opt_file, "output-fps-num %u\n",     p_param->fpsNum);
+    std::fprintf(opt_file, "output-fps-den %u\n",     p_param->fpsDenom);
+    std::fprintf(opt_file, "source-width %d\n",       p_param->sourceWidth);
+    std::fprintf(opt_file, "source-height %d\n",      p_param->sourceHeight);
+    std::fprintf(opt_file, "sar-width %d\n",          p_param->vui.sarWidth);
+    std::fprintf(opt_file, "sar-height %d\n",         p_param->vui.sarHeight);
+    std::fprintf(opt_file, "primaries-index %d\n",    p_param->vui.colorPrimaries);
+    std::fprintf(opt_file, "transfer-index %d\n",     p_param->vui.transferCharacteristics);
+    std::fprintf(opt_file, "matrix-index %d\n",       p_param->vui.matrixCoeffs >= 0 ? p_param->vui.matrixCoeffs : GOP_ISOM_MATRIX_INDEX_UNSPECIFIED);
+    std::fprintf(opt_file, "full-range %d\n",         p_param->vui.bEnableVideoFullRangeFlag >= 0 ? p_param->vui.bEnableVideoFullRangeFlag : 0);
 
-    fclose(opt_file);
+    std::fclose(opt_file);
 }
 
 int GOPOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
@@ -150,12 +150,12 @@ int GOPOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     FILE* hdr_file = open_file_for_write(dir_prefix + filename_prefix + ".headers", false);
     if(!hdr_file) return -1;
 
-    fprintf(gop_file, "#headers %s.headers\n", filename_prefix.c_str());
+    std::fprintf(gop_file, "#headers %s.headers\n", filename_prefix.c_str());
 
     for(unsigned int i = 0; i < nalcount; i++)
         smart_fwrite(p_nal[i].payload, p_nal[i].sizeBytes, hdr_file);
 
-    fclose(hdr_file);
+    std::fclose(hdr_file);
     return p_nal[0].sizeBytes + p_nal[1].sizeBytes + p_nal[2].sizeBytes;
 }
 
@@ -166,15 +166,15 @@ int GOPOutput::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
 
     if (is_keyframe) {
         if (data_file)
-            fclose(data_file);
+            std::fclose(data_file);
         stringstream ss;
         ss << filename_prefix << string("-") << std::setfill('0') << setw(6) << i_numframe << string(".hevc-gop-data");
         string data_filename = ss.str();
         data_file = open_file_for_write(dir_prefix + data_filename, i_numframe > 0);
         if(!data_file) return -1;
         data_pos = 0;
-        fprintf(gop_file, "%s\n", data_filename.c_str());
-        fflush(gop_file);
+        std::fprintf(gop_file, "%s\n", data_filename.c_str());
+        std::fflush(gop_file);
     }
     int8_t ts_len = 2 * sizeof(int64_t);
     int8_t ts_lenx[4] = {0, 0, 0, ts_len};

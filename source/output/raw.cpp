@@ -47,7 +47,7 @@ RAWOutput::RAWOutput(const char* fname, InputFileInfo&)
         return;
     }
     ofs = x265_fopen(fname, "wb");
-    if (!ofs || ferror(ofs))
+    if (!ofs || std::ferror(ofs))
         b_fail = true;
 }
 

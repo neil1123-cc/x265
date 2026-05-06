@@ -29,6 +29,9 @@
 #include "predict.h"
 #include "primitives.h"
 
+#include <cstdlib>
+#include <cstring>
+
 using namespace X265_NS;
 
 #if _MSC_VER
@@ -657,8 +660,8 @@ void Predict::initAdiPattern(const CUData& cu, const CUGeom& cuGeom, uint32_t pu
 
             pixel topMiddle = refBuf[32], leftMiddle = refBuf[tuSize2 + 32];
 
-            if (abs(topLeft + topLast  - (topMiddle  << 1)) < threshold &&
-                abs(topLeft + leftLast - (leftMiddle << 1)) < threshold)
+            if (std::abs(topLeft + topLast  - (topMiddle  << 1)) < threshold &&
+                std::abs(topLeft + leftLast - (leftMiddle << 1)) < threshold)
             {
                 // "strong" bilinear interpolation
                 const int shift = 5 + 1;

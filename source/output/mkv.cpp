@@ -256,7 +256,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     }
 
     char writingApp[64];
-    snprintf(writingApp, sizeof(writingApp), "x265 %s %s", x265_version_str, X265_OUTPUT_BITS);
+    std::snprintf(writingApp, sizeof(writingApp), "x265 %s %s", x265_version_str, X265_OUTPUT_BITS);
 
     ret = mk_write_header(p_mkv->w, writingApp, "V_MPEGH/ISO/HEVC",
                           hevcC.data(), hevcC_len, p_mkv->frame_duration, 50000,

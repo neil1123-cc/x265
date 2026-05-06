@@ -272,7 +272,7 @@ namespace X265_NS {
             if (!m_cliopt.parseZoneFile())
             {
                 x265_log(nullptr, X265_LOG_ERROR, "Unable to parse zonefile in %s\n");
-                fclose(m_cliopt.zoneFile);
+                std::fclose(m_cliopt.zoneFile);
                 m_cliopt.zoneFile = nullptr;
             }
         }
@@ -726,7 +726,7 @@ ret:
                         {
                             x265_log(nullptr, X265_LOG_ERROR, "can't parse qpfile for frame %d in %s\n",
                                 pic_in[view]->poc, profileName);
-                            fclose(m_cliopt.qpfile);
+                            std::fclose(m_cliopt.qpfile);
                             m_cliopt.qpfile = nullptr;
                         }
                     }

@@ -292,9 +292,9 @@ char* x265_slurp_file(const char *filename)
         return NULL;
     }
 
-    bError |= fseek(fh, 0, SEEK_END) < 0;
-    bError |= (fSize = ftell(fh)) <= 0;
-    bError |= fseek(fh, 0, SEEK_SET) < 0;
+    bError |= std::fseek(fh, 0, SEEK_END) < 0;
+    bError |= (fSize = std::ftell(fh)) <= 0;
+    bError |= std::fseek(fh, 0, SEEK_SET) < 0;
     if (bError)
         goto error;
 

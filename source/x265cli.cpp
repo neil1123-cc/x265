@@ -463,7 +463,7 @@ namespace X265_NS {
         if (level < X265_LOG_DEBUG)
             std::printf("\nUse --fullhelp for a full listing (or --log-level full --help)\n");
         std::printf("\n\nComplete documentation may be found at http://x265.readthedocs.org/en/default/cli.html\n");
-        exit(1);
+        std::exit(1);
     }
 
     void CLIOptions::destroy()
