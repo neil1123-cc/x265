@@ -35,6 +35,8 @@
 #include "framedata.h"
 #include "encoder.h"
 
+#include <cstdlib>
+
 using namespace X265_NS;
 
 #if _MSC_VER
@@ -2323,7 +2325,7 @@ uint32_t Search::mergeEstimation(CUData& cu, const CUGeom& cuGeom, const Predict
 /* find the lowres motion vector from lookahead in middle of current PU */
 MV Search::getLowresMV(const CUData& cu, const PredictionUnit& pu, int list, int ref)
 {
-    int diffPoc = abs(m_slice->m_poc - m_slice->m_refPOCList[list][ref]);
+    int diffPoc = std::abs(m_slice->m_poc - m_slice->m_refPOCList[list][ref]);
     if (diffPoc > m_param->bframes + 1)
         /* poc difference is out of range for lookahead */
         return 0;
@@ -3175,7 +3177,7 @@ uint32_t Search::getSAD(pixel* ref, int refStride, const pixel* curr, int currSt
     {
         for (int j = 0; j < width; j++)
         {
-            dist += abs(ref[j] - curr[j]);
+            dist += std::abs(ref[j] - curr[j]);
         }
         ref += refStride;
         curr += currStride;
@@ -3259,7 +3261,7 @@ int Search::intraBCSearchMVChromaRefine(Mode& intraBCMode,
             {
                 for (int col = 0; col < width; col++)
                 {
-                    tempSad += ((abs(ref[col] - picOrg[col])) >> (bitDepths - 8));
+                    tempSad += ((std::abs(ref[col] - picOrg[col])) >> (bitDepths - 8));
                 }
                 ref += refStride;
                 picOrg += orgStride;
@@ -5980,7 +5982,7 @@ void Search::estimateResidualQT(Mode& mode, const CUGeom& cuGeom, uint32_t absPa
             {
                 uint32_t energy = 0;
                 for (uint32_t i = 0; i < numCoeff; i++)
-                    energy += abs(coeffCurY[i]);
+                    energy += std::abs(coeffCurY[i]);
                 if (energy == numSig[TEXT_LUMA][0])
                     bCheckSplit = false;
             }

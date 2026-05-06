@@ -1042,6 +1042,22 @@ def main():
         }])
         expect_pass(run_checker(msvc_fused_tp_language_dir, '--min-cpp-commands=1'))
 
+        msvc_tp_arguments_language_dir = root / 'msvc-fused-tp-cxx-language-arguments'
+        write_compile_commands_records(msvc_tp_arguments_language_dir, [{
+            'directory': str(msvc_tp_arguments_language_dir),
+            'arguments': ['clang-cl', '/Tpsource/common/template.inc', '/std:c++20', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(msvc_tp_arguments_language_dir, '--min-cpp-commands=1'))
+
+        msvc_tp_arguments_missing_std_dir = root / 'msvc-fused-tp-cxx-language-arguments-missing-std'
+        write_compile_commands_records(msvc_tp_arguments_missing_std_dir, [{
+            'directory': str(msvc_tp_arguments_missing_std_dir),
+            'arguments': ['clang-cl', '/Tpsource/common/template.inc', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_tp_arguments_missing_std_dir), 'missing GNU++20 dialect')
+
         msvc_tp_missing_std_dir = root / 'msvc-tp-cxx-language-missing-std'
         write_compile_commands_records(msvc_tp_missing_std_dir, [{
             'directory': str(msvc_tp_missing_std_dir),

@@ -258,6 +258,37 @@ jobs:
           awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_open_packets.csv
           assert_mp4_markers smoke_open.mp4 iso6 sgpd sbgp 'rap '
           assert_duration_window smoke_open 0.60 0.75
+      - name: MP4 Smoke (All CLI CRA)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_cra.y4m 24 16 yuv420p
+          build/all/x265.exe --input smoke_cra.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 1 --min-keyint 1 --cra-nal --output smoke_cra.mp4
+          probe_mp4 smoke_cra smoke_cra.mp4 flags
+          assert_common_mp4 smoke_cra 128 72 yuv420p 24/1 16 1/24000
+          assert_mp4_markers smoke_cra.mp4 iso6 hvc1 hvcC
+          awk -F, '$1 == 1 { kf++ } END { if (kf != 16) exit 1 }' smoke_cra_frames.csv
+          assert_duration_window smoke_cra 0.60 0.75
+      - name: MP4 Smoke (All CLI Single Frame)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_single.y4m 24 1 yuv420p
+          build/all/x265.exe --input smoke_single.y4m --input-res 128x72 --fps 24 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single.mp4
+          probe_mp4 smoke_single smoke_single.mp4 flags
+          assert_common_mp4 smoke_single 128 72 yuv420p 24/1 1 1/24000
+          assert_mp4_markers smoke_single.mp4 iso6 hvc1 hvcC
+          assert_single_frame_mp4 smoke_single 0.05 0.02 0.08
+      - name: MP4 Smoke (All CLI Frames=0 Means Encode Available Input)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_zero.y4m 24 1 yuv420p
+          build/all/x265.exe --input smoke_zero.y4m --input-res 128x72 --fps 24 --frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4
+          probe_mp4 smoke_zero smoke_zero.mp4 flags
+          assert_common_mp4 smoke_zero 128 72 yuv420p 24/1 1 1/24000
+          assert_mp4_markers smoke_zero.mp4 iso6 hvc1 hvcC
+          assert_single_frame_mp4 smoke_zero 0.05 0.02 0.08
       - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
@@ -999,6 +1030,36 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1', 'if (($1+0) < 0.10 || ($1+0) > 0.20) exit 1')
         expect_fail(run_checker(repo), 'MP4 open-GOP smoke must require second key packet timing window')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--cra-nal --output smoke_cra.mp4', '--output smoke_cra.mp4')
+        expect_fail(run_checker(repo), 'missing MP4 CRA smoke argument: --cra-nal')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "awk -F, '$1 == 1 { kf++ } END { if (kf != 16) exit 1 }' smoke_cra_frames.csv", "awk -F, '$1 == 1 { kf++ } END { if (kf != 1) exit 1 }' smoke_cra_frames.csv")
+        expect_fail(run_checker(repo), 'MP4 CRA smoke must require every frame keyframe-marked')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'make_y4m smoke_single.y4m 24 1 yuv420p', 'make_y4m smoke_single.y4m 24 2 yuv420p')
+        expect_fail(run_checker(repo), 'MP4 single-frame smoke must generate 1-frame yuv420p input')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single.mp4', '--frames 2 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single.mp4')
+        expect_fail(run_checker(repo), 'MP4 single-frame smoke --frames must be 1, got 2')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4', '--frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4')
+        expect_fail(run_checker(repo), 'MP4 frames=0 smoke --frames must be 0, got 1')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

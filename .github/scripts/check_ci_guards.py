@@ -247,6 +247,39 @@ MP4_OPEN_GOP_SMOKE_OPTIONS = (
     ('--min-keyint', '8'),
     ('--output', 'smoke_open.mp4'),
 )
+MP4_CRA_SMOKE_FLAGS = (
+    '--cra-nal',
+)
+MP4_CRA_SMOKE_OPTIONS = (
+    ('--input', 'smoke_cra.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--bframes', '0'),
+    ('--keyint', '1'),
+    ('--min-keyint', '1'),
+    ('--output', 'smoke_cra.mp4'),
+)
+MP4_SINGLE_FRAME_SMOKE_OPTIONS = (
+    ('--input', 'smoke_single.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '1'),
+    ('--bframes', '0'),
+    ('--keyint', '1'),
+    ('--min-keyint', '1'),
+    ('--output', 'smoke_single.mp4'),
+)
+MP4_ZERO_FRAMES_SMOKE_OPTIONS = (
+    ('--input', 'smoke_zero.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '0'),
+    ('--bframes', '0'),
+    ('--keyint', '1'),
+    ('--min-keyint', '1'),
+    ('--output', 'smoke_zero.mp4'),
+)
 ZIMG_SMOKE_OPTIONS = (
     ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
     ('--input-res', '96x96'),
@@ -944,6 +977,9 @@ def validate_mp4_smokes(repo_root):
             'smoke',
             'smoke.mp4',
             'flags',
+            '24',
+            '16',
+            'yuv420p',
             MP4_SMOKE_FLAGS,
             MP4_SMOKE_OPTIONS,
             {
@@ -959,6 +995,9 @@ def validate_mp4_smokes(repo_root):
             'smoke_open',
             'smoke_open.mp4',
             'pts_time,dts_time,flags',
+            '24',
+            '16',
+            'yuv420p',
             MP4_OPEN_GOP_SMOKE_FLAGS,
             MP4_OPEN_GOP_SMOKE_OPTIONS,
             {
@@ -969,14 +1008,69 @@ def validate_mp4_smokes(repo_root):
                 "awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == \"N/A\") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_open_packets.csv": 'MP4 open-GOP smoke must require second key packet timing window',
             },
         ),
+        (
+            'MP4 CRA smoke',
+            'MP4 Smoke (All CLI CRA)',
+            'smoke_cra',
+            'smoke_cra.mp4',
+            'flags',
+            '24',
+            '16',
+            'yuv420p',
+            MP4_CRA_SMOKE_FLAGS,
+            MP4_CRA_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke_cra smoke_cra.mp4 flags': 'MP4 CRA smoke must probe packet flags',
+                'assert_common_mp4 smoke_cra 128 72 yuv420p 24/1 16 1/24000': 'MP4 CRA smoke must require common MP4 stream properties',
+                'assert_mp4_markers smoke_cra.mp4 iso6 hvc1 hvcC': 'MP4 CRA smoke must require MP4 HEVC markers',
+                "awk -F, '$1 == 1 { kf++ } END { if (kf != 16) exit 1 }' smoke_cra_frames.csv": 'MP4 CRA smoke must require every frame keyframe-marked',
+                'assert_duration_window smoke_cra 0.60 0.75': 'MP4 CRA smoke must require bounded duration',
+            },
+        ),
+        (
+            'MP4 single-frame smoke',
+            'MP4 Smoke (All CLI Single Frame)',
+            'smoke_single',
+            'smoke_single.mp4',
+            'flags',
+            '24',
+            '1',
+            'yuv420p',
+            (),
+            MP4_SINGLE_FRAME_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke_single smoke_single.mp4 flags': 'MP4 single-frame smoke must probe packet flags',
+                'assert_common_mp4 smoke_single 128 72 yuv420p 24/1 1 1/24000': 'MP4 single-frame smoke must require common MP4 stream properties',
+                'assert_mp4_markers smoke_single.mp4 iso6 hvc1 hvcC': 'MP4 single-frame smoke must require MP4 HEVC markers',
+                'assert_single_frame_mp4 smoke_single 0.05 0.02 0.08': 'MP4 single-frame smoke must require single-frame timing window',
+            },
+        ),
+        (
+            'MP4 frames=0 smoke',
+            'MP4 Smoke (All CLI Frames=0 Means Encode Available Input)',
+            'smoke_zero',
+            'smoke_zero.mp4',
+            'flags',
+            '24',
+            '1',
+            'yuv420p',
+            (),
+            MP4_ZERO_FRAMES_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke_zero smoke_zero.mp4 flags': 'MP4 frames=0 smoke must probe packet flags',
+                'assert_common_mp4 smoke_zero 128 72 yuv420p 24/1 1 1/24000': 'MP4 frames=0 smoke must require common MP4 stream properties',
+                'assert_mp4_markers smoke_zero.mp4 iso6 hvc1 hvcC': 'MP4 frames=0 smoke must require MP4 HEVC markers',
+                'assert_single_frame_mp4 smoke_zero 0.05 0.02 0.08': 'MP4 frames=0 smoke must require single-frame timing window',
+            },
+        ),
     )
 
-    for context, step_name, input_prefix, output, probe_fields, required_flags, required_options, required_lines in smoke_steps:
+    for context, step_name, input_prefix, output, probe_fields, generator_fps, generator_frames, generator_pix_fmt, required_flags, required_options, required_lines in smoke_steps:
         step = named_step(workflow_steps(parsed, build, 'build'), step_name, build, job_name='build')
         active_lines = shell_active_logical_lines(required_run(step, build, step_name))
-        generator_line = f'make_y4m {input_prefix}.y4m 24 16 yuv420p'
+        generator_line = f'make_y4m {input_prefix}.y4m {generator_fps} {generator_frames} {generator_pix_fmt}'
         if generator_line not in active_lines:
-            fail(f'{context} must generate 16-frame yuv420p input', build)
+            fail(f'{context} must generate {generator_frames}-frame {generator_pix_fmt} input', build)
 
         command_lines = [line for line in active_lines if 'build/all/x265.exe' in line and output in line]
         if len(command_lines) != 1:
