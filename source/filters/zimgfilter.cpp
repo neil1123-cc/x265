@@ -65,6 +65,7 @@ ZimgFilter::ZimgFilter(char* paramString)
     param1 = param2 = 0.0;
     bFail = false;
     graph = nullptr;
+    planes_all = nullptr;
     planes[0] = nullptr;
     temp = nullptr;
 
@@ -300,8 +301,8 @@ void ZimgFilter::processFrame(x265_picture& picture)
             bFail = true;
             return;
         }
-        temp = x265_malloc(tmp_size);
-        if (!temp)
+        temp = tmp_size ? x265_malloc(tmp_size) : nullptr;
+        if (tmp_size && !temp)
         {
             general_log(NULL, "zimg", X265_LOG_ERROR, "Init: error allocating memory for temp buffer\n");
             bFail = true;
