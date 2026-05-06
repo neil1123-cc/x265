@@ -202,6 +202,25 @@ LAVF_GENERATOR_OPTIONS = (
     ('-pix_fmt', 'yuv420p'),
     ('-c:v', 'ffv1'),
 )
+GOP_SMOKE_FLAGS = (
+    '--no-open-gop',
+)
+GOP_SMOKE_OPTIONS = (
+    ('--input', 'smoke_gop.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--bframes', '0'),
+    ('--keyint', '8'),
+    ('--min-keyint', '8'),
+    ('--output', 'smoke_gop.gop'),
+)
+GOP_GENERATOR_OPTIONS = (
+    ('-f', 'lavfi'),
+    ('-i', 'testsrc2=size=128x72:rate=24'),
+    ('-frames:v', '16'),
+    ('-pix_fmt', 'yuv420p'),
+)
 ZIMG_SMOKE_OPTIONS = (
     ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
     ('--input-res', '96x96'),
@@ -804,6 +823,90 @@ def validate_lavf_smoke(repo_root):
     print('LAVF smoke guard validated')
 
 
+def validate_gop_output_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'GOP Output Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'GOP Output Smoke (All CLI)'))
+
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_gop.y4m' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one GOP input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse GOP input generator command: {exc}', build)
+    for option, expected in GOP_GENERATOR_OPTIONS:
+        option_value(generator_args, option, expected, build, 'GOP input generator')
+    if generator_args[-1] != 'smoke_gop.y4m':
+        fail(f'GOP input generator must write smoke_gop.y4m, got {generator_args[-1]}', build)
+
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_gop' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one GOP x265 command, found {len(command_lines)}', build)
+    try:
+        args = shlex.split(command_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse GOP smoke command: {exc}', build)
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'GOP smoke must run build/all/x265.exe, got {actual}', build)
+    for expected in GOP_SMOKE_FLAGS:
+        if expected not in args:
+            fail(f'missing GOP smoke argument: {expected}', build)
+    for option, expected in GOP_SMOKE_OPTIONS:
+        option_value(args, option, expected, build, 'GOP smoke')
+
+    mux_lines = [line for line in active_lines if line == 'gop_muxer.exe smoke_gop.gop']
+    if len(mux_lines) != 1:
+        fail(f'expected exactly one GOP muxer command, found {len(mux_lines)}', build)
+
+    active_required = {
+        'test -s smoke_gop.gop': 'GOP smoke must require non-empty .gop output',
+        'test -s smoke_gop.options': 'GOP smoke must require non-empty .options output',
+        'test -s smoke_gop.headers': 'GOP smoke must require non-empty .headers output',
+        'test -s smoke_gop-000000.hevc-gop-data': 'GOP smoke must require first gop-data sidecar',
+        'test -s smoke_gop-000008.hevc-gop-data': 'GOP smoke must require second gop-data sidecar',
+        "printf '%s\\n' smoke_gop-*.hevc-gop-data > smoke_gop_data_files.txt": 'GOP smoke must list gop-data sidecars',
+        "grep -Fxq 'smoke_gop-000000.hevc-gop-data' smoke_gop_data_files.txt": 'GOP smoke must list first gop-data sidecar',
+        "grep -Fxq 'smoke_gop-000008.hevc-gop-data' smoke_gop_data_files.txt": 'GOP smoke must list second gop-data sidecar',
+        'test "$(wc -l < smoke_gop_data_files.txt)" -eq 2': 'GOP smoke must require exactly two gop-data sidecars',
+        "grep -Fxq '#options smoke_gop.options' smoke_gop.gop": 'GOP smoke must require options reference in .gop',
+        "test \"$(grep -Fxc '#options smoke_gop.options' smoke_gop.gop)\" -eq 1": 'GOP smoke must require exactly one options reference',
+        "grep -Fxq '#headers smoke_gop.headers' smoke_gop.gop": 'GOP smoke must require headers reference in .gop',
+        "grep -Fxq 'smoke_gop-000000.hevc-gop-data' smoke_gop.gop": 'GOP smoke must require first sidecar reference in .gop',
+        "grep -Fxq 'smoke_gop-000008.hevc-gop-data' smoke_gop.gop": 'GOP smoke must require second sidecar reference in .gop',
+        "grep -Fxq 'b-frames 0' smoke_gop.options": 'GOP smoke must require b-frames 0 option',
+        "grep -Fxq 'b-pyramid 0' smoke_gop.options": 'GOP smoke must require b-pyramid 0 option',
+        "grep -Fxq 'output-fps-num 24000' smoke_gop.options": 'GOP smoke must require output-fps-num 24000',
+        "grep -Fxq 'output-fps-den 1000' smoke_gop.options": 'GOP smoke must require output-fps-den 1000',
+        "grep -Fxq 'source-width 128' smoke_gop.options": 'GOP smoke must require source-width 128',
+        "grep -Fxq 'source-height 72' smoke_gop.options": 'GOP smoke must require source-height 72',
+        "grep -Fxq 'sar-width 1' smoke_gop.options": 'GOP smoke must require sar-width 1',
+        "grep -Fxq 'sar-height 1' smoke_gop.options": 'GOP smoke must require sar-height 1',
+        'test -s smoke_gop.mp4': 'GOP smoke must require non-empty muxed MP4',
+        'ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_format.txt': 'GOP smoke must capture muxed MP4 format probe output',
+        'ffprobe -v error -show_streams -select_streams v:0 smoke_gop.mp4 > smoke_gop_mux_stream.txt': 'GOP smoke must capture muxed MP4 stream probe output',
+        'ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_count.txt': 'GOP smoke must count muxed MP4 frames',
+        "grep -q 'format_name=mov,mp4,m4a,3gp,3g2,mj2' smoke_gop_mux_format.txt": 'GOP smoke must require muxed MP4 format',
+        "grep -q 'codec_name=hevc' smoke_gop_mux_stream.txt": 'GOP smoke must require muxed HEVC codec',
+        "grep -q 'codec_type=video' smoke_gop_mux_stream.txt": 'GOP smoke must require muxed video stream',
+        "grep -q 'width=128' smoke_gop_mux_stream.txt": 'GOP smoke must require muxed width=128',
+        "grep -q 'height=72' smoke_gop_mux_stream.txt": 'GOP smoke must require muxed height=72',
+        "awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_gop_mux_stream.txt": 'GOP smoke must require positive extradata_size in muxed MP4 stream',
+        "grep -q 'nb_read_frames=16' smoke_gop_mux_count.txt": 'GOP smoke must require 16 muxed decoded frames',
+    }
+    for required, message in active_required.items():
+        if required not in active_lines:
+            fail(message, build)
+    print('GOP output smoke guard validated')
+
+
 def validate_zimg_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_zimg' in block]
@@ -1101,6 +1204,7 @@ def main():
         validate_threaded_me_smoke(repo_root)
         validate_mkv_smoke(repo_root)
         validate_lavf_smoke(repo_root)
+        validate_gop_output_smoke(repo_root)
         validate_zimg_smoke(repo_root)
         validate_linux_gcc_smoke(repo_root)
         validate_warning_scan_runtime_smokes(repo_root)

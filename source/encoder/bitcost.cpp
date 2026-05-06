@@ -95,9 +95,9 @@ void BitCost::CalculateLogs()
             return;
         }
         s_bitsizes[0] = 0.718f;
-        float log2_2 = 2.0f / log(2.0f);  // 2 x 1/log(2)
+        float log2_2 = 2.0f / std::log(2.0f);  // 2 x 1/log(2)
         for (int i = 1; i <= 2 * BC_MAX_MV; i++)
-            s_bitsizes[i] = s_bitsizes[-i] = log((float)(i + 1)) * log2_2 + 1.718f;
+            s_bitsizes[i] = s_bitsizes[-i] = std::log((float)(i + 1)) * log2_2 + 1.718f;
     }
 }
 

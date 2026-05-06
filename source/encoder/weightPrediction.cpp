@@ -273,7 +273,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
             SET_WEIGHT(weights[plane], false, 1, 0, 0);
             uint64_t fencVar = fenc.wp_ssd[plane] + !refLowres.wp_ssd[plane];
             uint64_t refVar  = refLowres.wp_ssd[plane] + !refLowres.wp_ssd[plane];
-            guessScale[plane] = sqrt((float)fencVar / refVar);
+            guessScale[plane] = std::sqrt((float)fencVar / refVar);
             fencMean[plane] = (float)fenc.wp_sum[plane] / (numpixels[plane]) / (1 << (X265_DEPTH - 8));
             refMean[plane]  = (float)refLowres.wp_sum[plane] / (numpixels[plane]) / (1 << (X265_DEPTH - 8));
         }

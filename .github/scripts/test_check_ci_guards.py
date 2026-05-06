@@ -220,7 +220,8 @@ jobs:
       - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
-          gop_muxer.exe smoke_gop.gop
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_gop.y4m
+          build/all/x265.exe --input smoke_gop.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --output smoke_gop.gop
           test -s smoke_gop.gop
           test -s smoke_gop.options
           test -s smoke_gop.headers
@@ -229,8 +230,31 @@ jobs:
           printf '%s\\n' smoke_gop-*.hevc-gop-data > smoke_gop_data_files.txt
           grep -Fxq 'smoke_gop-000000.hevc-gop-data' smoke_gop_data_files.txt
           grep -Fxq 'smoke_gop-000008.hevc-gop-data' smoke_gop_data_files.txt
-          grep -q 'format_name=mov,mp4,m4a,3gp,3g2,mj2' smoke_gop_mux_format.txt
+          test "$(wc -l < smoke_gop_data_files.txt)" -eq 2
+          grep -Fxq '#options smoke_gop.options' smoke_gop.gop
+          test "$(grep -Fxc '#options smoke_gop.options' smoke_gop.gop)" -eq 1
+          grep -Fxq '#headers smoke_gop.headers' smoke_gop.gop
+          grep -Fxq 'smoke_gop-000000.hevc-gop-data' smoke_gop.gop
+          grep -Fxq 'smoke_gop-000008.hevc-gop-data' smoke_gop.gop
+          grep -Fxq 'b-frames 0' smoke_gop.options
+          grep -Fxq 'b-pyramid 0' smoke_gop.options
+          grep -Fxq 'output-fps-num 24000' smoke_gop.options
+          grep -Fxq 'output-fps-den 1000' smoke_gop.options
+          grep -Fxq 'source-width 128' smoke_gop.options
+          grep -Fxq 'source-height 72' smoke_gop.options
+          grep -Fxq 'sar-width 1' smoke_gop.options
+          grep -Fxq 'sar-height 1' smoke_gop.options
+          gop_muxer.exe smoke_gop.gop
           test -s smoke_gop.mp4
+          ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_format.txt
+          ffprobe -v error -show_streams -select_streams v:0 smoke_gop.mp4 > smoke_gop_mux_stream.txt
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_gop.mp4 > smoke_gop_mux_count.txt
+          grep -q 'format_name=mov,mp4,m4a,3gp,3g2,mj2' smoke_gop_mux_format.txt
+          grep -q 'codec_name=hevc' smoke_gop_mux_stream.txt
+          grep -q 'codec_type=video' smoke_gop_mux_stream.txt
+          grep -q 'width=128' smoke_gop_mux_stream.txt
+          grep -q 'height=72' smoke_gop_mux_stream.txt
+          awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_gop_mux_stream.txt
           grep -q 'nb_read_frames=16' smoke_gop_mux_count.txt
 
 '''
@@ -874,6 +898,30 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q "nb_read_frames=12" smoke_lavf_count.txt', 'grep -q "nb_read_frames=1" smoke_lavf_count.txt')
         expect_fail(run_checker(repo), 'LAVF smoke must require 12 decoded frames')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/all/x265.exe --input smoke_gop.y4m', 'build/8b/x265.exe --input smoke_gop.y4m')
+        expect_fail(run_checker(repo), 'GOP smoke must run build/all/x265.exe, got build/8b/x265.exe')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--keyint 8 --min-keyint 8', '--keyint 16 --min-keyint 8')
+        expect_fail(run_checker(repo), 'GOP smoke --keyint must be 8, got 16')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test "$(wc -l < smoke_gop_data_files.txt)" -eq 2', '# test "$(wc -l < smoke_gop_data_files.txt)" -eq 2')
+        expect_fail(run_checker(repo), 'GOP smoke must require exactly two gop-data sidecars')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_gop_mux_stream.txt", "# awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_gop_mux_stream.txt")
+        expect_fail(run_checker(repo), 'GOP smoke must require positive extradata_size in muxed MP4 stream')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
