@@ -34,6 +34,8 @@
 #include "rdcost.h"
 #include "encoder.h"
 
+#include <cstdlib>
+
 using namespace X265_NS;
 
 /* An explanation of rate distortion levels (--rd-level)
@@ -3242,8 +3244,8 @@ void Analysis::classifyCU(const CUData& ctu, const CUGeom& cuGeom, const Mode& b
             {
                 offset = (depth * X265_REFINE_INTER_LEVELS) + i;
                 /* Calculate distance values */
-                diffRefine[i] = abs((int64_t)(trainData.cuVariance - m_frame->m_classifyVariance[offset]));
-                diffRefineRd[i] = abs((int64_t)(cuCost - m_frame->m_classifyRd[offset]));
+                diffRefine[i] = std::abs((int64_t)(trainData.cuVariance - m_frame->m_classifyVariance[offset]));
+                diffRefineRd[i] = std::abs((int64_t)(cuCost - m_frame->m_classifyRd[offset]));
 
                 /* Calculate prior probability - ranges between 0 and 1 */
                 if (trainingCount)
@@ -4230,7 +4232,7 @@ bool Analysis::complexityCheckCU(const Mode& bestMode)
         mean = mean / (cuSize * cuSize);
         for (uint32_t y = 0; y < cuSize; y++) {
             for (uint32_t x = 0; x < cuSize; x++) {
-                homo += abs(int(bestMode.fencYuv->m_buf[0][y * cuSize + x] - mean));
+                homo += std::abs(int(bestMode.fencYuv->m_buf[0][y * cuSize + x] - mean));
             }
         }
         homo = homo / (cuSize * cuSize);
