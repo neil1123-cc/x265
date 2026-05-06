@@ -29,6 +29,7 @@
 #include "slice.h"
 #include "mv.h"
 
+#include <cstdlib>
 #include <cstring>
 
 using namespace X265_NS;
@@ -216,7 +217,7 @@ uint8_t Deblock::getBoundaryStrength(const CUData* cuQ, int32_t dir, uint32_t pa
     if (sliceQ->isInterP() && sliceP->isInterP())
     {
         return ((refP0 != refQ0) ||
-                (abs(mvQ0.x - mvP0.x) >= 4) || (abs(mvQ0.y - mvP0.y) >= 4)) ? 1 : 0;
+                (std::abs(mvQ0.x - mvP0.x) >= 4) || (std::abs(mvQ0.y - mvP0.y) >= 4)) ? 1 : 0;
     }
     // (sliceQ->isInterB() || sliceP->isInterB())
     const Frame* refP1 = (cuP->m_refIdx[1][partP] >= 0) ? sliceP->m_refFrameList[1][cuP->m_refIdx[1][partP]] : NULL;
@@ -229,18 +230,18 @@ uint8_t Deblock::getBoundaryStrength(const CUData* cuQ, int32_t dir, uint32_t pa
         if (refP0 != refP1) // Different L0 & L1
         {
             if (refP0 == refQ0)
-                return ((abs(mvQ0.x - mvP0.x) >= 4) || (abs(mvQ0.y - mvP0.y) >= 4) ||
-                        (abs(mvQ1.x - mvP1.x) >= 4) || (abs(mvQ1.y - mvP1.y) >= 4)) ? 1 : 0;
+                return ((std::abs(mvQ0.x - mvP0.x) >= 4) || (std::abs(mvQ0.y - mvP0.y) >= 4) ||
+                        (std::abs(mvQ1.x - mvP1.x) >= 4) || (std::abs(mvQ1.y - mvP1.y) >= 4)) ? 1 : 0;
             else
-                return ((abs(mvQ1.x - mvP0.x) >= 4) || (abs(mvQ1.y - mvP0.y) >= 4) ||
-                        (abs(mvQ0.x - mvP1.x) >= 4) || (abs(mvQ0.y - mvP1.y) >= 4)) ? 1 : 0;
+                return ((std::abs(mvQ1.x - mvP0.x) >= 4) || (std::abs(mvQ1.y - mvP0.y) >= 4) ||
+                        (std::abs(mvQ0.x - mvP1.x) >= 4) || (std::abs(mvQ0.y - mvP1.y) >= 4)) ? 1 : 0;
         }
         else // Same L0 & L1
         {
-            return (((abs(mvQ0.x - mvP0.x) >= 4) || (abs(mvQ0.y - mvP0.y) >= 4) ||
-                     (abs(mvQ1.x - mvP1.x) >= 4) || (abs(mvQ1.y - mvP1.y) >= 4)) &&
-                    ((abs(mvQ1.x - mvP0.x) >= 4) || (abs(mvQ1.y - mvP0.y) >= 4) ||
-                     (abs(mvQ0.x - mvP1.x) >= 4) || (abs(mvQ0.y - mvP1.y) >= 4))) ? 1 : 0;
+            return (((std::abs(mvQ0.x - mvP0.x) >= 4) || (std::abs(mvQ0.y - mvP0.y) >= 4) ||
+                     (std::abs(mvQ1.x - mvP1.x) >= 4) || (std::abs(mvQ1.y - mvP1.y) >= 4)) &&
+                    ((std::abs(mvQ1.x - mvP0.x) >= 4) || (std::abs(mvQ1.y - mvP0.y) >= 4) ||
+                     (std::abs(mvQ0.x - mvP1.x) >= 4) || (std::abs(mvQ0.y - mvP1.y) >= 4))) ? 1 : 0;
         }
     }
         
@@ -250,12 +251,12 @@ uint8_t Deblock::getBoundaryStrength(const CUData* cuQ, int32_t dir, uint32_t pa
 
 static inline int32_t calcDP(pixel* src, intptr_t offset)
 {
-    return abs(static_cast<int32_t>(src[-offset * 3]) - 2 * src[-offset * 2] + src[-offset]);
+    return std::abs(static_cast<int32_t>(src[-offset * 3]) - 2 * src[-offset * 2] + src[-offset]);
 }
 
 static inline int32_t calcDQ(pixel* src, intptr_t offset)
 {
-    return abs(static_cast<int32_t>(src[0]) - 2 * src[offset] + src[offset * 2]);
+    return std::abs(static_cast<int32_t>(src[0]) - 2 * src[offset] + src[offset * 2]);
 }
 
 static inline bool useStrongFiltering(intptr_t offset, int32_t beta, int32_t tc, pixel* src)
@@ -264,9 +265,9 @@ static inline bool useStrongFiltering(intptr_t offset, int32_t beta, int32_t tc,
     int16_t m3     = (int16_t)src[-offset];
     int16_t m7     = (int16_t)src[offset * 3];
     int16_t m0     = (int16_t)src[-offset * 4];
-    int32_t strong = abs(m0 - m3) + abs(m7 - m4);
+    int32_t strong = std::abs(m0 - m3) + std::abs(m7 - m4);
 
-    return (strong < (beta >> 3)) && (abs(m3 - m4) < ((tc * 5 + 1) >> 1));
+    return (strong < (beta >> 3)) && (std::abs(m3 - m4) < ((tc * 5 + 1) >> 1));
 }
 
 /* Deblocking for the luminance component with strong or weak filter
@@ -294,7 +295,7 @@ static inline void pelFilterLuma(pixel* src, intptr_t srcStep, intptr_t offset, 
 
         int32_t delta = (9 * (m4 - m3) - 3 * (m5 - m2) + 8) >> 4;
 
-        if (abs(delta) < thrCut)
+        if (std::abs(delta) < thrCut)
         {
             delta = x265_clip3(-tc, tc, delta);
 

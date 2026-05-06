@@ -457,6 +457,12 @@ def main():
         ''')
         expect_fail(run_checker(macro_toolchain_string_source), 'manual C++ standard flag in CMake')
 
+        string_concat_compile_flags_source = write_source(root / 'string-concat-compile-flags')
+        string_concat_compile_flags_nested = string_concat_compile_flags_source / 'cmake'
+        string_concat_compile_flags_nested.mkdir()
+        (string_concat_compile_flags_nested / 'flags.cmake').write_text('string(CONCAT CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} " -std=gnu++17")\n')
+        expect_fail(run_checker(string_concat_compile_flags_source), 'manual C++ standard flag in CMake')
+
         function_parent_scope_source = write_source(root / 'function-parent-scope-flags')
         function_parent_scope_nested = function_parent_scope_source / 'cmake'
         function_parent_scope_nested.mkdir()
@@ -616,6 +622,18 @@ def main():
         target_property_multi_compile_flag_pass_nested.mkdir()
         (target_property_multi_compile_flag_pass_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS -Wall -Wextra)\n')
         expect_pass(run_checker(target_property_multi_compile_flag_pass_source))
+
+        target_property_append_string_compile_flags_source = write_source(root / 'target-property-append-string-compile-flags')
+        target_property_append_string_compile_flags_nested = target_property_append_string_compile_flags_source / 'cmake'
+        target_property_append_string_compile_flags_nested.mkdir()
+        (target_property_append_string_compile_flags_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS " -std=gnu++17")\n')
+        expect_fail(run_checker(target_property_append_string_compile_flags_source), 'manual C++ standard flag in CMake')
+
+        target_property_append_string_compile_flags_pass_source = write_source(root / 'target-property-append-string-compile-flags-pass')
+        target_property_append_string_compile_flags_pass_nested = target_property_append_string_compile_flags_pass_source / 'cmake'
+        target_property_append_string_compile_flags_pass_nested.mkdir()
+        (target_property_append_string_compile_flags_pass_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS " -Wextra")\n')
+        expect_pass(run_checker(target_property_append_string_compile_flags_pass_source))
 
         top_text = '''
         cmake_minimum_required(VERSION 3.20)

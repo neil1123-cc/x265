@@ -1184,6 +1184,32 @@ def main():
         }])
         expect_fail(run_checker(nested_parent_response_missing_dir, '--required-flag=-Werror=deprecated'), 'missing required flag -Werror=deprecated')
 
+        nested_parent_arguments_dir = root / 'nested-parent-response-file-arguments'
+        nested_parent_arguments_dir.mkdir()
+        nested_parent_arguments_subdir = nested_parent_arguments_dir / 'sub'
+        nested_parent_arguments_subdir.mkdir()
+        (nested_parent_arguments_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (nested_parent_arguments_subdir / 'args.rsp').write_text('@../std.rsp -DX265_DEPTH=8')
+        write_compile_commands_records(nested_parent_arguments_dir, [{
+            'directory': str(nested_parent_arguments_subdir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(nested_parent_arguments_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        nested_parent_arguments_missing_dir = root / 'nested-parent-response-file-arguments-missing-flag'
+        nested_parent_arguments_missing_dir.mkdir()
+        nested_parent_arguments_missing_subdir = nested_parent_arguments_missing_dir / 'sub'
+        nested_parent_arguments_missing_subdir.mkdir()
+        (nested_parent_arguments_missing_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated')
+        (nested_parent_arguments_missing_subdir / 'args.rsp').write_text('@../std.rsp -DX265_DEPTH=8')
+        write_compile_commands_records(nested_parent_arguments_missing_dir, [{
+            'directory': str(nested_parent_arguments_missing_subdir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(nested_parent_arguments_missing_dir, '--required-flag=-Werror=deprecated'), 'missing required flag -Werror=deprecated')
+
         nested_arguments_dir = root / 'nested-response-file-arguments'
         nested_arguments_dir.mkdir()
         (nested_arguments_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated')

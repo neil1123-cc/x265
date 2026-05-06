@@ -32,6 +32,7 @@
 #include "contexts.h"   // costCoeffNxN_c
 #include "threading.h"  // BSR
 
+#include <cstdlib>
 #include <cstring>
 
 using namespace X265_NS;
@@ -677,7 +678,7 @@ static uint32_t quant_c(const int16_t* coef, const int32_t* quantCoeff, int32_t*
         int level = coef[blockpos];
         int sign  = (level < 0 ? -1 : 1);
 
-        int tmplevel = abs(level) * quantCoeff[blockpos];
+        int tmplevel = std::abs(level) * quantCoeff[blockpos];
         level = ((tmplevel + add) >> qBits);
         deltaU[blockpos] = ((tmplevel - (level << qBits)) >> qBits8);
         if (level)
@@ -702,7 +703,7 @@ static uint32_t nquant_c(const int16_t* coef, const int32_t* quantCoeff, int16_t
         int level = coef[blockpos];
         int sign  = (level < 0 ? -1 : 1);
 
-        int tmplevel = abs(level) * quantCoeff[blockpos];
+        int tmplevel = std::abs(level) * quantCoeff[blockpos];
         level = ((tmplevel + add) >> qBits);
         if (level)
             ++numSig;
@@ -710,7 +711,7 @@ static uint32_t nquant_c(const int16_t* coef, const int32_t* quantCoeff, int16_t
 
         // TODO: when we limit range to [-32767, 32767], we can get more performance with output change
         //       But nquant is a little percent in rdoQuant, so I keep old dynamic range for compatible
-        qCoef[blockpos] = (int16_t)abs(x265_clip3(-32768, 32767, level));
+        qCoef[blockpos] = (int16_t)std::abs(x265_clip3(-32768, 32767, level));
     }
 
     return numSig;
@@ -845,10 +846,10 @@ static uint32_t costCoeffNxN_c(const uint16_t *scan, const coeff_t *coeff, intpt
 
     for (int i = 0; i < MLS_CG_SIZE; i++)
     {
-        tmpCoeff[i * MLS_CG_SIZE + 0] = (uint16_t)abs(coeff[i * trSize + 0]);
-        tmpCoeff[i * MLS_CG_SIZE + 1] = (uint16_t)abs(coeff[i * trSize + 1]);
-        tmpCoeff[i * MLS_CG_SIZE + 2] = (uint16_t)abs(coeff[i * trSize + 2]);
-        tmpCoeff[i * MLS_CG_SIZE + 3] = (uint16_t)abs(coeff[i * trSize + 3]);
+        tmpCoeff[i * MLS_CG_SIZE + 0] = (uint16_t)std::abs(coeff[i * trSize + 0]);
+        tmpCoeff[i * MLS_CG_SIZE + 1] = (uint16_t)std::abs(coeff[i * trSize + 1]);
+        tmpCoeff[i * MLS_CG_SIZE + 2] = (uint16_t)std::abs(coeff[i * trSize + 2]);
+        tmpCoeff[i * MLS_CG_SIZE + 3] = (uint16_t)std::abs(coeff[i * trSize + 3]);
     }
 
     do

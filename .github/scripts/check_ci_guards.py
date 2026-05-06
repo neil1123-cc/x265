@@ -221,6 +221,32 @@ GOP_GENERATOR_OPTIONS = (
     ('-frames:v', '16'),
     ('-pix_fmt', 'yuv420p'),
 )
+MP4_SMOKE_FLAGS = (
+    '--no-open-gop',
+)
+MP4_SMOKE_OPTIONS = (
+    ('--input', 'smoke.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--bframes', '4'),
+    ('--keyint', '8'),
+    ('--min-keyint', '8'),
+    ('--output', 'smoke.mp4'),
+)
+MP4_OPEN_GOP_SMOKE_FLAGS = (
+    '--open-gop',
+)
+MP4_OPEN_GOP_SMOKE_OPTIONS = (
+    ('--input', 'smoke_open.y4m'),
+    ('--input-res', '128x72'),
+    ('--fps', '24'),
+    ('--frames', '16'),
+    ('--bframes', '4'),
+    ('--keyint', '8'),
+    ('--min-keyint', '8'),
+    ('--output', 'smoke_open.mp4'),
+)
 ZIMG_SMOKE_OPTIONS = (
     ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
     ('--input-res', '96x96'),
@@ -907,6 +933,77 @@ def validate_gop_output_smoke(repo_root):
     print('GOP output smoke guard validated')
 
 
+def validate_mp4_smokes(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+
+    smoke_steps = (
+        (
+            'MP4 smoke',
+            'MP4 Smoke (All CLI)',
+            'smoke',
+            'smoke.mp4',
+            'flags',
+            MP4_SMOKE_FLAGS,
+            MP4_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke smoke.mp4 flags': 'MP4 smoke must probe packet flags',
+                'assert_common_mp4 smoke 128 72 yuv420p 24/1 16 1/24000': 'MP4 smoke must require common MP4 stream properties',
+                'assert_duration_window smoke 0.60 0.75': 'MP4 smoke must require bounded duration',
+                "awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frames.csv": 'MP4 smoke must require second keyframe at frame 9',
+            },
+        ),
+        (
+            'MP4 open-GOP smoke',
+            'MP4 Smoke (All CLI Open GOP)',
+            'smoke_open',
+            'smoke_open.mp4',
+            'pts_time,dts_time,flags',
+            MP4_OPEN_GOP_SMOKE_FLAGS,
+            MP4_OPEN_GOP_SMOKE_OPTIONS,
+            {
+                'probe_mp4 smoke_open smoke_open.mp4 pts_time,dts_time,flags': 'MP4 open-GOP smoke must probe timing and flags',
+                'assert_common_mp4 smoke_open 128 72 yuv420p 24/1 16 1/24000': 'MP4 open-GOP smoke must require common MP4 stream properties',
+                "assert_mp4_markers smoke_open.mp4 iso6 sgpd sbgp 'rap '": 'MP4 open-GOP smoke must require sample-group markers',
+                'assert_duration_window smoke_open 0.60 0.75': 'MP4 open-GOP smoke must require bounded duration',
+                "awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == \"N/A\") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_open_packets.csv": 'MP4 open-GOP smoke must require second key packet timing window',
+            },
+        ),
+    )
+
+    for context, step_name, input_prefix, output, probe_fields, required_flags, required_options, required_lines in smoke_steps:
+        step = named_step(workflow_steps(parsed, build, 'build'), step_name, build, job_name='build')
+        active_lines = shell_active_logical_lines(required_run(step, build, step_name))
+        generator_line = f'make_y4m {input_prefix}.y4m 24 16 yuv420p'
+        if generator_line not in active_lines:
+            fail(f'{context} must generate 16-frame yuv420p input', build)
+
+        command_lines = [line for line in active_lines if 'build/all/x265.exe' in line and output in line]
+        if len(command_lines) != 1:
+            fail(f'expected exactly one {context} x265 command, found {len(command_lines)}', build)
+        before_pipe = command_lines[0].split('|', 1)[0].strip()
+        if before_pipe.startswith('if '):
+            before_pipe = before_pipe[3:].strip()
+            before_pipe = before_pipe.split('; then', 1)[0].strip()
+        try:
+            args = shlex.split(before_pipe)
+        except ValueError as exc:
+            fail(f'could not parse {context} command: {exc}', build)
+        if not args or args[0] != 'build/all/x265.exe':
+            actual = args[0] if args else '<empty>'
+            fail(f'{context} must run build/all/x265.exe, got {actual}', build)
+        for expected in required_flags:
+            if expected not in args:
+                fail(f'missing {context} argument: {expected}', build)
+        for option, expected in required_options:
+            option_value(args, option, expected, build, context)
+
+        for required, message in required_lines.items():
+            if required not in active_lines:
+                fail(message, build)
+    print('MP4 smoke guards validated')
+
+
 def validate_zimg_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_zimg' in block]
@@ -1205,6 +1302,7 @@ def main():
         validate_mkv_smoke(repo_root)
         validate_lavf_smoke(repo_root)
         validate_gop_output_smoke(repo_root)
+        validate_mp4_smokes(repo_root)
         validate_zimg_smoke(repo_root)
         validate_linux_gcc_smoke(repo_root)
         validate_warning_scan_runtime_smokes(repo_root)

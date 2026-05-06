@@ -217,6 +217,47 @@ jobs:
           grep -q "width=160" smoke_lavf_probe.txt
           grep -q "height=90" smoke_lavf_probe.txt
           grep -q "nb_read_frames=12" smoke_lavf_count.txt
+      - name: MP4 Smoke (All CLI)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke.y4m 24 16 yuv420p
+          build/all/x265.exe --input smoke.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --no-open-gop --output smoke.mp4
+          probe_mp4 smoke smoke.mp4 flags
+          assert_common_mp4 smoke 128 72 yuv420p 24/1 16 1/24000
+          grep -q "duration=" smoke_format.txt
+          awk -F, 'NR == 1 { if ($1 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_packets.csv
+          awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_frames.csv
+          awk -F, 'NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
+          awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_frames.csv
+          awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1 }' smoke_frames.csv
+          awk -F, 'NR == 1 { if (($2+0) < -0.001 || ($2+0) > 0.05) exit 1 }' smoke_frames.csv
+          awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_frames.csv
+          awk -F, 'NR == 1 { if (NF < 3 || $3 == "N/A") exit 1 }' smoke_frames.csv
+          awk -F, 'NR == 1 { if (($2+0) < ($3+0)) exit 1 }' smoke_frames.csv
+          awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_frames.csv
+          awk -F, 'NR > 8 && NF >= 3 && $2 != "N/A" && $3 != "N/A" { if (($2+0) > ($3+0)) diff=1 } END { if (!diff) exit 1 }' smoke_frames.csv
+          awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frames.csv
+          assert_duration_window smoke 0.60 0.75
+      - name: MP4 Smoke (All CLI Open GOP)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_open.y4m 24 16 yuv420p
+          build/all/x265.exe --input smoke_open.y4m --input-res 128x72 --fps 24 --frames 16 --bframes 4 --keyint 8 --min-keyint 8 --open-gop --output smoke_open.mp4
+          probe_mp4 smoke_open smoke_open.mp4 pts_time,dts_time,flags
+          assert_common_mp4 smoke_open 128 72 yuv420p 24/1 16 1/24000
+          awk -F, 'NR == 1 { if (NF < 3 || $3 !~ /K/) exit 1 } END { if (NR != 16) exit 1 }' smoke_open_packets.csv
+          awk -F, 'NF >= 3 && $1 != "N/A" && $2 != "N/A" { if (($1+0) > ($2+0)) diff=1 } END { if (!diff) exit 1 }' smoke_open_packets.csv
+          awk -F, 'NF >= 3 && $3 != "N/A" { if (seen && ($3+0) < prev) exit 1; prev=$3+0; seen=1 } END { if (!seen) exit 1 }' smoke_open_frames.csv
+          awk -F, 'NR == 1 { if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < -0.001 || ($2+0) > 0.05) exit 1 }' smoke_open_frames.csv
+          awk -F, 'NR == 1 { if (NF < 1 || $1 != 1) exit 1 }' smoke_open_frames.csv
+          awk -F, 'NR == 1 { if (NF < 3 || $2 == "N/A" || $3 == "N/A") exit 1; if (($3+0) < -0.09 || ($3+0) > 0.01) exit 1; if (($2+0) < ($3+0)) exit 1 }' smoke_open_frames.csv
+          awk -F, 'NR > 1 && $2 != "N/A" && prev != "" { delta = ($2+0) - prev; if (delta < 0.03 || delta > 0.05) exit 1 } { if ($2 != "N/A") prev = $2+0 } END { if (NR < 2) exit 1 }' smoke_open_frames.csv
+          awk -F, 'END { if (NR != 16) exit 1; if (NF < 2 || $2 == "N/A") exit 1; if (($2+0) < 0.55 || ($2+0) > 0.75) exit 1 }' smoke_open_frames.csv
+          awk -F, '$3 ~ /K/ { kf++; if (kf == 2) { if ($1 == "N/A") exit 1; if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1 } } END { if (kf < 2) exit 1 }' smoke_open_packets.csv
+          assert_mp4_markers smoke_open.mp4 iso6 sgpd sbgp 'rap '
+          assert_duration_window smoke_open 0.60 0.75
       - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
@@ -908,7 +949,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--keyint 8 --min-keyint 8', '--keyint 16 --min-keyint 8')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --output smoke_gop.gop', '--frames 16 --bframes 0 --keyint 16 --min-keyint 8 --no-open-gop --output smoke_gop.gop')
         expect_fail(run_checker(repo), 'GOP smoke --keyint must be 8, got 16')
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -922,6 +963,42 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_gop_mux_stream.txt", "# awk -F= '/^extradata_size=/{ if (($2+0) > 0) found=1 } END { if (!found) exit 1 }' smoke_gop_mux_stream.txt")
         expect_fail(run_checker(repo), 'GOP smoke must require positive extradata_size in muxed MP4 stream')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--no-open-gop --output smoke.mp4', '--open-gop --output smoke.mp4')
+        expect_fail(run_checker(repo), 'missing MP4 smoke argument: --no-open-gop')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'assert_common_mp4 smoke 128 72 yuv420p 24/1 16 1/24000', 'assert_common_mp4 smoke 128 72 yuv420p 24/1 12 1/24000')
+        expect_fail(run_checker(repo), 'MP4 smoke must require common MP4 stream properties')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frames.csv", "# awk -F, '$1 == 1 { kf++; if (kf == 2 && NR != 9) exit 1 } END { if (kf < 2) exit 1 }' smoke_frames.csv")
+        expect_fail(run_checker(repo), 'MP4 smoke must require second keyframe at frame 9')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/all/x265.exe --input smoke_open.y4m', 'build/8b/x265.exe --input smoke_open.y4m')
+        expect_fail(run_checker(repo), 'expected exactly one MP4 open-GOP smoke x265 command, found 0')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "assert_mp4_markers smoke_open.mp4 iso6 sgpd sbgp 'rap '", 'assert_mp4_markers smoke_open.mp4 iso6 hvc1 hvcC')
+        expect_fail(run_checker(repo), 'MP4 open-GOP smoke must require sample-group markers')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'if (($1+0) < 0.30 || ($1+0) > 0.38) exit 1', 'if (($1+0) < 0.10 || ($1+0) > 0.20) exit 1')
+        expect_fail(run_checker(repo), 'MP4 open-GOP smoke must require second key packet timing window')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
