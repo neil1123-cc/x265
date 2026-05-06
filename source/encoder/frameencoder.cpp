@@ -37,6 +37,7 @@
 #include "temporalfilter.h"
 
 #include <atomic>
+#include <cmath>
 #include <cstring>
 
 namespace X265_NS {
@@ -706,8 +707,8 @@ void FrameEncoder::compressFrame(int layer)
     slice->m_sliceQp = x265_clip3(-QP_BD_OFFSET, QP_MAX_SPEC, qp);
     if (m_param->bHDR10Opt)
     {
-        int qpCb = x265_clip3(-12, 0, (int)floor((m_top->m_cB * ((-.46) * qp + 9.26)) + 0.5 ));
-        int qpCr = x265_clip3(-12, 0, (int)floor((m_top->m_cR * ((-.46) * qp + 9.26)) + 0.5 ));
+        int qpCb = x265_clip3(-12, 0, (int)std::floor((m_top->m_cB * ((-.46) * qp + 9.26)) + 0.5 ));
+        int qpCr = x265_clip3(-12, 0, (int)std::floor((m_top->m_cR * ((-.46) * qp + 9.26)) + 0.5 ));
         slice->m_chromaQpOffset[0] = slice->m_pps->chromaQpOffset[0] + qpCb < -12 ? (qpCb + (-12 - (slice->m_pps->chromaQpOffset[0] + qpCb))) : qpCb;
         slice->m_chromaQpOffset[1] = slice->m_pps->chromaQpOffset[1] + qpCr < -12 ? (qpCr + (-12 - (slice->m_pps->chromaQpOffset[1] + qpCr))) : qpCr;
     }

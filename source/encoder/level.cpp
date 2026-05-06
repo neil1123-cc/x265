@@ -27,6 +27,7 @@
 #include "level.h"
 #include "svt.h"
 
+#include <cmath>
 #include <cstring>
 
 namespace X265_NS {
@@ -185,9 +186,9 @@ void determineLevel(const x265_param &param, VPS& vps)
             continue;
         else if (bitrate > levels[i].maxBitrateHigh)
             continue;
-        else if (param.sourceWidth > sqrt(levels[i].maxLumaSamples * 8.0f))
+        else if (param.sourceWidth > std::sqrt(levels[i].maxLumaSamples * 8.0f))
             continue;
-        else if (param.sourceHeight > sqrt(levels[i].maxLumaSamples * 8.0f))
+        else if (param.sourceHeight > std::sqrt(levels[i].maxLumaSamples * 8.0f))
             continue;
         else if (param.levelIdc && param.levelIdc != levels[i].levelIdc)
             continue;
@@ -402,9 +403,9 @@ bool enforceLevel(x265_param& param, VPS& vps)
     bool ok = true;
     if (lumaSamples > l.maxLumaSamples)
         ok = false;
-    else if (param.sourceWidth > sqrt(l.maxLumaSamples * 8.0f))
+    else if (param.sourceWidth > std::sqrt(l.maxLumaSamples * 8.0f))
         ok = false;
-    else if (param.sourceHeight > sqrt(l.maxLumaSamples * 8.0f))
+    else if (param.sourceHeight > std::sqrt(l.maxLumaSamples * 8.0f))
         ok = false;
     if (!ok)
     {
