@@ -1337,9 +1337,12 @@ jobs:
         test -s smoke_lavf_output.hevc
         grep -Fq "lavf" smoke_lavf_log.txt
         ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_lavf_output.hevc > smoke_lavf_probe.txt
+        ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_lavf_output.hevc > smoke_lavf_count.txt
         grep -q "codec_name=hevc" smoke_lavf_probe.txt
+        grep -q "codec_type=video" smoke_lavf_probe.txt
         grep -q "width=160" smoke_lavf_probe.txt
         grep -q "height=90" smoke_lavf_probe.txt
+        grep -q "nb_read_frames=12" smoke_lavf_count.txt
 
     - name: Threaded ME Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'

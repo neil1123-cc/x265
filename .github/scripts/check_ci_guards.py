@@ -190,6 +190,18 @@ MKV_GENERATOR_OPTIONS = (
     ('-frames:v', '12'),
     ('-pix_fmt', 'yuv420p'),
 )
+LAVF_SMOKE_OPTIONS = (
+    ('--input', 'smoke_lavf_input.mkv'),
+    ('--frames', '12'),
+    ('--output', 'smoke_lavf_output.hevc'),
+)
+LAVF_GENERATOR_OPTIONS = (
+    ('-f', 'lavfi'),
+    ('-i', 'testsrc2=size=160x90:rate=24'),
+    ('-frames:v', '12'),
+    ('-pix_fmt', 'yuv420p'),
+    ('-c:v', 'ffv1'),
+)
 ZIMG_SMOKE_OPTIONS = (
     ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
     ('--input-res', '96x96'),
@@ -734,6 +746,64 @@ def validate_mkv_smoke(repo_root):
     print('MKV smoke guard validated')
 
 
+def validate_lavf_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'LAVF Input Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'LAVF Input Smoke (All CLI)'))
+
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_lavf_input.mkv' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one LAVF input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse LAVF input generator command: {exc}', build)
+    for option, expected in LAVF_GENERATOR_OPTIONS:
+        option_value(generator_args, option, expected, build, 'LAVF input generator')
+    if generator_args[-1] != 'smoke_lavf_input.mkv':
+        fail(f'LAVF input generator must write smoke_lavf_input.mkv, got {generator_args[-1]}', build)
+
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_lavf' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one LAVF x265 command, found {len(command_lines)}', build)
+    command = command_lines[0]
+    before_pipe = command.split('|', 1)[0].strip()
+    try:
+        tokens = shlex.split(before_pipe)
+    except ValueError as exc:
+        fail(f'could not parse LAVF smoke command: {exc}', build)
+    args = [token for token in tokens if token not in ('2>&1',)]
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'LAVF smoke must run build/all/x265.exe, got {actual}', build)
+    for option, expected in LAVF_SMOKE_OPTIONS:
+        option_value(args, option, expected, build, 'LAVF smoke')
+
+    active_required = {
+        'test -s smoke_lavf_output.hevc': 'LAVF smoke must require non-empty HEVC output',
+        'grep -Fq "lavf" smoke_lavf_log.txt': 'LAVF smoke must require lavf runtime log',
+        'ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_lavf_output.hevc > smoke_lavf_probe.txt': 'LAVF smoke must capture video stream probe output',
+        'ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_lavf_output.hevc > smoke_lavf_count.txt': 'LAVF smoke must count decoded frames',
+        'grep -q "codec_name=hevc" smoke_lavf_probe.txt': 'LAVF smoke must require HEVC codec',
+        'grep -q "codec_type=video" smoke_lavf_probe.txt': 'LAVF smoke must require video stream',
+        'grep -q "width=160" smoke_lavf_probe.txt': 'LAVF smoke must require width 160',
+        'grep -q "height=90" smoke_lavf_probe.txt': 'LAVF smoke must require height 90',
+        'grep -q "nb_read_frames=12" smoke_lavf_count.txt': 'LAVF smoke must require 12 decoded frames',
+    }
+    for required, message in active_required.items():
+        if required not in active_lines:
+            fail(message, build)
+    if 'tee smoke_lavf_log.txt' not in command:
+        fail('LAVF smoke must capture x265 log to smoke_lavf_log.txt', build)
+    print('LAVF smoke guard validated')
+
+
 def validate_zimg_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_zimg' in block]
@@ -1030,6 +1100,7 @@ def main():
         validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
         validate_mkv_smoke(repo_root)
+        validate_lavf_smoke(repo_root)
         validate_zimg_smoke(repo_root)
         validate_linux_gcc_smoke(repo_root)
         validate_warning_scan_runtime_smokes(repo_root)

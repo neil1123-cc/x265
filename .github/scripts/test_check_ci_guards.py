@@ -203,6 +203,20 @@ jobs:
           grep -q "width=160" smoke_mkv_stream.txt
           grep -q "height=90" smoke_mkv_stream.txt
           grep -q "nb_read_frames=12" smoke_mkv_count.txt
+      - name: LAVF Input Smoke (All CLI)
+        shell: bash
+        run: |
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p -c:v ffv1 smoke_lavf_input.mkv
+          build/all/x265.exe --input smoke_lavf_input.mkv --frames 12 --output smoke_lavf_output.hevc 2>&1 | tee smoke_lavf_log.txt
+          test -s smoke_lavf_output.hevc
+          grep -Fq "lavf" smoke_lavf_log.txt
+          ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_lavf_output.hevc > smoke_lavf_probe.txt
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_lavf_output.hevc > smoke_lavf_count.txt
+          grep -q "codec_name=hevc" smoke_lavf_probe.txt
+          grep -q "codec_type=video" smoke_lavf_probe.txt
+          grep -q "width=160" smoke_lavf_probe.txt
+          grep -q "height=90" smoke_lavf_probe.txt
+          grep -q "nb_read_frames=12" smoke_lavf_count.txt
       - name: GOP Output Smoke (All CLI)
         shell: bash
         run: |
@@ -830,6 +844,36 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_stream.txt', 'ffprobe -v error -show_entries stream=codec_name,codec_type -select_streams v:0 -of default=noprint_wrappers=1 smoke_mkv.mkv > smoke_mkv_stream.txt')
         expect_fail(run_checker(repo), 'MKV smoke must capture video stream probe output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '-c:v ffv1 smoke_lavf_input.mkv', '-c:v rawvideo smoke_lavf_input.mkv')
+        expect_fail(run_checker(repo), 'LAVF input generator -c:v must be ffv1, got rawvideo')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/all/x265.exe --input smoke_lavf_input.mkv', 'build/8b/x265.exe --input smoke_lavf_input.mkv')
+        expect_fail(run_checker(repo), 'LAVF smoke must run build/all/x265.exe, got build/8b/x265.exe')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input smoke_lavf_input.mkv --frames 12', '--input smoke_lavf_wrong.mkv --frames 12')
+        expect_fail(run_checker(repo), 'LAVF smoke --input must be smoke_lavf_input.mkv, got smoke_lavf_wrong.mkv')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -Fq "lavf" smoke_lavf_log.txt', 'grep -Fq "hevc" smoke_lavf_log.txt')
+        expect_fail(run_checker(repo), 'LAVF smoke must require lavf runtime log')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q "nb_read_frames=12" smoke_lavf_count.txt', 'grep -q "nb_read_frames=1" smoke_lavf_count.txt')
+        expect_fail(run_checker(repo), 'LAVF smoke must require 12 decoded frames')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

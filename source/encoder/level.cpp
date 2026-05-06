@@ -310,7 +310,7 @@ void determineLevel(const x265_param &param, VPS& vps)
             std::strcpy(profbuf, "Unknown");
 
         if (vps.ptl.intraConstraintFlag && !bStillPicture)
-            strcat(profbuf, " Intra");
+            std::strcat(profbuf, " Intra");
     }
 
 #if ENABLE_SCC_EXT

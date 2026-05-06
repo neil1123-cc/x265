@@ -33,6 +33,8 @@
 #include "bitstream.h"
 #include "threading.h"
 
+#include <cstdlib>
+
 using namespace X265_NS;
 namespace {
 struct Cache
@@ -262,7 +264,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
         WeightParam *weights = wp[list][0];
         Frame *refFrame = slice.m_refFrameList[list][0];
         Lowres& refLowres = refFrame->m_lowres;
-        int diffPoc = abs(curPoc - refFrame->m_poc);
+        int diffPoc = std::abs(curPoc - refFrame->m_poc);
 
         /* prepare estimates */
         float guessScale[3], fencMean[3], refMean[3];
