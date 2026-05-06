@@ -27,6 +27,9 @@
 #include "threading.h"
 
 #include <new>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7
@@ -357,8 +360,8 @@ static void distributeThreadsForTme(
         }
 
         // Apply calculated threadpool assignment
-        memset(threadsPerPool, 0, sizeof(int) * (numNumaNodes + 2));
-        memset(nodeMaskPerPool, 0, sizeof(uint64_t) * (numNumaNodes + 2));
+        std::memset(threadsPerPool, 0, sizeof(int) * (numNumaNodes + 2));
+        std::memset(nodeMaskPerPool, 0, sizeof(uint64_t) * (numNumaNodes + 2));
 
         numPools = numNumaNodes = static_cast<int>(threads.size());
         for (int pool = 0; pool < numPools; pool++)
@@ -370,8 +373,8 @@ static void distributeThreadsForTme(
     else
 #endif
     {
-        memset(threadsPerPool, 0, sizeof(int) * (numNumaNodes + 2));
-        memset(nodeMaskPerPool, 0, sizeof(uint64_t) * (numNumaNodes + 2));
+        std::memset(threadsPerPool, 0, sizeof(int) * (numNumaNodes + 2));
+        std::memset(nodeMaskPerPool, 0, sizeof(uint64_t) * (numNumaNodes + 2));
 
         threadsPerPool[0] = targetTME;
         nodeMaskPerPool[0] = 1;
@@ -391,9 +394,9 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
     uint64_t nodeMaskPerPool[MAX_NODE_NUM + 2];
     int totalNumThreads = 0;
 
-    memset(cpusPerNode, 0, sizeof(cpusPerNode));
-    memset(threadsPerPool, 0, sizeof(threadsPerPool));
-    memset(nodeMaskPerPool, 0, sizeof(nodeMaskPerPool));
+    std::memset(cpusPerNode, 0, sizeof(cpusPerNode));
+    std::memset(threadsPerPool, 0, sizeof(threadsPerPool));
+    std::memset(nodeMaskPerPool, 0, sizeof(nodeMaskPerPool));
 
     int numNumaNodes = X265_MIN(getNumaNodeCount(), MAX_NODE_NUM);
     bool bNumaSupport = false;
@@ -438,22 +441,22 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
      * For windows because threads can't be allocated to live across sockets
      * changing the default behavior to be per-socket pools -- FIXME */
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 || HAVE_LIBNUMA
-    if (!strlen(p->numaPools) || (strcmp(p->numaPools, "NULL") == 0 || strcmp(p->numaPools, "*") == 0 || strcmp(p->numaPools, "") == 0))
+    if (!std::strlen(p->numaPools) || (std::strcmp(p->numaPools, "NULL") == 0 || std::strcmp(p->numaPools, "*") == 0 || std::strcmp(p->numaPools, "") == 0))
     {
          char poolString[50] = "";
          for (int i = 0; i < numNumaNodes; i++)
          {
              char nextCount[10] = "";
              if (i)
-                 snprintf(nextCount, sizeof(nextCount), ",%d", cpusPerNode[i]);
+                 std::snprintf(nextCount, sizeof(nextCount), ",%d", cpusPerNode[i]);
              else
-                   snprintf(nextCount, sizeof(nextCount), "%d", cpusPerNode[i]);
-             strcat(poolString, nextCount);
+                   std::snprintf(nextCount, sizeof(nextCount), "%d", cpusPerNode[i]);
+             std::strcat(poolString, nextCount);
          }
          x265_param_parse(p, "pools", poolString);
      }
 #endif
-    if (strlen(p->numaPools))
+    if (std::strlen(p->numaPools))
     {
         const char *nodeStr = p->numaPools;
         for (int i = 0; i < numNumaNodes; i++)
@@ -611,11 +614,11 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
             }
             if (numNumaNodes > 1)
             {
-                char *nodesstr = new char[64 * strlen(",63") + 1];
+                char *nodesstr = new char[64 * std::strlen(",63") + 1];
                 int len = 0;
                 for (int j = 0; j < 64; j++)
                     if ((nodeMaskPerPool[node] >> j) & 1)
-                        len += snprintf(nodesstr + len, sizeof(nodesstr) - len, ",%d", j);
+                        len += std::snprintf(nodesstr + len, sizeof(nodesstr) - len, ",%d", j);
                 x265_log(p, X265_LOG_INFO, "Thread pool %d using %d threads on numa nodes %s\n", i, numThreads, nodesstr + 1);
                 delete[] nodesstr;
             }
@@ -648,7 +651,7 @@ bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
     X265_CHECK(numThreads <= MAX_POOL_THREADS, "a single thread pool cannot have more than MAX_POOL_THREADS threads\n");
 
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 
-    memset(&m_groupAffinity, 0, sizeof(GROUP_AFFINITY));
+    std::memset(&m_groupAffinity, 0, sizeof(GROUP_AFFINITY));
     for (int i = 0; i < getNumaNodeCount(); i++)
     {
         int numaNode = ((nodeMask >> i) & 0x1U) ? i : -1;
@@ -683,7 +686,7 @@ bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
 
     m_jpTable = X265_MALLOC(JobProvider*, maxProviders);
     if (m_jpTable)
-        memset(m_jpTable, 0, sizeof(JobProvider*) * maxProviders);
+        std::memset(m_jpTable, 0, sizeof(JobProvider*) * maxProviders);
     m_numProviders = 0;
 
     return m_workers && m_jpTable;
@@ -745,7 +748,7 @@ void ThreadPool::setThreadNodeAffinity(void *numaMask)
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 
     UNREFERENCED_PARAMETER(numaMask);
     GROUP_AFFINITY groupAffinity;
-    memset(&groupAffinity, 0, sizeof(GROUP_AFFINITY));
+    std::memset(&groupAffinity, 0, sizeof(GROUP_AFFINITY));
     groupAffinity.Group = m_groupAffinity.Group;
     groupAffinity.Mask = m_groupAffinity.Mask;
     const PGROUP_AFFINITY affinityPointer = &groupAffinity;
@@ -964,7 +967,7 @@ double getCPUFrequencyMHz()
         char path[64];
         for (int cpu = 0; ; ++cpu)
         {
-            snprintf(path, sizeof(path),
+            std::snprintf(path, sizeof(path),
                      "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
             std::ifstream f(path);
             if (!f.is_open())

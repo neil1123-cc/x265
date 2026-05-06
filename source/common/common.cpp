@@ -305,7 +305,7 @@ char* x265_slurp_file(const char *filename)
         goto error;
     }
 
-    bError |= fread(buf, 1, fSize, fh) != fSize;
+    bError |= std::fread(buf, 1, fSize, fh) != fSize;
     if (buf[fSize - 1] != '\n')
         buf[fSize++] = '\n';
     buf[fSize] = 0;

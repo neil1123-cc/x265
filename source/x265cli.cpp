@@ -51,8 +51,8 @@ namespace X265_NS {
         int level = param->logLevel;
 
 #define OPT(value) (value ? "enabled" : "disabled")
-#define H0 printf
-#define H1 if (level >= X265_LOG_DEBUG) printf
+#define H0 std::printf
+#define H1 if (level >= X265_LOG_DEBUG) std::printf
 
         H0("\nSyntax: x265 [options] infile [-o] outfile\n");
         H0("    infile can be YUV or Y4M\n");
@@ -461,8 +461,8 @@ namespace X265_NS {
 #undef H0
 #undef H1
         if (level < X265_LOG_DEBUG)
-            printf("\nUse --fullhelp for a full listing (or --log-level full --help)\n");
-        printf("\n\nComplete documentation may be found at http://x265.readthedocs.org/en/default/cli.html\n");
+            std::printf("\nUse --fullhelp for a full listing (or --log-level full --help)\n");
+        std::printf("\n\nComplete documentation may be found at http://x265.readthedocs.org/en/default/cli.html\n");
         exit(1);
     }
 
@@ -486,17 +486,17 @@ namespace X265_NS {
             recon[i] = NULL;
         }
         if (qpfile)
-            fclose(qpfile);
+            std::fclose(qpfile);
         qpfile = NULL;
         if (zoneFile)
-            fclose(zoneFile);
+            std::fclose(zoneFile);
         zoneFile = NULL;
         if (dolbyVisionRpu)
-            fclose(dolbyVisionRpu);
+            std::fclose(dolbyVisionRpu);
         dolbyVisionRpu = NULL;
 #if ENABLE_MULTIVIEW
         if (multiViewConfig)
-            fclose(multiViewConfig);
+            std::fclose(multiViewConfig);
 #endif
         if (output)
             output->release();
@@ -556,32 +556,32 @@ namespace X265_NS {
             estsz_prec = estsz < 1024000 ? 2 : estsz < 10240000 ? 1 : 0;
             estsz_num = estsz < 1024 ? estsz : estsz / 1024;
             estsz_unit = estsz < 1024 ? "K" : "M";
-            snprintf(buf, sizeof(buf), "x265 [%.1f%%] %d/%d frames, %.*f fps, %.*f kb/s, %.*f %sB, eta %d:%02d:%02d, est.size %.*f %sB",
+            std::snprintf(buf, sizeof(buf), "x265 [%.1f%%] %d/%d frames, %.*f fps, %.*f kb/s, %.*f %sB, eta %d:%02d:%02d, est.size %.*f %sB",
                 percentage, frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
                 file_prec, file_num, file_unit,
                 eta_hh, eta_mm, eta_ss,
                 estsz_prec, estsz_num, estsz_unit);
         }
         else
-            snprintf(buf, sizeof(buf), "x265 %d frames: %.*f fps, %.*f kb/s, %.*f %sB",
+            std::snprintf(buf, sizeof(buf), "x265 %d frames: %.*f fps, %.*f kb/s, %.*f %sB",
                 frameNum, fps_prec, fps, bitrate_prec, bitrate,
                 file_prec, file_num, file_unit);
 
         if (updateConsole)
         {
             if (param->bStylish && framesToBeEncoded)
-                fprintf(stderr, "\rx265 [%5.1f%%] %d/%d %.*f fps %.*f kb/s eta %d:%02d:%02d   ",
+                std::fprintf(stderr, "\rx265 [%5.1f%%] %d/%d %.*f fps %.*f kb/s eta %d:%02d:%02d   ",
                     percentage, frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
                     eta_hh, eta_mm, eta_ss);
             else
-                fprintf(stderr, "%s       \r", buf + 5);
+                std::fprintf(stderr, "%s       \r", buf + 5);
 #if _WIN32
             if (GetFileType(GetStdHandle(STD_ERROR_HANDLE)) == FILE_TYPE_CHAR)
                 SetConsoleTitle(buf);
 #else
             SetConsoleTitle(buf);
 #endif
-            fflush(stderr);
+            std::fflush(stderr);
             prevUpdateTime = time;
         }
 
@@ -590,11 +590,11 @@ namespace X265_NS {
             FILE *progressfp = x265_fopen(param->pgfn, "wb");
             if (progressfp)
             {
-                fprintf(progressfp,
+                std::fprintf(progressfp,
                     "{\"frame\":%u,\"frames\":%u,\"fps\":%.*f,\"bitrate\":%.*f,\"size_bytes\":%.0f,\"progress\":%.4f,\"eta_seconds\":%d}\n",
                     frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
                     (double)totalbytes, framesToBeEncoded ? percentage / 100.0 : 0.0, framesToBeEncoded ? eta : 0);
-                fclose(progressfp);
+                std::fclose(progressfp);
             }
             prevUpdateTimeFile = time;
         }
@@ -1092,18 +1092,18 @@ namespace X265_NS {
         if (param->logLevel >= X265_LOG_INFO || (param->logfn && param->logfLevel >= X265_LOG_INFO))
         {
             char buf[128];
-            int p = snprintf(buf, sizeof(buf), "%dx%d fps %d/%d %sp%d", param->sourceWidth, param->sourceHeight,
+            int p = std::snprintf(buf, sizeof(buf), "%dx%d fps %d/%d %sp%d", param->sourceWidth, param->sourceHeight,
                 param->fpsNum, param->fpsDenom, x265_source_csp_names[param->internalCsp], info[0].depth);
 
             int width, height;
             getParamAspectRatio(param, width, height);
             if (width && height)
-                p += snprintf(buf + p, sizeof(buf) - p, " sar %d:%d", width, height);
+                p += std::snprintf(buf + p, sizeof(buf) - p, " sar %d:%d", width, height);
 
             if (framesToBeEncoded <= 0 || info[0].frameCount <= 0)
-                strcpy(buf + p, " unknown frame count");
+                std::strcpy(buf + p, " unknown frame count");
             else
-                snprintf(buf + p, sizeof(buf) - p, " frames %u - %d of %d", this->seek, this->seek + this->framesToBeEncoded - 1, info[0].frameCount);
+                std::snprintf(buf + p, sizeof(buf) - p, " frames %u - %d of %d", this->seek, this->seek + this->framesToBeEncoded - 1, info[0].frameCount);
 
             for (int view = 0; view < param->numViews - !!param->format; view++)
                 general_log(param, input[view]->getName(), X265_LOG_INFO, "%s\n", buf);
@@ -1119,13 +1119,13 @@ namespace X265_NS {
 #if ENABLE_ALPHA || ENABLE_MULTIVIEW
             if (param->bEnableAlpha || param->numViews > 1)
             {
-                char* temp = new char[strlen(reconfn[0])];
-                strcpy(temp, reconfn[0]);
+                char* temp = new char[std::strlen(reconfn[0])];
+                std::strcpy(temp, reconfn[0]);
                 const char* token = strtok(temp, ".");
                 for (int view = 0; view < param->numLayers; view++)
                 {
-                    char* buf = new char[strlen(temp) + 7];
-                    snprintf(buf, strlen(temp) + 7, "%s-%d.yuv", token, view);
+                    char* buf = new char[std::strlen(temp) + 7];
+                    std::snprintf(buf, std::strlen(temp) + 7, "%s-%d.yuv", token, view);
                     reconfn[view] = buf;
                 }
             }

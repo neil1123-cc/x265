@@ -227,7 +227,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
 
     Cache cache;
 
-    memset(&cache, 0, sizeof(cache));
+    std::memset(&cache, 0, sizeof(cache));
     cache.intraCost = fenc.intraCost;
     cache.numPredDir = slice.isInterP() ? 1 : 2;
     cache.lowresWidthInCU = fenc.width >> 3;
@@ -508,7 +508,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
 
     X265_FREE(mcbuf);
 
-    memcpy(slice.m_weightPredTable, wp, sizeof(WeightParam) * 2 * MAX_NUM_REF * 3);
+    std::memcpy(slice.m_weightPredTable, wp, sizeof(WeightParam) * 2 * MAX_NUM_REF * 3);
 
     if (param.logLevel >= X265_LOG_FULL)
     {
@@ -516,7 +516,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
         int p = 0;
         bool bWeighted = false;
 
-        p = snprintf(buf, sizeof(buf), "poc: %d weights:", slice.m_poc);
+        p = std::snprintf(buf, sizeof(buf), "poc: %d weights:", slice.m_poc);
         int numPredDir = slice.isInterP() ? 1 : 2;
         for (int list = 0; list < numPredDir; list++)
         {
@@ -524,21 +524,21 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
             if (w[0].wtPresent || w[1].wtPresent || w[2].wtPresent)
             {
                 bWeighted = true;
-                p += snprintf(buf + p, sizeof(buf) - p, " [L%d:R0 ", list);
+                p += std::snprintf(buf + p, sizeof(buf) - p, " [L%d:R0 ", list);
                 if (w[0].wtPresent)
-                    p += snprintf(buf + p, sizeof(buf) - p, "Y{%d/%d%+d}", w[0].inputWeight, 1 << w[0].log2WeightDenom, w[0].inputOffset);
+                    p += std::snprintf(buf + p, sizeof(buf) - p, "Y{%d/%d%+d}", w[0].inputWeight, 1 << w[0].log2WeightDenom, w[0].inputOffset);
                 if (w[1].wtPresent)
-                    p += snprintf(buf + p, sizeof(buf) - p, "U{%d/%d%+d}", w[1].inputWeight, 1 << w[1].log2WeightDenom, w[1].inputOffset);
+                    p += std::snprintf(buf + p, sizeof(buf) - p, "U{%d/%d%+d}", w[1].inputWeight, 1 << w[1].log2WeightDenom, w[1].inputOffset);
                 if (w[2].wtPresent)
-                    p += snprintf(buf + p, sizeof(buf) - p, "V{%d/%d%+d}", w[2].inputWeight, 1 << w[2].log2WeightDenom, w[2].inputOffset);
-                p += snprintf(buf + p, sizeof(buf) - p, "]");
+                    p += std::snprintf(buf + p, sizeof(buf) - p, "V{%d/%d%+d}", w[2].inputWeight, 1 << w[2].log2WeightDenom, w[2].inputOffset);
+                p += std::snprintf(buf + p, sizeof(buf) - p, "]");
             }
         }
 
         if (bWeighted)
         {
             if (p < 80) // pad with spaces to ensure progress line overwritten
-                snprintf(buf + p, sizeof(buf) - p, "%*s", 80 - p, " ");
+                std::snprintf(buf + p, sizeof(buf) - p, "%*s", 80 - p, " ");
             x265_log(&param, X265_LOG_FULL, "%s\n", buf);
         }
     }
