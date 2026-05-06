@@ -52,6 +52,9 @@ def ci_shape_records(build_dir, root, overrides=None):
         ('source/output/reconplay.cpp', ['-DX265_DEPTH=8', '-Werror=deprecated-volatile']),
         ('source/common/winxp.cpp', ['-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '-DX265_DEPTH=8']),
         ('source/common/cpu.cpp', ['-march=znver5', '-DX265_DEPTH=8']),
+        ('source/filters/zimgfilter.cpp', ['-DENABLE_ZIMG', '-DX265_DEPTH=8']),
+        ('source/input/lavf.cpp', ['-DENABLE_LAVF', '-DX265_DEPTH=8']),
+        ('source/output/mkv.cpp', ['-DENABLE_MKV', '-DX265_DEPTH=8']),
     )
     records = []
     for file_path, flags in entries:
@@ -68,7 +71,7 @@ def ci_shape_records(build_dir, root, overrides=None):
 
 
 CI_SHAPE_ARGS = (
-    '--min-cpp-commands=9',
+    '--min-cpp-commands=12',
     '--required-file-substring=source/common/x86/asm-primitives.cpp',
     '--required-file-substring=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx',
     '--required-file-substring=source/encoder/api.cpp',
@@ -78,6 +81,9 @@ CI_SHAPE_ARGS = (
     '--required-file-substring=source/output/reconplay.cpp',
     '--required-file-substring=source/common/winxp.cpp',
     '--required-file-substring=source/common/cpu.cpp',
+    '--required-file-substring=source/filters/zimgfilter.cpp',
+    '--required-file-substring=source/input/lavf.cpp',
+    '--required-file-substring=source/output/mkv.cpp',
     '--required-file-flag=source/common/x86/asm-primitives.cpp=-DX265_ARCH_X86=1',
     '--required-file-flag=source/common/x86/asm-primitives.cpp=-DX265_DEPTH=8',
     '--required-file-flag=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx=-DX265_DEPTH=8',
@@ -93,6 +99,12 @@ CI_SHAPE_ARGS = (
     '--required-file-flag=source/common/winxp.cpp=-DX265_DEPTH=8',
     '--required-file-flag=source/common/cpu.cpp=-march=znver5',
     '--required-file-flag=source/common/cpu.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG',
+    '--required-file-flag=source/filters/zimgfilter.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF',
+    '--required-file-flag=source/input/lavf.cpp=-DX265_DEPTH=8',
+    '--required-file-flag=source/output/mkv.cpp=-DENABLE_MKV',
+    '--required-file-flag=source/output/mkv.cpp=-DX265_DEPTH=8',
     '--forbidden-file-flag=source/common/x86/asm-primitives.cpp=-DX265_DEPTH=10',
     '--forbidden-file-flag=source/common/x86/asm-primitives.cpp=-DX265_DEPTH=12',
     '--forbidden-file-flag=CMakeFiles/common.dir/Unity/unity_0_cxx.cxx=-DX265_DEPTH=10',
@@ -114,6 +126,12 @@ CI_SHAPE_ARGS = (
     '--forbidden-file-flag=source/common/cpu.cpp=-DX265_DEPTH=12',
     '--forbidden-file-flag=source/output/output.cpp=-DX265_DEPTH=8',
     '--forbidden-file-flag=source/output/output.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/filters/zimgfilter.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/filters/zimgfilter.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/input/lavf.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/input/lavf.cpp=-DX265_DEPTH=12',
+    '--forbidden-file-flag=source/output/mkv.cpp=-DX265_DEPTH=10',
+    '--forbidden-file-flag=source/output/mkv.cpp=-DX265_DEPTH=12',
 )
 
 

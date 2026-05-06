@@ -28,6 +28,7 @@
 #include "motion.h"
 #include "x265.h"
 
+#include <cstdlib>
 #include <cstring>
 
 #if _MSC_VER
@@ -92,8 +93,8 @@ inline int predictorDifference(const MV *mvc, intptr_t numCandidates)
 
     for (int i = 0; i < numCandidates - 1; i++)
     {
-        sum += abs(mvc[i].x - mvc[i + 1].x)
-            +  abs(mvc[i].y - mvc[i + 1].y);
+        sum += std::abs(mvc[i].x - mvc[i + 1].x)
+            +  std::abs(mvc[i].y - mvc[i + 1].y);
     }
 
     return sum;
@@ -1194,7 +1195,7 @@ me_hex2:
                      * but prediction usually isn't too bad, so just use medium range */
                     mvd = 25;
                 else
-                    mvd = abs(qmvp.x - mvc[0].x) + abs(qmvp.y - mvc[0].y);
+                    mvd = std::abs(qmvp.x - mvc[0].x) + std::abs(qmvp.y - mvc[0].y);
             }
             else
             {
@@ -1207,7 +1208,7 @@ me_hex2:
                 mvd = 0;
                 if (partEnum != LUMA_64x64)
                 {
-                    mvd = abs(qmvp.x - mvc[0].x) + abs(qmvp.y - mvc[0].y);
+                    mvd = std::abs(qmvp.x - mvc[0].x) + std::abs(qmvp.y - mvc[0].y);
                     denom++;
                 }
                 mvd += predictorDifference(mvc, numCandidates);
