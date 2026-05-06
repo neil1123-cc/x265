@@ -178,6 +178,21 @@ TME_GENERATOR_OPTIONS = (
     ('-frames:v', '16'),
     ('-pix_fmt', 'yuv420p'),
 )
+ZIMG_SMOKE_OPTIONS = (
+    ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
+    ('--input-res', '96x96'),
+    ('--fps', '1'),
+    ('--frames', '1'),
+    ('--vf', 'zimg:lanczos(64,64)'),
+    ('--output', 'build/cxx20-warning-scan/smoke_zimg.hevc'),
+)
+LINUX_GCC_SMOKE_OPTIONS = (
+    ('--input', 'build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv'),
+    ('--input-res', '64x64'),
+    ('--fps', '1'),
+    ('--frames', '1'),
+    ('--output', 'build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc'),
+)
 GITHUB_EXPR = re.compile(r'\$\{\{.*?\}\}', re.DOTALL)
 RUN_LINE = re.compile(r'^(?P<indent>\s*)run:\s*(?P<value>.*)$')
 
@@ -527,6 +542,16 @@ def require_active_line_contains(active_lines, required, path, message):
     if not any(required in line for line in active_lines):
         fail(message, path)
 
+
+def option_value(args, option, expected, build, context):
+    try:
+        actual = args[args.index(option) + 1]
+    except (ValueError, IndexError):
+        fail(f'missing {context} value for {option}', build)
+    if actual != expected:
+        fail(f'{context} {option} must be {expected}, got {actual}', build)
+
+
 def validate_pgo_consume_helper(repo_root):
     build = repo_root / BUILD_WORKFLOW
     blocks = [block for path, line, block in collect_run_blocks(build) if 'check_pgo_consume_commands()' in block]
@@ -583,12 +608,7 @@ def validate_threaded_me_smoke(repo_root):
         if expected not in args:
             fail(f'missing Threaded ME smoke argument: {expected}', build)
     for option, expected in TME_SMOKE_OPTIONS:
-        try:
-            actual = args[args.index(option) + 1]
-        except (ValueError, IndexError):
-            fail(f'missing Threaded ME smoke value for {option}', build)
-        if actual != expected:
-            fail(f'Threaded ME smoke {option} must be {expected}, got {actual}', build)
+        option_value(args, option, expected, build, 'Threaded ME smoke')
 
     active_required = {
         "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt": 'Threaded ME smoke must require enabled threaded-me log',
@@ -604,6 +624,85 @@ def validate_threaded_me_smoke(repo_root):
     if len(ffprobe_lines) != 1 or ' -count_frames ' not in f' {ffprobe_lines[0]} ':
         fail('Threaded ME smoke must count frames from smoke_threaded_me.hevc', build)
     print('Threaded ME smoke guard validated')
+
+
+def validate_zimg_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_zimg' in block]
+    if len(blocks) != 1:
+        fail(f'expected exactly one ZIMG smoke run block, found {len(blocks)}', build)
+
+    script = blocks[0]
+    active_lines = shell_active_lines(script)
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_zimg' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one ZIMG x265 command, found {len(command_lines)}', build)
+
+    command = command_lines[0]
+    before_pipe = command.split('|', 1)[0].strip()
+    try:
+        tokens = shlex.split(before_pipe)
+    except ValueError as exc:
+        fail(f'could not parse ZIMG smoke command: {exc}', build)
+
+    args = [token for token in tokens if token not in ('2>&1',)]
+    if not args or args[0] != 'build/cxx20-warning-scan/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'ZIMG smoke must run build/cxx20-warning-scan/x265.exe, got {actual}', build)
+    for option, expected in ZIMG_SMOKE_OPTIONS:
+        option_value(args, option, expected, build, 'ZIMG smoke')
+
+    active_required = {
+        'test -s build/cxx20-warning-scan/smoke_zimg.hevc': 'ZIMG smoke must require non-empty HEVC output',
+        "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log": 'ZIMG smoke must require resize log',
+        "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log": 'ZIMG smoke must require encoded-frame log',
+    }
+    for required, message in active_required.items():
+        if required not in active_lines:
+            fail(message, build)
+    if 'tee build/cxx20-warning-scan/smoke_zimg.log' not in command:
+        fail('ZIMG smoke must capture x265 log to build/cxx20-warning-scan/smoke_zimg.log', build)
+    print('ZIMG smoke guard validated')
+
+
+def validate_linux_gcc_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'cxx20-linux-gcc-compile-commands'),
+        'Run Linux GCC C++20 compile command diagnostics',
+        build,
+        job_name='cxx20-linux-gcc-compile-commands',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'Run Linux GCC C++20 compile command diagnostics'))
+    command_lines = [line for line in active_lines if 'build/cxx20-linux-gcc-compile-commands/x265 ' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one Linux GCC x265 smoke command, found {len(command_lines)}', build)
+
+    command = command_lines[0]
+    before_pipe = command.split('|', 1)[0].strip()
+    try:
+        tokens = shlex.split(before_pipe)
+    except ValueError as exc:
+        fail(f'could not parse Linux GCC smoke command: {exc}', build)
+
+    args = [token for token in tokens if token not in ('2>&1',)]
+    if not args or args[0] != 'build/cxx20-linux-gcc-compile-commands/x265':
+        actual = args[0] if args else '<empty>'
+        fail(f'Linux GCC smoke must run build/cxx20-linux-gcc-compile-commands/x265, got {actual}', build)
+    for option, expected in LINUX_GCC_SMOKE_OPTIONS:
+        option_value(args, option, expected, build, 'Linux GCC smoke')
+
+    active_required = {
+        'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc': 'Linux GCC smoke must require non-empty HEVC output',
+        "grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log": 'Linux GCC smoke must require encoded-frame log',
+    }
+    for required, message in active_required.items():
+        if required not in active_lines:
+            fail(message, build)
+    if 'tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log' not in command:
+        fail('Linux GCC smoke must capture x265 log to build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log', build)
+    print('Linux GCC smoke guard validated')
 
 
 def validate_gnu20_diagnostic_steps(repo_root):
@@ -790,6 +889,8 @@ def main():
         validate_warning_scan_dependencies(repo_root)
         validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
+        validate_zimg_smoke(repo_root)
+        validate_linux_gcc_smoke(repo_root)
         validate_gnu20_diagnostic_steps(repo_root)
         validate_dependency_suffixes(repo_root, args.before, args.after)
     except GuardFailure as exc:

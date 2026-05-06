@@ -1059,6 +1059,12 @@ def main():
         write_compile_commands(response_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_pass(run_checker(response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
+        response_long_suffix_dir = root / 'response-file-long-suffix'
+        response_long_suffix_dir.mkdir()
+        (response_long_suffix_dir / 'args.response').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands(response_long_suffix_dir, 'c++ @args.response -c source/common/common.cpp')
+        expect_pass(run_checker(response_long_suffix_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
         uppercase_response_dir = root / 'uppercase-response-file'
         uppercase_response_dir.mkdir()
         (uppercase_response_dir / 'ARGS.RSP').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
@@ -1111,6 +1117,11 @@ def main():
         missing_response_dir.mkdir()
         write_compile_commands(missing_response_dir, 'c++ @missing.rsp -c source/common/common.cpp')
         expect_fail(run_checker(missing_response_dir), 'missing response file')
+
+        missing_long_response_dir = root / 'missing-response-file-long-suffix'
+        missing_long_response_dir.mkdir()
+        write_compile_commands(missing_long_response_dir, 'c++ @missing.response -c source/common/common.cpp')
+        expect_fail(run_checker(missing_long_response_dir), 'missing response file')
 
         nested_missing_response_dir = root / 'nested-missing-response-file'
         nested_missing_response_dir.mkdir()

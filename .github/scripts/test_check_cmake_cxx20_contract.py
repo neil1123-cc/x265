@@ -794,6 +794,14 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         source = write_source(root)
+        workflow = root / '.github' / 'workflows'
+        workflow.mkdir(parents=True)
+        (workflow / 'build.yaml').write_text('run: cmake -S source # docs mention -DCMAKE_CXX_STANDARD_REQUIRED=OFF as forbidden\n')
+        expect_pass(run_checker(source))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
         action = root / '.github' / 'actions' / 'quoted-comment'
         action.mkdir(parents=True)
         (action / 'action.yml').write_text('''
@@ -812,6 +820,14 @@ def main():
         workflow = root / '.github' / 'workflows'
         workflow.mkdir(parents=True)
         (workflow / 'build.yml').write_text('run: cmake -DCMAKE_CXX_STANDARD_REQUIRED=OFF source\n')
+        expect_fail(run_checker(source), 'manual C++ standard flag in workflow/helper')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = write_source(root)
+        workflow = root / '.github' / 'workflows'
+        workflow.mkdir(parents=True)
+        (workflow / 'build.yaml').write_text('run: cmake -DCMAKE_CXX_STANDARD_REQUIRED=OFF source\n')
         expect_fail(run_checker(source), 'manual C++ standard flag in workflow/helper')
 
     with tempfile.TemporaryDirectory() as tmp:

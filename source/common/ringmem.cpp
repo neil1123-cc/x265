@@ -24,6 +24,8 @@
 #include "ringmem.h"
 
 #include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include <string.h>
 
 #ifndef _WIN32
@@ -132,7 +134,7 @@ namespace X265_NS {
             char nameBuf[MAX_SHR_NAME_LEN] = { 0 };
 
             ///< shared memory name
-            snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SHARED_MEM_NAME, name);
+            std::snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SHARED_MEM_NAME, name);
 
             ///< create or open shared memory
             bool newCreated = false;
@@ -213,7 +215,7 @@ namespace X265_NS {
 
             if (newCreated)
             {
-                memset(pool, 0, shrMemSize);
+                std::memset(pool, 0, shrMemSize);
             }
             
             m_shrMem = reinterpret_cast<ShrMemCtrl *>(pool);
@@ -233,7 +235,7 @@ namespace X265_NS {
                 }
 
                 ///< shared memory name
-                snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SEMAPHORE_RINGMEM_WRITER_NAME, name);
+                std::snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SEMAPHORE_RINGMEM_WRITER_NAME, name);
                 if (!m_writeSem->create(nameBuf, m_itemCnt, m_itemCnt))
                 {
                     release();
@@ -248,7 +250,7 @@ namespace X265_NS {
                 }
 
                 ///< shared memory name
-                snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SEMAPHORE_RINGMEM_READER_NAME, name);
+                std::snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SEMAPHORE_RINGMEM_READER_NAME, name);
                 if (!m_readSem->create(nameBuf, 0, m_itemCnt))
                 {
                     release();
@@ -276,7 +278,7 @@ namespace X265_NS {
                 int32_t shrMemSize = (m_itemSize * m_itemCnt + sizeof(ShrMemCtrl) + RINGMEM_ALLIGNMENT - 1) & (~RINGMEM_ALLIGNMENT - 1);
                 munmap(m_shrMem, shrMemSize);
                 unlink(m_filepath);
-                free(m_filepath);
+                std::free(m_filepath);
                 m_filepath = NULL;
 #endif ///< _WIN32
                 m_shrMem = NULL;

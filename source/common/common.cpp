@@ -26,6 +26,7 @@
 #include "threading.h"
 #include "x265.h"
 
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -90,7 +91,7 @@ void *x265_malloc(size_t size)
 
 void x265_free(void *ptr)
 {
-    if (ptr) free(ptr);
+    if (ptr) std::free(ptr);
 }
 
 #endif // if _WIN32
@@ -137,20 +138,20 @@ void general_log(const x265_param* param, const char* caller, int level, const c
     }
 
     if (caller)
-        p += snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
+        p += std::snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
     va_list arg;
     va_start(arg, fmt);
-    vsnprintf(buffer + p, bufferSize - p, fmt, arg);
+    std::vsnprintf(buffer + p, bufferSize - p, fmt, arg);
     va_end(arg);
     if (!param || level <= param->logLevel)
-        fputs(buffer, stderr);
+        std::fputs(buffer, stderr);
     if (param && param->logfn && level <= param->logfLevel)
     {
         FILE* fp = x265_fopen(param->logfn, "ab");
         if (fp)
         {
-            fputs(buffer, fp);
-            fclose(fp);
+            std::fputs(buffer, fp);
+            std::fclose(fp);
         }
     }
 }
@@ -189,10 +190,10 @@ void general_log_file(const x265_param* param, const char* caller, int level, co
     }
 
     if (caller)
-        p += snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
+        p += std::snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
     va_list arg;
     va_start(arg, fmt);
-    vsnprintf(buffer + p, bufferSize - p, fmt, arg);
+    std::vsnprintf(buffer + p, bufferSize - p, fmt, arg);
     va_end(arg);
 
     if (!(param && level > param->logLevel))
@@ -207,7 +208,7 @@ void general_log_file(const x265_param* param, const char* caller, int level, co
                 WriteConsoleW(console, buf_utf16, length_utf16, &mode, NULL);
         }
         else
-            fputs(buffer, stderr);
+            std::fputs(buffer, stderr);
     }
 }
 
@@ -253,7 +254,7 @@ double x265_ssim2dB(double ssim)
     if (inv_ssim <= 0.0000000001) /* Max 100dB */
         return 100;
 
-    return -10.0 * log10(inv_ssim);
+    return -10.0 * std::log10(inv_ssim);
 }
 
 /* The qscale - qp conversion is specified in the standards.
@@ -265,7 +266,7 @@ double x265_qScale2qp(double qScale)
 
 double x265_qp2qScale(double qp)
 {
-    return 0.85 * pow(2.0, (qp - 12.0) / 6.0);
+    return 0.85 * std::pow(2.0, (qp - 12.0) / 6.0);
 }
 
 uint32_t x265_picturePlaneSize(int csp, int width, int height, int plane)
@@ -308,7 +309,7 @@ char* x265_slurp_file(const char *filename)
     if (buf[fSize - 1] != '\n')
         buf[fSize++] = '\n';
     buf[fSize] = 0;
-    fclose(fh);
+    std::fclose(fh);
 
     if (bError)
     {
@@ -319,7 +320,7 @@ char* x265_slurp_file(const char *filename)
     return buf;
 
 error:
-    fclose(fh);
+    std::fclose(fh);
     return NULL;
 }
 

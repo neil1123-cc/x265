@@ -67,7 +67,8 @@ jobs:
           check_cxx20_commands_clang build/cxx20-warning-scan \
             --required-file-substring=source/filters/zimgfilter.cpp \
             --required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG
-          build/cxx20-warning-scan/x265.exe --vf "zimg:lanczos(64,64)" 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log
+          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log
+          test -s build/cxx20-warning-scan/smoke_zimg.hevc
           grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log
           grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log
       - name: Run C++20 shared and all-bit-depth warning scans
@@ -115,7 +116,13 @@ jobs:
             --required-file-substring=source/output/reconplay.cpp \
             --forbidden-file-substring=source/common/winxp.cpp
           ninja -C build/cxx20-linux-gcc-compile-commands cli
-          build/cxx20-linux-gcc-compile-commands/x265 --input smoke.yuv --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc 2>&1 | tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
+          python - <<'PY'
+          from pathlib import Path
+          width = height = 64
+          frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
+          Path('build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv').write_bytes(frame)
+          PY
+          build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc 2>&1 | tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
           grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
@@ -662,6 +669,24 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-res 64x64', '--input-res 128x128')
+        expect_fail(run_checker(repo), 'Linux GCC smoke --input-res must be 64x64, got 128x128')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc', '--output build/cxx20-linux-gcc-compile-commands/wrong.hevc')
+        expect_fail(run_checker(repo), 'Linux GCC smoke --output must be build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc, got build/cxx20-linux-gcc-compile-commands/wrong.hevc')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc', '# test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc')
+        expect_fail(run_checker(repo), 'Linux GCC smoke must require non-empty HEVC output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape\n          # configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
         expect_fail(run_checker(repo), 'C++20 warning scan must actively configure all 12-bit lib')
 
@@ -687,13 +712,43 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--vf "zimg:lanczos(64,64)"', '# --vf "zimg:lanczos(64,64)"')
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively run ZIMG filter smoke')
+        expect_fail(run_checker(repo), 'missing ZIMG smoke value for --vf')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log", "grep -Fq 'zimg [info]' build/cxx20-warning-scan/smoke_zimg.log")
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively require ZIMG resize smoke log')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv', 'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/wrong.yuv')
+        expect_fail(run_checker(repo), 'ZIMG smoke --input must be build/cxx20-warning-scan/smoke_zimg.yuv, got build/cxx20-warning-scan/wrong.yuv')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-res 96x96', '--input-res 128x128')
+        expect_fail(run_checker(repo), 'ZIMG smoke --input-res must be 96x96, got 128x128')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 1', '--frames 2')
+        expect_fail(run_checker(repo), 'ZIMG smoke --frames must be 1, got 2')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--output build/cxx20-warning-scan/smoke_zimg.hevc', '--output build/cxx20-warning-scan/wrong.hevc')
+        expect_fail(run_checker(repo), 'ZIMG smoke --output must be build/cxx20-warning-scan/smoke_zimg.hevc, got build/cxx20-warning-scan/wrong.hevc')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-warning-scan/smoke_zimg.hevc', '# test -s build/cxx20-warning-scan/smoke_zimg.hevc')
+        expect_fail(run_checker(repo), 'ZIMG smoke must require non-empty HEVC output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log", "grep -Fq 'encoded' build/cxx20-warning-scan/smoke_zimg.log")
+        expect_fail(run_checker(repo), 'ZIMG smoke must require encoded-frame log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
