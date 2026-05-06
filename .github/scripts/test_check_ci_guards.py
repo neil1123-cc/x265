@@ -82,6 +82,12 @@ jobs:
             --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
             --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
             --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
+          build/cxx20-warning-scan-12bit/x265.exe --input build/cxx20-warning-scan-12bit/smoke_12bit.yuv --input-res 64x64 --input-depth 12 --output-depth 12 --fps 1 --frames 1 --output build/cxx20-warning-scan-12bit/smoke_12bit.hevc
+          test -s build/cxx20-warning-scan-12bit/smoke_12bit.hevc
+          build/cxx20-warning-scan-shared-library/x265.exe --input build/cxx20-warning-scan-shared-library/smoke_shared.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-warning-scan-shared-library/smoke_shared.hevc
+          test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc
+          build/cxx20-warning-scan-all/x265.exe --input build/cxx20-warning-scan-all/smoke_all.yuv --input-res 64x64 --input-depth 10 --output-depth 10 --fps 1 --frames 1 --output build/cxx20-warning-scan-all/smoke_all.hevc
+          test -s build/cxx20-warning-scan-all/smoke_all.hevc
   cxx20-gcc-compile-commands:
     runs-on: windows-latest
     steps:
@@ -669,7 +675,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-res 64x64', '--input-res 128x128')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 64x64', 'build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 128x128')
         expect_fail(run_checker(repo), 'Linux GCC smoke --input-res must be 64x64, got 128x128')
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -753,8 +759,32 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'echo skip-gcc-12bit-lib-shape\n          # check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
-        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check 12-bit compile commands')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-depth 12 --output-depth 12 --fps 1', '--input-depth 10 --output-depth 12 --fps 1')
+        expect_fail(run_checker(repo), '12-bit warning-scan smoke --input-depth must be 12, got 10')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-warning-scan-12bit/smoke_12bit.hevc', '# test -s build/cxx20-warning-scan-12bit/smoke_12bit.hevc')
+        expect_fail(run_checker(repo), '12-bit warning-scan smoke must require non-empty HEVC output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--output build/cxx20-warning-scan-shared-library/smoke_shared.hevc', '--output build/cxx20-warning-scan-shared-library/wrong.hevc')
+        expect_fail(run_checker(repo), 'shared-library warning-scan smoke --output must be build/cxx20-warning-scan-shared-library/smoke_shared.hevc, got build/cxx20-warning-scan-shared-library/wrong.hevc')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-depth 10 --output-depth 10 --fps 1', '--input-depth 10 --output-depth 8 --fps 1')
+        expect_fail(run_checker(repo), 'all-bit-depth warning-scan smoke --output-depth must be 10, got 8')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-warning-scan-all/smoke_all.hevc', '# test -s build/cxx20-warning-scan-all/smoke_all.hevc')
+        expect_fail(run_checker(repo), 'all-bit-depth warning-scan smoke must require non-empty HEVC output')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

@@ -193,6 +193,48 @@ LINUX_GCC_SMOKE_OPTIONS = (
     ('--frames', '1'),
     ('--output', 'build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc'),
 )
+WARNING_SCAN_SMOKES = (
+    (
+        '12-bit warning-scan smoke',
+        'build/cxx20-warning-scan-12bit/x265.exe',
+        (
+            ('--input', 'build/cxx20-warning-scan-12bit/smoke_12bit.yuv'),
+            ('--input-res', '64x64'),
+            ('--input-depth', '12'),
+            ('--output-depth', '12'),
+            ('--fps', '1'),
+            ('--frames', '1'),
+            ('--output', 'build/cxx20-warning-scan-12bit/smoke_12bit.hevc'),
+        ),
+        'test -s build/cxx20-warning-scan-12bit/smoke_12bit.hevc',
+    ),
+    (
+        'shared-library warning-scan smoke',
+        'build/cxx20-warning-scan-shared-library/x265.exe',
+        (
+            ('--input', 'build/cxx20-warning-scan-shared-library/smoke_shared.yuv'),
+            ('--input-res', '64x64'),
+            ('--fps', '1'),
+            ('--frames', '1'),
+            ('--output', 'build/cxx20-warning-scan-shared-library/smoke_shared.hevc'),
+        ),
+        'test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc',
+    ),
+    (
+        'all-bit-depth warning-scan smoke',
+        'build/cxx20-warning-scan-all/x265.exe',
+        (
+            ('--input', 'build/cxx20-warning-scan-all/smoke_all.yuv'),
+            ('--input-res', '64x64'),
+            ('--input-depth', '10'),
+            ('--output-depth', '10'),
+            ('--fps', '1'),
+            ('--frames', '1'),
+            ('--output', 'build/cxx20-warning-scan-all/smoke_all.hevc'),
+        ),
+        'test -s build/cxx20-warning-scan-all/smoke_all.hevc',
+    ),
+)
 GITHUB_EXPR = re.compile(r'\$\{\{.*?\}\}', re.DOTALL)
 RUN_LINE = re.compile(r'^(?P<indent>\s*)run:\s*(?P<value>.*)$')
 
@@ -705,6 +747,38 @@ def validate_linux_gcc_smoke(repo_root):
     print('Linux GCC smoke guard validated')
 
 
+def validate_warning_scan_runtime_smokes(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    blocks = [
+        block for path, line, block in collect_run_blocks(build)
+        if 'smoke_12bit' in block or 'smoke_shared' in block or 'smoke_all' in block
+    ]
+    if not blocks:
+        print('warning-scan runtime smoke guards skipped: no runtime smoke commands in fixture')
+        return
+    active_lines = []
+    for block in blocks:
+        active_lines.extend(shell_active_logical_lines(block))
+
+    for context, executable, options, output_check in WARNING_SCAN_SMOKES:
+        command_lines = [line for line in active_lines if executable in line]
+        if len(command_lines) != 1:
+            fail(f'expected exactly one {context} command, found {len(command_lines)}', build)
+        try:
+            tokens = shlex.split(command_lines[0])
+        except ValueError as exc:
+            fail(f'could not parse {context} command: {exc}', build)
+        args = [token for token in tokens if token not in ('2>&1',)]
+        if not args or args[0] != executable:
+            actual = args[0] if args else '<empty>'
+            fail(f'{context} must run {executable}, got {actual}', build)
+        for option, expected in options:
+            option_value(args, option, expected, build, context)
+        if output_check not in active_lines:
+            fail(f'{context} must require non-empty HEVC output', build)
+    print('warning-scan runtime smoke guards validated')
+
+
 def validate_gnu20_diagnostic_steps(repo_root):
     build = repo_root / BUILD_WORKFLOW
     parsed = load_yaml(repo_root, BUILD_WORKFLOW)
@@ -891,6 +965,7 @@ def main():
         validate_threaded_me_smoke(repo_root)
         validate_zimg_smoke(repo_root)
         validate_linux_gcc_smoke(repo_root)
+        validate_warning_scan_runtime_smokes(repo_root)
         validate_gnu20_diagnostic_steps(repo_root)
         validate_dependency_suffixes(repo_root, args.before, args.after)
     except GuardFailure as exc:
