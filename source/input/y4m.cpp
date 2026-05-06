@@ -95,7 +95,7 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
     if (!threadActive.load())
     {
         if (ifs && ifs != stdin)
-            fclose(ifs);
+            std::fclose(ifs);
         ifs = nullptr;
         return;
     }
@@ -137,14 +137,14 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
             fseeko(ifs, (int64_t)estFrameSize * info.skipFrames, SEEK_CUR);
         else
             for (int i = 0; i < info.skipFrames; i++)
-                if (fread(buf[0], estFrameSize - framesize, 1, ifs) + fread(buf[0], framesize, 1, ifs) != 2)
+                if (std::fread(buf[0], estFrameSize - framesize, 1, ifs) + std::fread(buf[0], framesize, 1, ifs) != 2)
                     break;
     }
 }
 Y4MInput::~Y4MInput()
 {
     if (ifs && ifs != stdin)
-        fclose(ifs);
+        std::fclose(ifs);
     for (int i = 0; i < QUEUE_SIZE; i++)
         X265_FREE(buf[i]);
 }
@@ -348,7 +348,7 @@ bool Y4MInput::populateFrameQueue()
         return false;
     /* strip off the FRAME\n header */
     char hbuf[sizeof(header) + 1];
-    if (fread(hbuf, sizeof(hbuf), 1, ifs) != 1 || std::memcmp(hbuf, header, sizeof(header)))
+    if (std::fread(hbuf, sizeof(hbuf), 1, ifs) != 1 || std::memcmp(hbuf, header, sizeof(header)))
     {
         if (!feof(ifs))
             x265_log(nullptr, X265_LOG_ERROR, "y4m: frame header missing\n");
@@ -369,7 +369,7 @@ bool Y4MInput::populateFrameQueue()
             return false;
     }
     ProfileScopeEvent(frameRead);
-    if (fread(buf[written % QUEUE_SIZE], framesize, 1, ifs) == 1)
+    if (std::fread(buf[written % QUEUE_SIZE], framesize, 1, ifs) == 1)
     {
         writeCount.incr();
         return true;

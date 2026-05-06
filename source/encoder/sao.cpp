@@ -29,6 +29,9 @@
 #include "picyuv.h"
 #include "sao.h"
 
+#include <cstdlib>
+#include <cstring>
+
 namespace {
 
 inline int32_t roundIBDI(int32_t num, int32_t den)
@@ -304,7 +307,7 @@ void SAO::applyPixelOffsets(int addr, int typeIdx, int plane)
     int8_t _upBuff1[MAX_CU_SIZE + 2], *upBuff1 = _upBuff1 + 1, signLeft1[2];
     int8_t _upBufft[MAX_CU_SIZE + 2], *upBufft = _upBufft + 1;
 
-    memset(_upBuff1 + MAX_CU_SIZE, 0, 2 * sizeof(int8_t)); /* avoid valgrind uninit warnings */
+    std::memset(_upBuff1 + MAX_CU_SIZE, 0, 2 * sizeof(int8_t)); /* avoid valgrind uninit warnings */
 
     pixel* tmpL = m_tmpL1[plane];
     pixel* tmpU = &(m_tmpU[plane][lpelx]);
@@ -601,7 +604,7 @@ void SAO::generateLumaOffsets(SaoCtuParam* ctuParam, int idxY, int idxX)
         {
             if (typeIdx == SAO_BO)
             {
-                memset(m_offsetBo[0], 0, sizeof(m_offsetBo[0]));
+                std::memset(m_offsetBo[0], 0, sizeof(m_offsetBo[0]));
 
                 for (int i = 0; i < SAO_NUM_OFFSET; i++)
                     m_offsetBo[0][((ctuParam[addr].bandPos + i) & (MAX_NUM_SAO_CLASS - 1))] = (int8_t)(ctuParam[addr].offset[i] << SAO_BIT_INC);
@@ -676,7 +679,7 @@ void SAO::generateChromaOffsets(SaoCtuParam* ctuParam[3], int idxY, int idxX)
         {
             if (typeIdxCb == SAO_BO)
             {
-                memset(m_offsetBo[1], 0, sizeof(m_offsetBo[0]));
+                std::memset(m_offsetBo[1], 0, sizeof(m_offsetBo[0]));
 
                 for (int i = 0; i < SAO_NUM_OFFSET; i++)
                     m_offsetBo[1][((ctuParam[1][addr].bandPos + i) & (MAX_NUM_SAO_CLASS - 1))] = (int8_t)(ctuParam[1][addr].offset[i] << SAO_BIT_INC);
@@ -702,7 +705,7 @@ void SAO::generateChromaOffsets(SaoCtuParam* ctuParam[3], int idxY, int idxX)
         {
             if (typeIdxCr == SAO_BO)
             {
-                memset(m_offsetBo[2], 0, sizeof(m_offsetBo[0]));
+                std::memset(m_offsetBo[2], 0, sizeof(m_offsetBo[0]));
 
                 for (int i = 0; i < SAO_NUM_OFFSET; i++)
                     m_offsetBo[2][((ctuParam[2][addr].bandPos + i) & (MAX_NUM_SAO_CLASS - 1))] = (int8_t)(ctuParam[2][addr].offset[i] << SAO_BIT_INC);
@@ -951,8 +954,8 @@ void SAO::calcSaoStatsCu_BeforeDblk(Frame* frame, int idxX, int idxY)
 
     const int boShift = X265_DEPTH - SAO_BO_BITS;
 
-    memset(m_countPreDblk[addr], 0, sizeof(PerPlane));
-    memset(m_offsetOrgPreDblk[addr], 0, sizeof(PerPlane));
+    std::memset(m_countPreDblk[addr], 0, sizeof(PerPlane));
+    std::memset(m_offsetOrgPreDblk[addr], 0, sizeof(PerPlane));
 
     int plane_offset = 0;
     for (int plane = 0; plane < (frame->m_param->internalCsp != X265_CSP_I400 && m_frame->m_fencPic->m_picCsp != X265_CSP_I400? NUM_PLANE : 1); plane++)
@@ -1188,9 +1191,9 @@ void SAO::calcSaoStatsCu_BeforeDblk(Frame* frame, int idxX, int idxY)
 /* reset offset statistics */
 void SAO::resetStats()
 {
-    memset(m_count, 0, sizeof(m_count));
-    memset(m_offset, 0, sizeof(m_offset));
-    memset(m_offsetOrg, 0, sizeof(m_offsetOrg));
+    std::memset(m_count, 0, sizeof(m_count));
+    std::memset(m_offset, 0, sizeof(m_offset));
+    std::memset(m_offsetOrg, 0, sizeof(m_offsetOrg));
 }
 
 void SAO::rdoSaoUnitRowEnd(const SAOParam* saoParam, int numctus)
@@ -1239,13 +1242,13 @@ void SAO::rdoSaoUnitCu(SAOParam* saoParam, int rowBaseAddr, int idxX, int addr)
     // TODO: Confirm the address space is continuous
     if (m_param->bSaoNonDeblocked)
     {
-        memcpy(m_count, m_countPreDblk[addr], sizeof(m_count));
-        memcpy(m_offsetOrg, m_offsetOrgPreDblk[addr], sizeof(m_offsetOrg));
+        std::memcpy(m_count, m_countPreDblk[addr], sizeof(m_count));
+        std::memcpy(m_offsetOrg, m_offsetOrgPreDblk[addr], sizeof(m_offsetOrg));
     }
     else
     {
-        memset(m_count, 0, sizeof(m_count));
-        memset(m_offsetOrg, 0, sizeof(m_offsetOrg));
+        std::memset(m_count, 0, sizeof(m_count));
+        std::memset(m_offsetOrg, 0, sizeof(m_offsetOrg));
     }
 
     for (int i = 0; i < planes; i++)
@@ -1258,7 +1261,7 @@ void SAO::rdoSaoUnitCu(SAOParam* saoParam, int rowBaseAddr, int idxX, int addr)
     if (allowMerge[1])
         m_entropyCoder.codeSaoMerge(0);
     m_entropyCoder.store(m_rdContexts.temp);
-    memset(m_offset, 0, sizeof(m_offset));
+    std::memset(m_offset, 0, sizeof(m_offset));
     int64_t bestCost = 0;
     int64_t rateDist = 0;
 
@@ -1446,8 +1449,8 @@ void SAO::estIterOffset(int typeIdx, int64_t lambda, int32_t count, int32_t offs
     while (offset != 0)
     {
         // Calculate the bits required for signalling the offset
-        uint32_t rate = (typeIdx == SAO_BO) ? (abs(offset) + 2) : (abs(offset) + 1);
-        if (abs(offset) == OFFSET_THRESH - 1)
+        uint32_t rate = (typeIdx == SAO_BO) ? (std::abs(offset) + 2) : (std::abs(offset) + 1);
+        if (std::abs(offset) == OFFSET_THRESH - 1)
             rate--;
 
         // Do the dequntization before distorion calculation
@@ -1773,8 +1776,8 @@ void saoCuStatsE0_c(const int16_t *diff, const pixel *rec, intptr_t stride, int 
 
     X265_CHECK(endX <= MAX_CU_SIZE, "endX too big\n");
 
-    memset(tmp_stats, 0, sizeof(tmp_stats));
-    memset(tmp_count, 0, sizeof(tmp_count));
+    std::memset(tmp_stats, 0, sizeof(tmp_stats));
+    std::memset(tmp_count, 0, sizeof(tmp_count));
 
     for (int y = 0; y < endY; y++)
     {
@@ -1810,8 +1813,8 @@ void saoCuStatsE1_c(const int16_t *diff, const pixel *rec, intptr_t stride, int8
     int32_t tmp_stats[SAO::NUM_EDGETYPE];
     int32_t tmp_count[SAO::NUM_EDGETYPE];
 
-    memset(tmp_stats, 0, sizeof(tmp_stats));
-    memset(tmp_count, 0, sizeof(tmp_count));
+    std::memset(tmp_stats, 0, sizeof(tmp_stats));
+    std::memset(tmp_count, 0, sizeof(tmp_count));
 
     X265_CHECK(endX * endY <= (4096 - 16), "Assembly of saoE1 may overflow with this block size\n");
     for (int y = 0; y < endY; y++)
@@ -1846,8 +1849,8 @@ void saoCuStatsE2_c(const int16_t *diff, const pixel *rec, intptr_t stride, int8
     int32_t tmp_stats[SAO::NUM_EDGETYPE];
     int32_t tmp_count[SAO::NUM_EDGETYPE];
 
-    memset(tmp_stats, 0, sizeof(tmp_stats));
-    memset(tmp_count, 0, sizeof(tmp_count));
+    std::memset(tmp_stats, 0, sizeof(tmp_stats));
+    std::memset(tmp_count, 0, sizeof(tmp_count));
 
     for (int y = 0; y < endY; y++)
     {
@@ -1883,8 +1886,8 @@ void saoCuStatsE3_c(const int16_t *diff, const pixel *rec, intptr_t stride, int8
     int32_t tmp_stats[SAO::NUM_EDGETYPE];
     int32_t tmp_count[SAO::NUM_EDGETYPE];
 
-    memset(tmp_stats, 0, sizeof(tmp_stats));
-    memset(tmp_count, 0, sizeof(tmp_count));
+    std::memset(tmp_stats, 0, sizeof(tmp_stats));
+    std::memset(tmp_count, 0, sizeof(tmp_count));
 
     for (int y = 0; y < endY; y++)
     {
@@ -1892,7 +1895,7 @@ void saoCuStatsE3_c(const int16_t *diff, const pixel *rec, intptr_t stride, int8
         {
             int signDown = signOf2(rec[x], rec[x + stride - 1]);
             X265_CHECK(signDown == x265_signOf(rec[x] - rec[x + stride - 1]), "signDown check failure\n");
-            X265_CHECK(abs(upBuff1[x]) <= 1, "upBuffer1 check failure\n");
+            X265_CHECK(std::abs(upBuff1[x]) <= 1, "upBuffer1 check failure\n");
 
             uint32_t edgeType = signDown + upBuff1[x] + 2;
             upBuff1[x - 1] = (int8_t)(-signDown);

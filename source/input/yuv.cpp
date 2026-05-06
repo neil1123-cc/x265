@@ -88,7 +88,7 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
     else
     {
         if (ifs && ifs != stdin)
-            fclose(ifs);
+            std::fclose(ifs);
         ifs = NULL;
         return;
     }
@@ -132,14 +132,14 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
             fseeko(ifs, (int64_t)framesize * info.skipFrames, SEEK_CUR);
         else
             for (int i = 0; i < info.skipFrames; i++)
-                if (fread(buf[0], framesize, 1, ifs) != 1)
+                if (std::fread(buf[0], framesize, 1, ifs) != 1)
                     break;
     }
 }
 YUVInput::~YUVInput()
 {
     if (ifs && ifs != stdin)
-        fclose(ifs);
+        std::fclose(ifs);
     for (int i = 0; i < QUEUE_SIZE; i++)
         X265_FREE(buf[i]);
 }
@@ -187,7 +187,7 @@ bool YUVInput::populateFrameQueue()
             return false;
     }
     ProfileScopeEvent(frameRead);
-    if (fread(buf[written % QUEUE_SIZE], framesize, 1, ifs) == 1)
+    if (std::fread(buf[written % QUEUE_SIZE], framesize, 1, ifs) == 1)
     {
         writeCount.incr();
         return true;
