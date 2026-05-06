@@ -35,6 +35,9 @@
 #include "motion.h"
 #include "ratecontrol.h"
 
+#include <cmath>
+#include <cstdlib>
+
 #if DETAILED_CU_STATS
 #define ProfileLookaheadTime(elapsed, count) ScopedElapsedTime _scope(elapsed); count++
 #else
@@ -321,7 +324,7 @@ void LookaheadTLD::xPreanalyzeQp(Frame* curFrame)
         {
             for (uint32_t x = 0; x < width; x += aqPartWidth, pcAQU++, pcQP++, pcCuTree++)
             {
-                double dMaxQScale = pow(2.0, curFrame->m_param->rc.qpAdaptationRange / 6.0);
+                double dMaxQScale = std::pow(2.0, curFrame->m_param->rc.qpAdaptationRange / 6.0);
                 double dCUAct = *pcAQU;
                 double dAvgAct = pcAQLayer->dAvgActivity;
 
@@ -548,7 +551,7 @@ void LookaheadTLD::calcAdaptiveQuantFrame(Frame *curFrame, x265_param* param)
                                 edgeDensity = edgeDensityCu(curFrame, avgAngle, blockX, blockY, param->rc.qgSize);
                                 if (edgeDensity)
                                 {
-                                    qp_adj = pow(edgeDensity * bit_depth_correction + 1, 0.1);
+                                    qp_adj = std::pow(edgeDensity * bit_depth_correction + 1, 0.1);
                                     //Increasing the QP of a block if its edge orientation lies around the multiples of 45 degree
                                     if ((avgAngle >= EDGE_INCLINATION - 15 && avgAngle <= EDGE_INCLINATION + 15) || (avgAngle >= EDGE_INCLINATION + 75 && avgAngle <= EDGE_INCLINATION + 105))
                                         curFrame->m_lowres.edgeInclined[blockXY] = 1;
@@ -557,12 +560,12 @@ void LookaheadTLD::calcAdaptiveQuantFrame(Frame *curFrame, x265_param* param)
                                 }
                                 else
                                 {
-                                    qp_adj = pow(energy * bit_depth_correction + 1, 0.1);
+                                    qp_adj = std::pow(energy * bit_depth_correction + 1, 0.1);
                                     curFrame->m_lowres.edgeInclined[blockXY] = 0;
                                 }
                             }
                             else
-                                qp_adj = pow(energy * bit_depth_correction + 1, 0.1);
+                                qp_adj = std::pow(energy * bit_depth_correction + 1, 0.1);
                             curFrame->m_lowres.qpCuTreeOffset[blockXY] = qp_adj;
                             avg_adj += qp_adj;
                             avg_adj_pow2 += qp_adj * qp_adj;
@@ -3554,14 +3557,14 @@ void Lookahead::calcMotionAdaptiveQuantFrame(Lowres **frames, int p0, int p1, in
                     int32_t x = mvs[cuIndex].x;
                     int32_t y = mvs[cuIndex].y;
                     // NOTE: the dynamic range of abs(x) and abs(y) is 15-bits
-                    displacement += sqrt((double)(abs(x) * abs(x)) + (double)(abs(y) * abs(y)));
+                    displacement += std::sqrt((double)(std::abs(x) * std::abs(x)) + (double)(std::abs(y) * std::abs(y)));
                 }
                 else
                     displacement += 0.0;
             }
             if (lists_used == 3)
                 displacement = displacement / 2;
-            qp_adj = pow(displacement, 0.1);
+            qp_adj = std::pow(displacement, 0.1);
             frames[b]->qpAqMotionOffset[cuIndex] = qp_adj;
             avg_adj += qp_adj;
             avg_adj_pow2 += qp_adj * qp_adj;
@@ -3569,7 +3572,7 @@ void Lookahead::calcMotionAdaptiveQuantFrame(Lowres **frames, int p0, int p1, in
     }
     avg_adj /= m_cuCount;
     avg_adj_pow2 /= m_cuCount;
-    sd = sqrt((avg_adj_pow2 - (avg_adj * avg_adj)));
+    sd = std::sqrt((avg_adj_pow2 - (avg_adj * avg_adj)));
     if (sd > 0)
     {
         for (uint16_t blocky = 0; blocky < m_8x8Height; blocky++)
