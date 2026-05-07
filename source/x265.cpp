@@ -73,7 +73,7 @@ static int get_argv_utf8(int *argc_ptr, char ***argv_ptr)
         for (int i = 0; i < argc; i++)
             size += WideCharToMultiByte(CP_UTF8, 0, argv_utf16[i], -1, NULL, 0, NULL, NULL);
 
-        char **argv = *argv_ptr = (char**)malloc(size);
+        char **argv = *argv_ptr = (char**)std::malloc(size);
         if (argv)
         {
             for (int i = 0; i < argc; i++)
@@ -321,7 +321,7 @@ int main(int argc, char **argv)
         if (!cliopt[0].parseScenecutAwareQpConfig())
         {
             x265_log(NULL, X265_LOG_ERROR, "Unable to parse scenecut aware qp config file \n");
-            fclose(cliopt[0].scenecutAwareQpConfig);
+            std::fclose(cliopt[0].scenecutAwareQpConfig);
             cliopt[0].scenecutAwareQpConfig = NULL;
         }
     }
@@ -358,7 +358,7 @@ int main(int argc, char **argv)
 #if _WIN32
     if (argv != orgArgv)
     {
-        free(argv);
+        std::free(argv);
         argv = orgArgv;
     }
 #endif
