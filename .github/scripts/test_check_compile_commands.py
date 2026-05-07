@@ -1908,6 +1908,85 @@ def main():
             'file': str(root / 'source/common/template.inc'),
         }])
         expect_fail(run_checker(msvc_fused_tp_response_arguments_missing_std_dir), 'missing GNU++20 dialect')
+
+        ci_shape_api_dual_response_arguments_missing_export_dir = root / 'ci-shape-api-dual-response-arguments-missing-export'
+        (ci_shape_api_dual_response_arguments_missing_export_dir / 'rsp').mkdir(parents=True)
+        (ci_shape_api_dual_response_arguments_missing_export_dir / 'rsp' / 'api-command.rsp').write_text('-DEXPORT_C_API=1 -DX265_DEPTH=8')
+        (ci_shape_api_dual_response_arguments_missing_export_dir / 'rsp' / 'api-arguments.rsp').write_text('-DX265_DEPTH=8')
+        write_compile_commands_records(ci_shape_api_dual_response_arguments_missing_export_dir, ci_shape_records(ci_shape_api_dual_response_arguments_missing_export_dir, root, {
+            'source/encoder/api.cpp': {
+                'command_flags': ['@rsp/api-command.rsp'],
+                'argument_flags': ['@rsp/api-arguments.rsp'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(ci_shape_api_dual_response_arguments_missing_export_dir), 'missing required flag -DEXPORT_C_API=1 for file substring source/encoder/api.cpp')
+
+        ci_shape_encoder_dual_response_command_forbidden_lsmash_dir = root / 'ci-shape-encoder-dual-response-command-forbidden-lsmash'
+        (ci_shape_encoder_dual_response_command_forbidden_lsmash_dir / 'rsp').mkdir(parents=True)
+        (ci_shape_encoder_dual_response_command_forbidden_lsmash_dir / 'rsp' / 'encoder-command.rsp').write_text('-DX265_DEPTH=8 -DENABLE_LSMASH')
+        (ci_shape_encoder_dual_response_command_forbidden_lsmash_dir / 'rsp' / 'encoder-arguments.rsp').write_text('-DX265_DEPTH=8')
+        write_compile_commands_records(ci_shape_encoder_dual_response_command_forbidden_lsmash_dir, ci_shape_records(ci_shape_encoder_dual_response_command_forbidden_lsmash_dir, root, {
+            'source/encoder/encoder.cpp': {
+                'command_flags': ['@rsp/encoder-command.rsp'],
+                'argument_flags': ['@rsp/encoder-arguments.rsp'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(ci_shape_encoder_dual_response_command_forbidden_lsmash_dir), 'forbidden flag -DENABLE_LSMASH for file substring source/encoder/encoder.cpp')
+
+        windows_response_dual_forbidden_file_substring_dir = root / 'windows-response-dual-forbidden-file-substring'
+        windows_response_dual_forbidden_file_substring_dir.mkdir()
+        (windows_response_dual_forbidden_file_substring_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (windows_response_dual_forbidden_file_substring_dir / 'arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(windows_response_dual_forbidden_file_substring_dir, [{
+            'directory': str(windows_response_dual_forbidden_file_substring_dir),
+            'command': 'c++ @command.rsp -c source\\output/mp4.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/output/mp4.cpp'],
+            'file': str(root / 'source\\output\\mp4.cpp'),
+        }])
+        expect_fail(run_checker(windows_response_dual_forbidden_file_substring_dir, '--forbidden-file-substring=source\\output\\mp4.cpp'), 'forbidden compile command for file substring source/output/mp4.cpp')
+
+        pgo_consume_dual_response_arguments_missing_prefix_dir = root / 'pgo-consume-dual-response-arguments-missing-prefix'
+        (pgo_consume_dual_response_arguments_missing_prefix_dir / 'rsp').mkdir(parents=True)
+        (pgo_consume_dual_response_arguments_missing_prefix_dir / 'rsp' / 'command.rsp').write_text('-std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata')
+        (pgo_consume_dual_response_arguments_missing_prefix_dir / 'rsp' / 'arguments.rsp').write_text('-std=gnu++20 -fprofile-sample-use=/tmp/x265.profdata')
+        write_compile_commands_records(pgo_consume_dual_response_arguments_missing_prefix_dir, [{
+            'directory': str(pgo_consume_dual_response_arguments_missing_prefix_dir),
+            'command': 'c++ @rsp/command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@rsp/arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(pgo_consume_dual_response_arguments_missing_prefix_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
+
+        windows_response_depth_exclude_no_trailing_dual_field_dir = root / 'windows-response-depth-exclude-no-trailing-dual-field-pass'
+        (windows_response_depth_exclude_no_trailing_dual_field_dir / 'rsp').mkdir(parents=True)
+        (windows_response_depth_exclude_no_trailing_dual_field_dir / 'rsp' / 'excluded-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        (windows_response_depth_exclude_no_trailing_dual_field_dir / 'rsp' / 'excluded-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -DX265_DEPTH=10')
+        (windows_response_depth_exclude_no_trailing_dual_field_dir / 'rsp' / 'common-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        (windows_response_depth_exclude_no_trailing_dual_field_dir / 'rsp' / 'common-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands_records(windows_response_depth_exclude_no_trailing_dual_field_dir, [{
+            'directory': str(windows_response_depth_exclude_no_trailing_dual_field_dir),
+            'command': 'c++ @rsp/excluded-command.rsp -c source\\dynamicHDR10\\json11.cpp',
+            'arguments': ['c++', '@rsp/excluded-arguments.rsp', '-c', 'source\\dynamicHDR10\\json11.cpp'],
+            'file': str(root / 'source\\dynamicHDR10\\json11.cpp'),
+        }, {
+            'directory': str(windows_response_depth_exclude_no_trailing_dual_field_dir),
+            'command': 'c++ @rsp/common-command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@rsp/common-arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(windows_response_depth_exclude_no_trailing_dual_field_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10'))
+
+        msvc_tp_fused_tp_dual_response_dir = root / 'msvc-tp-fused-tp-dual-response'
+        msvc_tp_fused_tp_dual_response_dir.mkdir()
+        (msvc_tp_fused_tp_dual_response_dir / 'command.rsp').write_text('/TP /std:c++20')
+        (msvc_tp_fused_tp_dual_response_dir / 'arguments.rsp').write_text('/Tpsource/common/template.inc /std:c++20')
+        write_compile_commands_records(msvc_tp_fused_tp_dual_response_dir, [{
+            'directory': str(msvc_tp_fused_tp_dual_response_dir),
+            'command': 'clang-cl @command.rsp /c source/common/template.inc',
+            'arguments': ['clang-cl', '@arguments.rsp', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(msvc_tp_fused_tp_dual_response_dir, '--min-cpp-commands=1'))
         duplicate_source_non_cpp_dir = root / 'duplicate-source-min-cpp-commands-non-cpp'
         write_compile_commands_records(duplicate_source_non_cpp_dir, [
             {
