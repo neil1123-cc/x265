@@ -44,23 +44,22 @@ enum
 };
 
 using namespace X265_NS;
-using namespace std;
 
 class GOPOutput : public OutputFile
 {
 protected:
     bool b_fail;
     int openFile(const char* fname);
-    FILE* open_file_for_write(const string fname, bool retry);
-    void smart_fwrite(const void* data, size_t size, FILE* file);
+    FILE* open_file_for_write(const std::string fname, bool retry);
+    void smart_fwrite(const void* data, std::size_t size, FILE* file);
     void clean_up();
 
     FILE* gop_file;
     FILE* data_file;
-    size_t data_pos;
+    std::size_t data_pos;
     bool options_written;
-    string filename_prefix;
-    string dir_prefix;
+    std::string filename_prefix;
+    std::string dir_prefix;
     InputFileInfo info;
     int i_numframe;
 

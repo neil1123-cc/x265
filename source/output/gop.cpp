@@ -36,7 +36,6 @@
 #endif
 
 using namespace X265_NS;
-using namespace std;
 
 #ifdef _MSC_VER
     #include <windows.h>
@@ -44,7 +43,7 @@ using namespace std;
 #endif
 #define TIME_WAIT 30
 
-FILE* GOPOutput::open_file_for_write(const string fname, bool retry)
+FILE* GOPOutput::open_file_for_write(const std::string fname, bool retry)
 {
     while(true)
     {
@@ -65,9 +64,9 @@ FILE* GOPOutput::open_file_for_write(const string fname, bool retry)
     return NULL;
 }
 
-void GOPOutput::smart_fwrite(const void* data, size_t size, FILE* file)
+void GOPOutput::smart_fwrite(const void* data, std::size_t size, FILE* file)
 {
-    size_t written;
+    std::size_t written;
     while(true)
     {
         written = std::fwrite(data, 1, size, file);
@@ -94,15 +93,15 @@ int GOPOutput::openFile(const char* gop_filename)
     gop_file = open_file_for_write(gop_filename, false);
     if(!gop_file) return -1;
 
-    string gop_fn(gop_filename);
-    size_t pos;
-    if((pos = gop_fn.rfind('/')) != string::npos || (pos = gop_fn.rfind('\\')) != string::npos)
+    std::string gop_fn(gop_filename);
+    std::size_t pos;
+    if((pos = gop_fn.rfind('/')) != std::string::npos || (pos = gop_fn.rfind('\\')) != std::string::npos)
     {
         dir_prefix = gop_fn.substr(0, pos+1);
         gop_fn = gop_fn.substr(pos+1);
     }
 
-    if((pos = gop_fn.rfind('.')) != string::npos)
+    if((pos = gop_fn.rfind('.')) != std::string::npos)
         filename_prefix = gop_fn.substr(0, pos);
     else
         filename_prefix = gop_fn;
@@ -167,9 +166,9 @@ int GOPOutput::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     if (is_keyframe) {
         if (data_file)
             std::fclose(data_file);
-        stringstream ss;
-        ss << filename_prefix << string("-") << std::setfill('0') << setw(6) << i_numframe << string(".hevc-gop-data");
-        string data_filename = ss.str();
+        std::stringstream ss;
+        ss << filename_prefix << std::string("-") << std::setfill('0') << std::setw(6) << i_numframe << std::string(".hevc-gop-data");
+        std::string data_filename = ss.str();
         data_file = open_file_for_write(dir_prefix + data_filename, i_numframe > 0);
         if(!data_file) return -1;
         data_pos = 0;

@@ -79,13 +79,13 @@ Analysis::Analysis()
     m_bChromaSa8d = false;
     m_bHD = false;
 
-    memset(m_modeFlag, 0, sizeof(m_modeFlag));
-    memset(m_checkMergeAndSkipOnly, 0, sizeof(m_checkMergeAndSkipOnly));
+    std::memset(m_modeFlag, 0, sizeof(m_modeFlag));
+    std::memset(m_checkMergeAndSkipOnly, 0, sizeof(m_checkMergeAndSkipOnly));
 
     for (int i = 0; i < NUM_CU_DEPTH; i++)
     {
         m_modeDepth[i].bestMode = NULL;
-        memset(m_modeDepth[i].pred, 0, sizeof(m_modeDepth[i].pred));
+        std::memset(m_modeDepth[i].pred, 0, sizeof(m_modeDepth[i].pred));
     }
 
     m_reuseInterDataCTU = NULL;
@@ -105,7 +105,7 @@ Analysis::Analysis()
     m_evaluateInter = 0;
     m_refineLevel = 0;
 
-    memset(m_splitRefIdx, 0, sizeof(m_splitRefIdx));
+    std::memset(m_splitRefIdx, 0, sizeof(m_splitRefIdx));
 }
 
 bool Analysis::create(ThreadLocalData *tld)

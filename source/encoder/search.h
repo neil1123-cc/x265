@@ -93,7 +93,7 @@ struct MotionData
 
     MotionData()
     {
-        memset(this, 0, sizeof(MotionData));
+        std::memset(this, 0, sizeof(MotionData));
     }
 };
 
@@ -204,7 +204,7 @@ struct CUStats
 
     void clear()
     {
-        memset(this, 0, sizeof(*this));
+        std::memset(this, 0, sizeof(*this));
     }
 
     void accumulate(CUStats& other, x265_param& param)
