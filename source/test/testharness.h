@@ -29,6 +29,9 @@
 #include "common.h"
 #include "primitives.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 #if _MSC_VER
 #pragma warning(disable: 4324) // structure was padded due to __declspec(align())
 #endif
@@ -129,8 +132,8 @@ static inline uint32_t __rdtsc(void)
         x265_emms(); \
         float optperf = (10.0f * cycles / runs) / 4; \
         float refperf = (10.0f * refcycles / refruns) / 4; \
-        printf(" | \t%3.2fx | ", refperf / optperf); \
-        printf("\t %-8.2lf | \t %-8.2lf\n", optperf, refperf); \
+        std::printf(" | \t%3.2fx | ", refperf / optperf); \
+        std::printf("\t %-8.2lf | \t %-8.2lf\n", optperf, refperf); \
     }
 
 extern "C" {
@@ -158,19 +161,19 @@ float PFX(checkasm_call_float)(float (*func)(), int *ok, ...);
  */
 void PFX(checkasm_stack_clobber)(uint64_t clobber, ...);
 #define checked(func, ...) ( \
-        m_ok = 1, m_rand = (rand() & 0xffff) * 0x0001000100010001ULL, \
+        m_ok = 1, m_rand = (std::rand() & 0xffff) * 0x0001000100010001ULL, \
         PFX(checkasm_stack_clobber)(m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, \
                                     m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, \
                                     m_rand, m_rand, m_rand, m_rand, m_rand), /* max_args+6 */ \
         PFX(checkasm_call)((intptr_t(*)())reinterpret_cast<void*>(func), &m_ok, 0, 0, 0, 0, __VA_ARGS__))
 
 #define checked_float(func, ...) ( \
-        m_ok = 1, m_rand = (rand() & 0xffff) * 0x0001000100010001ULL, \
+        m_ok = 1, m_rand = (std::rand() & 0xffff) * 0x0001000100010001ULL, \
         PFX(checkasm_stack_clobber)(m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, \
                                     m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, m_rand, \
                                     m_rand, m_rand, m_rand, m_rand, m_rand), /* max_args+6 */ \
         PFX(checkasm_call_float)((float(*)())reinterpret_cast<void*>(func), &m_ok, 0, 0, 0, 0, __VA_ARGS__))
-#define reportfail() if (!m_ok) { fflush(stdout); fprintf(stderr, "stack clobber check failed at %s:%d", __FILE__, __LINE__); abort(); }
+#define reportfail() if (!m_ok) { std::fflush(stdout); std::fprintf(stderr, "stack clobber check failed at %s:%d", __FILE__, __LINE__); std::abort(); }
 #elif ARCH_X86
 #define checked(func, ...) PFX(checkasm_call)((intptr_t(*)())func, &m_ok, __VA_ARGS__);
 #define checked_float(func, ...) PFX(checkasm_call_float)((float(*)())func, &m_ok, __VA_ARGS__);
