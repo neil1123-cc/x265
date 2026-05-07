@@ -1063,7 +1063,7 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
     if (!vbv2Pass(allAvailableBits, m_numEntries - 1, 0))
             return false;
     expectedBits = countExpectedBits(0, m_numEntries - 1);
-    if (fabs(expectedBits / allAvailableBits - 1.0) > 0.01)
+    if (std::fabs(expectedBits / allAvailableBits - 1.0) > 0.01)
     {
         double avgq = 0;
         for (int i = 0; i < m_numEntries; i++)
@@ -1639,7 +1639,7 @@ int RateControl::rateControlStart(Frame* curFrame, RateControlEntry* rce, Encode
             rce->qpNoVbv = rce->qpaRc;
             m_lastQScaleFor[m_sliceType] = x265_qp2qScale(rce->qpaRc);
             if (rce->poc == 0)
-                 m_lastQScaleFor[P_SLICE] = m_lastQScaleFor[m_sliceType] * fabs(m_param->rc.ipFactor);
+                 m_lastQScaleFor[P_SLICE] = m_lastQScaleFor[m_sliceType] * std::fabs(m_param->rc.ipFactor);
             rce->frameSizePlanned = predictSize(&m_pred[m_predType], m_qp, (double)m_currentSatd);
         }
     }
@@ -1676,7 +1676,7 @@ double RateControl::getDiffLimitedQScale(RateControlEntry *rce, double q)
     {
         double iq = q;
         double pq = x265_qp2qScale(m_accumPQp / m_accumPNorm);
-        double ipFactor = fabs(m_param->rc.ipFactor);
+        double ipFactor = std::fabs(m_param->rc.ipFactor);
         /* don't apply ipFactor if the following frame is also I */
         if (m_accumPNorm <= 0)
             q = iq;
@@ -1692,7 +1692,7 @@ double RateControl::getDiffLimitedQScale(RateControlEntry *rce, double q)
         if (m_param->rc.pbFactor > 0)
             q = lastNonBqScale;
         if (!rce->keptAsRef)
-            q *= fabs(m_param->rc.pbFactor);
+            q *= std::fabs(m_param->rc.pbFactor);
     }
     else if (rce->sliceType == P_SLICE
              && m_lastNonBPictType == P_SLICE
@@ -2316,7 +2316,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
             {
                 if (!m_param->rc.bStrictCbr)
                     q = x265_qp2qScale(m_accumPQp / m_accumPNorm);
-                q /= fabs(m_param->rc.ipFactor);
+                q /= std::fabs(m_param->rc.ipFactor);
                 m_avgPFrameQp = 0;
             }
             else if (m_framesDone > 0)
@@ -2337,7 +2337,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
             }
             else if (m_qCompress != 1 && m_param->rc.rateControlMode == X265_RC_CRF)
             {
-                q = x265_qp2qScale(CRF_INIT_QP) / fabs(m_param->rc.ipFactor);
+                q = x265_qp2qScale(CRF_INIT_QP) / std::fabs(m_param->rc.ipFactor);
             }
             else if (m_framesDone == 0 && !m_isVbv && m_param->rc.rateControlMode == X265_RC_ABR)
             {
@@ -2397,7 +2397,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         }
         m_lastQScaleFor[m_sliceType] = q;
         if ((m_curSlice->m_poc == 0 || m_lastQScaleFor[P_SLICE] < q) && !(m_2pass && !m_isVbv))
-            m_lastQScaleFor[P_SLICE] = q * fabs(m_param->rc.ipFactor);
+            m_lastQScaleFor[P_SLICE] = q * std::fabs(m_param->rc.ipFactor);
 
         if (m_2pass)
             rce->frameSizePlanned = qScale2bits(rce, q);
@@ -2453,7 +2453,7 @@ void RateControl::rateControlUpdateStats(RateControlEntry* rce)
     if (rce->sliceType != B_SLICE)
         rce->rowCplxrSum = rce->rowTotalBits * x265_qp2qScale(rce->qpaRc) / rce->qRceq;
     else
-        rce->rowCplxrSum = rce->rowTotalBits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * fabs(m_param->rc.pbFactor));
+        rce->rowCplxrSum = rce->rowTotalBits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * std::fabs(m_param->rc.pbFactor));
 
     m_cplxrSum += rce->rowCplxrSum;
     m_totalBits += rce->rowTotalBits;
@@ -3150,13 +3150,13 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
         bool is2passCrfChange = false;
         if (m_2pass && !m_param->rc.bEncFocusedFramesOnly)
         {
-            if (fabs(curEncData.m_avgQpRc - rce->qpPrev) > 0.1)
+            if (std::fabs(curEncData.m_avgQpRc - rce->qpPrev) > 0.1)
             {
                 qpRef = rce->qpPrev;
                 is2passCrfChange = true;
             }
         }
-        if (is2passCrfChange || fabs(qpRef - rce->qpNoVbv) > 0.5)
+        if (is2passCrfChange || std::fabs(qpRef - rce->qpNoVbv) > 0.5)
         {
             double crfFactor = rce->qRceq /x265_qp2qScale(qpRef);
             double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
@@ -3206,7 +3206,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
         {
             /* Depends on the fact that B-frame's QP is an offset from the following P-frame's.
                 * Not perfectly accurate with B-refs, but good enough. */
-            m_cplxrSum += (bits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * fabs(m_param->rc.pbFactor))) - (rce->rowCplxrSum);
+            m_cplxrSum += (bits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * std::fabs(m_param->rc.pbFactor))) - (rce->rowCplxrSum);
         }
         m_wantedBitsWindow += m_frameDuration * (m_bRcReConfig ? (curFrame->m_targetBitrate * 1000) : m_bitrate);
         m_totalBits += bits - rce->rowTotalBits;

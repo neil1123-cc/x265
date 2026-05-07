@@ -3172,8 +3172,8 @@ bool Lookahead::scenecut(Lowres **frames, int p0, int p1, bool bRealScenecut, in
             {
                 int64_t curCost  = frames[i]->costEst[i - p0][0];
                 int64_t prevCost = frames[i - 1]->costEst[i - 1 - p0][0];
-                if (fabs((double)(curCost - avgSatdCost)) > 0.1 * avgSatdCost || 
-                    fabs((double)(curCost - prevCost)) > 0.1 * prevCost)
+                if (std::fabs((double)(curCost - avgSatdCost)) > 0.1 * avgSatdCost ||
+                    std::fabs((double)(curCost - prevCost)) > 0.1 * prevCost)
                 {
                     fluctuate = true;
                     if (!m_isSceneTransition && frames[i]->bScenecut)

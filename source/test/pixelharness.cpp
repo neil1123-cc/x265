@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 
 using namespace X265_NS;
 
@@ -1066,7 +1067,7 @@ bool PixelHarness::check_ssim_end(ssim_end4_t ref, ssim_end4_t opt)
         int width = (std::rand() % 4) + 1; // range[1-4]
         float cres = ref(sum0, sum1, width);
         float vres = checked_float(opt, sum0, sum1, width);
-        if (fabs(vres - cres) > 0.001)
+        if (std::fabs(vres - cres) > 0.001)
             return false;
         reportfail();
     }
