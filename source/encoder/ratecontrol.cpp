@@ -2754,12 +2754,12 @@ double RateControl::clipQscale(Frame* curFrame, RateControlEntry* rce, double q)
     }
     if (!curFrame && m_2pass)
     {
-        double min = log(lmin);
-        double max = log(lmax);
-        q = (log(q) - min) / (max - min) - 0.5;
-        q = 1.0 / (1.0 + exp(-4 * q));
+        double min = std::log(lmin);
+        double max = std::log(lmax);
+        q = (std::log(q) - min) / (max - min) - 0.5;
+        q = 1.0 / (1.0 + std::exp(-4 * q));
         q = q*(max - min) + min;
-        return exp(q);
+        return std::exp(q);
     }
     return x265_clip3(lmin, lmax, q);
 }
