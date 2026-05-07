@@ -151,18 +151,18 @@ bool AVSInput::readPicture(x265_picture& pic)
     uint8_t* ptr = frame_buffer;
     pic.planes[0] = ptr;
     pic.stride[0] = frm->pitch;
-    memcpy(pic.planes[0], frm->vfb->data + frm->offset, frm->pitch * frm->height);
+    std::memcpy(pic.planes[0], frm->vfb->data + frm->offset, frm->pitch * frm->height);
     if (h->plane_count > 1)
     {
         ptr += frm->pitch * frm->height;
         pic.planes[1] = ptr;
         pic.stride[1] = frm->pitchUV;
-        memcpy(pic.planes[1], frm->vfb->data + frm->offsetU, frm->pitchUV * frm->heightUV);
+        std::memcpy(pic.planes[1], frm->vfb->data + frm->offsetU, frm->pitchUV * frm->heightUV);
 
         ptr += frm->pitchUV * frm->heightUV;
         pic.planes[2] = ptr;
         pic.stride[2] = frm->pitchUV;
-        memcpy(pic.planes[2], frm->vfb->data + frm->offsetV, frm->pitchUV * frm->heightUV);
+        std::memcpy(pic.planes[2], frm->vfb->data + frm->offsetV, frm->pitchUV * frm->heightUV);
     }
     pic.colorSpace = _info.csp;
     pic.bitDepth = _info.depth;

@@ -30,6 +30,8 @@
 #include "nal.h"
 #include "md5.h"
 
+#include <cstdio>
+
 namespace X265_NS {
 // private namespace
 
@@ -688,7 +690,7 @@ public:
     uint32_t minDisplayMasteringLuminance;
     bool parse(const char* value)
     {
-        return sscanf(value, "G(%hu,%hu)B(%hu,%hu)R(%hu,%hu)WP(%hu,%hu)L(%u,%u)",
+        return std::sscanf(value, "G(%hu,%hu)B(%hu,%hu)R(%hu,%hu)WP(%hu,%hu)L(%u,%u)",
                       &displayPrimaryX[0], &displayPrimaryY[0],
                       &displayPrimaryX[1], &displayPrimaryY[1],
                       &displayPrimaryX[2], &displayPrimaryY[2],

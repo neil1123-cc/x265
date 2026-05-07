@@ -4,6 +4,7 @@
 #include "input.h"
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <avisynth/avisynth_c.h>
 
 #if _WIN32
@@ -99,13 +100,13 @@ public:
     AVSInput(InputFileInfo& info)
     {
         h = &handle;
-        memset(h, 0, sizeof(handle));
+        std::memset(h, 0, sizeof(handle));
 
-        const char * filename_pos = strstr(info.filename, "]://");
+        const char * filename_pos = std::strstr(info.filename, "]://");
         if(info.filename[0] == '[' && filename_pos) {
             char real_libname[BUFFER_SIZE] {0};
-            strncpy(real_libname, info.filename + 1, BUFFER_SIZE - 1);
-            strncpy(real_filename, filename_pos + 4, BUFFER_SIZE - 1);
+            std::strncpy(real_libname, info.filename + 1, BUFFER_SIZE - 1);
+            std::strncpy(real_filename, filename_pos + 4, BUFFER_SIZE - 1);
             real_libname[filename_pos - info.filename - 1] = 0;
             #if _WIN32
                 if(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, real_libname, -1, libname_buffer, sizeof(libname_buffer)/sizeof(wchar_t))) {
@@ -117,13 +118,13 @@ public:
                     return;
                 }
             #else
-                strncpy(libname_buffer, real_libname, BUFFER_SIZE);
+                std::strncpy(libname_buffer, real_libname, BUFFER_SIZE);
                 libname = libname_buffer;
             #endif
             general_log(nullptr, "avs+", X265_LOG_INFO, "Using external AviSynth+ library from %s\n", real_libname);
         }
         else {
-            strncpy(real_filename, info.filename, BUFFER_SIZE - 1);
+            std::strncpy(real_filename, info.filename, BUFFER_SIZE - 1);
         }
         load_avs();
         if (!h->library)

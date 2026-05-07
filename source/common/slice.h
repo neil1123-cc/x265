@@ -28,6 +28,8 @@
 #include "common.h"
 #include "mv.h"
 
+#include <cstring>
+
 namespace X265_NS {
 // private namespace
 
@@ -60,9 +62,9 @@ struct RPS
         , numberOfNegativePictures(0)
         , numberOfPositivePictures(0)
     {
-        memset(deltaPOC, 0, sizeof(deltaPOC));
-        memset(poc, 0, sizeof(poc));
-        memset(bUsed, 0, sizeof(bUsed));
+        std::memset(deltaPOC, 0, sizeof(deltaPOC));
+        std::memset(poc, 0, sizeof(poc));
+        std::memset(bUsed, 0, sizeof(bUsed));
     }
 
     void sortDeltaPOC();
@@ -295,7 +297,7 @@ struct SPS
 
     SPS()
     {
-        memset((void*)this, 0, sizeof(*this));
+        std::memset((void*)this, 0, sizeof(*this));
     }
 
     ~SPS()
@@ -424,9 +426,9 @@ public:
         m_sLFaseFlag = true;
         m_numRefIdx[0] = m_numRefIdx[1] = 0;
         m_ctuMV = NULL;
-        memset(m_refFrameList, 0, sizeof(m_refFrameList));
-        memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
-        memset(m_refPOCList, 0, sizeof(m_refPOCList));
+        std::memset(m_refFrameList, 0, sizeof(m_refFrameList));
+        std::memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
+        std::memset(m_refPOCList, 0, sizeof(m_refPOCList));
         disableWeights();
         m_iPPSQpMinus26 = 0;
         numRefIdxDefault[0] = 1;

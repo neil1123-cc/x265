@@ -1157,6 +1157,30 @@ def main():
         }])
         expect_fail(run_checker(msvc_tp_missing_std_dir), 'missing GNU++20 dialect')
 
+        msvc_tp_old_std_dir = root / 'msvc-tp-cxx-language-old-std'
+        write_compile_commands_records(msvc_tp_old_std_dir, [{
+            'directory': str(msvc_tp_old_std_dir),
+            'command': 'clang-cl /TP /std:c++17 /c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_tp_old_std_dir), 'old standard flag /std:c++17')
+
+        msvc_fused_tp_old_std_dir = root / 'msvc-fused-tp-cxx-language-old-std'
+        write_compile_commands_records(msvc_fused_tp_old_std_dir, [{
+            'directory': str(msvc_fused_tp_old_std_dir),
+            'arguments': ['clang-cl', '/Tpsource/common/template.inc', '/std:c++17', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_fused_tp_old_std_dir), 'old standard flag /std:c++17')
+
+        msvc_tc_language_dir = root / 'msvc-tc-c-language'
+        write_compile_commands_records(msvc_tc_language_dir, [{
+            'directory': str(msvc_tc_language_dir),
+            'arguments': ['clang-cl', '/TC', '/std:c++20', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_tc_language_dir), 'no C++ compile commands')
+
         write_compile_commands(root / 'only-c', 'cc -std=c11 -c source/common/pixel.c', 'source/common/pixel.c')
         expect_fail(run_checker(root / 'only-c'), 'no C++ compile commands')
 
@@ -1452,6 +1476,41 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(response_mixed_fields_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'), 'missing required flag -Werror=deprecated')
+
+        response_cycle_required_file_flag_dir = root / 'response-file-cycle-required-file-flag'
+        response_cycle_required_file_flag_dir.mkdir()
+        (response_cycle_required_file_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF @args.rsp')
+        write_compile_commands(response_cycle_required_file_flag_dir, 'c++ @args.rsp -c source/input/lavf.cpp', 'source/input/lavf.cpp')
+        expect_pass(run_checker(response_cycle_required_file_flag_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'))
+
+        response_cycle_required_prefix_dir = root / 'response-file-cycle-required-prefix'
+        response_cycle_required_prefix_dir.mkdir()
+        (response_cycle_required_prefix_dir / 'args.rsp').write_text('-std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata @args.rsp')
+        write_compile_commands(response_cycle_required_prefix_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_pass(run_checker(response_cycle_required_prefix_dir, '--required-flag-prefix=-fprofile-instr-use='))
+
+        response_dual_field_std_drift_dir = root / 'response-dual-field-required-file-flag-std-drift'
+        response_dual_field_std_drift_dir.mkdir()
+        (response_dual_field_std_drift_dir / 'command.rsp').write_text('-std=gnu++20 -DENABLE_LAVF')
+        write_compile_commands_records(response_dual_field_std_drift_dir, [{
+            'directory': str(response_dual_field_std_drift_dir),
+            'command': 'c++ @command.rsp -c source/input/lavf.cpp',
+            'arguments': ['c++', '-std=c++20', '-DENABLE_LAVF', '-c', 'source/input/lavf.cpp'],
+            'file': str(root / 'source/input/lavf.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_std_drift_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'duplicate standard flags -std=c++20,-std=gnu++20')
+
+        response_dual_field_required_prefix_missing_dir = root / 'response-dual-field-required-prefix-missing-command'
+        response_dual_field_required_prefix_missing_dir.mkdir()
+        (response_dual_field_required_prefix_missing_dir / 'command.rsp').write_text('-std=gnu++20')
+        (response_dual_field_required_prefix_missing_dir / 'arguments.rsp').write_text('-std=gnu++20 -fprofile-instr-use=/tmp/x265.profdata')
+        write_compile_commands_records(response_dual_field_required_prefix_missing_dir, [{
+            'directory': str(response_dual_field_required_prefix_missing_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_required_prefix_missing_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
 
         response_dual_field_equivalent_std_dir = root / 'response-dual-field-equivalent-std'
         response_dual_field_equivalent_std_dir.mkdir()
@@ -1818,6 +1877,42 @@ def main():
             'file': str(root / 'source/common/template.inc'),
         }])
         expect_fail(run_checker(msvc_fused_tp_response_arguments_missing_std_dir), 'missing GNU++20 dialect')
+        duplicate_source_non_cpp_dir = root / 'duplicate-source-min-cpp-commands-non-cpp'
+        write_compile_commands_records(duplicate_source_non_cpp_dir, [
+            {
+                'directory': str(duplicate_source_non_cpp_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_non_cpp_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DSECOND_PASS=1 -c source/common/common.cpp',
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_non_cpp_dir),
+                'command': 'cc -std=c11 -c source/common/pixel.c',
+                'file': str(root / 'source/common/pixel.c'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_non_cpp_dir, '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
+
+        duplicate_source_response_dir = root / 'duplicate-source-min-cpp-commands-response-file'
+        duplicate_source_response_dir.mkdir()
+        (duplicate_source_response_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(duplicate_source_response_dir, [
+            {
+                'directory': str(duplicate_source_response_dir),
+                'command': 'c++ @std.rsp -c source/common/common.cpp',
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_response_dir),
+                'command': 'c++ @std.rsp -DSECOND_PASS=1 -c source/common/common.cpp',
+                'file': str(root / 'source/common/common.cpp'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_response_dir, '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
 
         duplicate_source_dir = root / 'duplicate-source-min-cpp-commands'
         write_compile_commands_entries(duplicate_source_dir, [
