@@ -28,6 +28,7 @@
 #include "mbdstharness.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 using namespace X265_NS;
@@ -63,11 +64,11 @@ MBDstHarness::MBDstHarness()
      * [2] --- Maximum */
     for (int i = 0; i < TEST_BUF_SIZE; i++)
     {
-        short_test_buff[0][i]    = (rand() & PIXEL_MAX) - (rand() & PIXEL_MAX);
-        short_test_buff1[0][i]   = (rand() & PIXEL_MAX) - (rand() & PIXEL_MAX);
-        int_test_buff[0][i]      = rand() % PIXEL_MAX;
-        int_idct_test_buff[0][i] = (rand() % (SHORT_MAX - SHORT_MIN)) - SHORT_MAX;
-        short_denoise_test_buff1[0][i] = short_denoise_test_buff2[0][i] = (rand() & SHORT_MAX) - (rand() & SHORT_MAX);
+        short_test_buff[0][i]    = (std::rand() & PIXEL_MAX) - (std::rand() & PIXEL_MAX);
+        short_test_buff1[0][i]   = (std::rand() & PIXEL_MAX) - (std::rand() & PIXEL_MAX);
+        int_test_buff[0][i]      = std::rand() % PIXEL_MAX;
+        int_idct_test_buff[0][i] = (std::rand() % (SHORT_MAX - SHORT_MIN)) - SHORT_MAX;
+        short_denoise_test_buff1[0][i] = short_denoise_test_buff2[0][i] = (std::rand() & SHORT_MAX) - (std::rand() & SHORT_MAX);
         short_test_buff[1][i]    = -PIXEL_MAX;
         short_test_buff1[1][i]   = -PIXEL_MAX;
         int_test_buff[1][i]      = -PIXEL_MAX;
@@ -79,9 +80,9 @@ MBDstHarness::MBDstHarness()
         int_idct_test_buff[2][i] = SHORT_MAX;
         short_denoise_test_buff1[2][i] = short_denoise_test_buff2[2][i] = SHORT_MAX;
 
-        mbuf1[i] = rand() & PIXEL_MAX;
-        mbufdct[i] = (rand() & PIXEL_MAX) - (rand() & PIXEL_MAX);
-        mbufidct[i] = (rand() & idct_max);
+        mbuf1[i] = std::rand() & PIXEL_MAX;
+        mbufdct[i] = (std::rand() & PIXEL_MAX) - (std::rand() & PIXEL_MAX);
+        mbufidct[i] = (std::rand() & idct_max);
     }
 
 #if _DEBUG
@@ -102,7 +103,7 @@ bool MBDstHarness::check_dct_primitive(dct_t ref, dct_t opt, intptr_t width)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index = rand() % TEST_CASES;
+        int index = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index] + j, mshortbuf2, width);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width);
@@ -124,7 +125,7 @@ bool MBDstHarness::check_idct_primitive(idct_t ref, idct_t opt, intptr_t width)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index = rand() % TEST_CASES;
+        int index = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index] + j, mshortbuf2, width);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width);
@@ -145,12 +146,12 @@ bool MBDstHarness::check_dequant_primitive(dequant_normal_t ref, dequant_normal_
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index = rand() % TEST_CASES;
-        int log2TrSize = (rand() % 4) + 2;
+        int index = std::rand() % TEST_CASES;
+        int log2TrSize = (std::rand() % 4) + 2;
 
         int width = (1 << log2TrSize);
         int height = width;
-        int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         int per = qp / 6;
         int rem = qp % 6;
         static const int invQuantScales[6] = { 40, 45, 51, 57, 64, 72 };
@@ -181,18 +182,18 @@ bool MBDstHarness::check_dequant_primitive(dequant_scaling_t ref, dequant_scalin
         std::memset(mshortbuf2, 0, MAX_TU_SIZE * sizeof(int16_t));
         std::memset(mshortbuf3, 0, MAX_TU_SIZE * sizeof(int16_t));
 
-        int log2TrSize = (rand() % 4) + 2;
+        int log2TrSize = (std::rand() % 4) + 2;
 
         int width = (1 << log2TrSize);
         int height = width;
 
-        int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         int per = qp / 6;
         int transformShift = MAX_TR_DYNAMIC_RANGE - X265_DEPTH - log2TrSize;
         int shift = QUANT_IQUANT_SHIFT - QUANT_SHIFT - transformShift;
 
         int cmp_size = sizeof(int16_t) * height * width;
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, int_test_buff[index1] + j, mshortbuf2, width * height, per, shift);
         checked(opt, short_test_buff[index1] + j, int_test_buff[index1] + j, mshortbuf3, width * height, per, shift);
@@ -213,15 +214,15 @@ bool MBDstHarness::check_quant_primitive(quant_t ref, quant_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 1 << (rand() % 4 + 2);
+        int width = 1 << (std::rand() % 4 + 2);
         int height = width;
 
         uint32_t optReturnValue = 0;
         uint32_t refReturnValue = 0;
 
-        int sliceType = rand() % 2;
-        int log2TrSize = rand() % 4 + 2;
-        int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int sliceType = std::rand() % 2;
+        int log2TrSize = std::rand() % 4 + 2;
+        int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         int per = qp / 6;
         int transformShift = MAX_TR_DYNAMIC_RANGE - X265_DEPTH - log2TrSize;
 
@@ -231,8 +232,8 @@ bool MBDstHarness::check_quant_primitive(quant_t ref, quant_t opt)
         int cmp_size1 = sizeof(short) * height * width;
         int numCoeff = height * width;
 
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
 
         refReturnValue = ref(short_test_buff[index1] + j, int_test_buff[index2] + j, mintbuf1, mshortbuf2, bits, valueToAdd, numCoeff);
         optReturnValue = (uint32_t)checked(opt, short_test_buff[index1] + j, int_test_buff[index2] + j, mintbuf3, mshortbuf3, bits, valueToAdd, numCoeff);
@@ -258,13 +259,13 @@ bool MBDstHarness::check_nquant_primitive(nquant_t ref, nquant_t opt)
     int j = 0;
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 1 << (rand() % 4 + 2);
+        int width = 1 << (std::rand() % 4 + 2);
         int height = width;
         uint32_t optReturnValue = 0;
         uint32_t refReturnValue = 0;
 
-        int log2TrSize = rand() % 4 + 2;
-        const int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int log2TrSize = std::rand() % 4 + 2;
+        const int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         const int per = qp / 6;
         const int transformShift = MAX_TR_DYNAMIC_RANGE - X265_DEPTH - log2TrSize;
 
@@ -274,8 +275,8 @@ bool MBDstHarness::check_nquant_primitive(nquant_t ref, nquant_t opt)
         int cmp_size = sizeof(short) * height * width;
         int numCoeff = height * width;
 
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
 
         refReturnValue = ref(short_test_buff[index1] + j, int_test_buff[index2] + j, mshortbuf2, bits, valueToAdd, numCoeff);
         optReturnValue = (uint32_t)checked(opt, short_test_buff[index1] + j, int_test_buff[index2] + j, mshortbuf3, bits, valueToAdd, numCoeff);
@@ -302,19 +303,19 @@ bool MBDstHarness::check_nonPsyRdoQuant_primitive(nonPsyRdoQuant_t ref, nonPsyRd
 
     for (int i = 0; i < ITERS; i++)
     {
-        int64_t totalRdCostRef = rand();
-        int64_t totalUncodedCostRef = rand();
+        int64_t totalRdCostRef = std::rand();
+        int64_t totalUncodedCostRef = std::rand();
         int64_t totalRdCostOpt = totalRdCostRef;
         int64_t totalUncodedCostOpt = totalUncodedCostRef;
 
-        int index = rand() % 4;
+        int index = std::rand() % 4;
         uint32_t blkPos = trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
         std::memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
         std::memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
 
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, ref_dest, &totalUncodedCostRef, &totalRdCostRef, blkPos);
         checked(opt, short_test_buff[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, blkPos);
@@ -344,21 +345,21 @@ bool MBDstHarness::check_psyRdoQuant_primitive(psyRdoQuant_t ref, psyRdoQuant_t 
 
     for (int i = 0; i < ITERS; i++)
     {
-        int64_t totalRdCostRef = rand();
-        int64_t totalUncodedCostRef = rand();
+        int64_t totalRdCostRef = std::rand();
+        int64_t totalUncodedCostRef = std::rand();
         int64_t totalRdCostOpt = totalRdCostRef;
         int64_t totalUncodedCostOpt = totalUncodedCostRef;
         int64_t *psyScale = X265_MALLOC(int64_t, 1);
-        *psyScale = rand();
+        *psyScale = std::rand();
 
-        int index = rand() % 4;
+        int index = std::rand() % 4;
         uint32_t blkPos = trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
         std::memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
         std::memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
 
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, short_test_buff1[index1] + j, ref_dest, &totalUncodedCostRef, &totalRdCostRef, psyScale, blkPos);
         checked(opt, short_test_buff[index1] + j, short_test_buff1[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, psyScale, blkPos);
@@ -389,19 +390,19 @@ bool MBDstHarness::check_psyRdoQuant_primitive_avx2(psyRdoQuant_t1 ref, psyRdoQu
 
     for (int i = 0; i < ITERS; i++)
     {
-        int64_t totalRdCostRef = rand();
-        int64_t totalUncodedCostRef = rand();
+        int64_t totalRdCostRef = std::rand();
+        int64_t totalUncodedCostRef = std::rand();
         int64_t totalRdCostOpt = totalRdCostRef;
         int64_t totalUncodedCostOpt = totalUncodedCostRef;
 
-        int index = rand() % 4;
+        int index = std::rand() % 4;
         uint32_t blkPos =  trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
         std::memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
         std::memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
 
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, ref_dest, &totalUncodedCostRef, &totalRdCostRef, blkPos);
         checked(opt, short_test_buff[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, blkPos);
@@ -456,9 +457,9 @@ bool MBDstHarness::check_denoise_dct_primitive(denoiseDct_t ref, denoiseDct_t op
             std::memset(mushortbuf1, 0,  num * sizeof(uint16_t));
 
             for (int k = 0; k < num; k++)
-                mushortbuf1[k] = rand() % UNSIGNED_SHORT_MAX;
+                mushortbuf1[k] = std::rand() % UNSIGNED_SHORT_MAX;
 
-            int index = rand() % TEST_CASES;
+            int index = std::rand() % TEST_CASES;
 
             ref(short_denoise_test_buff1[index] + j, mubuf1, mushortbuf1, num);
             checked(opt, short_denoise_test_buff2[index] + j, mubuf2, mushortbuf1, num);
