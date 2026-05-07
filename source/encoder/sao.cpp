@@ -29,6 +29,7 @@
 #include "picyuv.h"
 #include "sao.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -1226,8 +1227,8 @@ void SAO::rdoSaoUnitCu(SAOParam* saoParam, int rowBaseAddr, int idxX, int addr)
         qpCb = x265_clip3(m_param->rc.qpMin, m_param->rc.qpMax, (int)g_chromaScale[x265_clip3(QP_MIN, QP_MAX_MAX, qpCb)]);
     else
         qpCb = x265_clip3(m_param->rc.qpMin, m_param->rc.qpMax, qpCb);
-    lambda[0] = (int64_t)floor(256.0 * x265_lambda2_tab[qp]);
-    lambda[1] = (int64_t)floor(256.0 * x265_lambda2_tab[qpCb]); // Use Cb QP for SAO chroma
+    lambda[0] = (int64_t)std::floor(256.0 * x265_lambda2_tab[qp]);
+    lambda[1] = (int64_t)std::floor(256.0 * x265_lambda2_tab[qpCb]); // Use Cb QP for SAO chroma
 
     const bool allowMerge[2] = {(idxX != 0), (rowBaseAddr != 0)}; // left, up
 

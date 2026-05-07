@@ -34,6 +34,7 @@
 #include "rdcost.h"
 #include "encoder.h"
 
+#include <cmath>
 #include <cstdlib>
 
 using namespace X265_NS;
@@ -4423,7 +4424,7 @@ void Analysis::normFactor(const pixel* src, uint32_t blockSize, CUData& ctu, int
 
     // 2. Calculate ac component
     uint64_t z_k = 0;
-    int block = (int)(((log(blockSize) / log(2)) - 2) + 0.5);
+    int block = (int)(((std::log(blockSize) / std::log(2)) - 2) + 0.5);
     primitives.cu[block].normFact(src, blockSize, shift, &z_k);
 
     // Remove the DC part
