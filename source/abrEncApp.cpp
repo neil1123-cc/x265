@@ -445,27 +445,27 @@ namespace X265_NS {
             x265_analysis_intra_data *intraDst, *intraSrc;
             intraDst = (x265_analysis_intra_data*)m_analysisInfo->intraData;
             intraSrc = (x265_analysis_intra_data*)src->intraData;
-            memcpy(intraDst->depth, intraSrc->depth, sizeof(uint8_t) * src->depthBytes);
-            memcpy(intraDst->modes, intraSrc->modes, sizeof(uint8_t) * src->numCUsInFrame * src->numPartitions);
-            memcpy(intraDst->partSizes, intraSrc->partSizes, sizeof(char) * src->depthBytes);
-            memcpy(intraDst->chromaModes, intraSrc->chromaModes, sizeof(uint8_t) * src->depthBytes);
+            std::memcpy(intraDst->depth, intraSrc->depth, sizeof(uint8_t) * src->depthBytes);
+            std::memcpy(intraDst->modes, intraSrc->modes, sizeof(uint8_t) * src->numCUsInFrame * src->numPartitions);
+            std::memcpy(intraDst->partSizes, intraSrc->partSizes, sizeof(char) * src->depthBytes);
+            std::memcpy(intraDst->chromaModes, intraSrc->chromaModes, sizeof(uint8_t) * src->depthBytes);
             if (m_param->rc.cuTree)
-                memcpy(intraDst->cuQPOff, intraSrc->cuQPOff, sizeof(int8_t) * src->depthBytes);
+                std::memcpy(intraDst->cuQPOff, intraSrc->cuQPOff, sizeof(int8_t) * src->depthBytes);
         }
         else
         {
             bool bIntraInInter = (src->sliceType == X265_TYPE_P || m_param->bIntraInBFrames);
             int numDir = src->sliceType == X265_TYPE_P ? 1 : 2;
-            memcpy(m_analysisInfo->wt, src->wt, sizeof(WeightParam) * 3 * numDir);
+            std::memcpy(m_analysisInfo->wt, src->wt, sizeof(WeightParam) * 3 * numDir);
             if (m_param->analysisSaveReuseLevel < 2)
                 goto ret;
             x265_analysis_inter_data *interDst, *interSrc;
             interDst = (x265_analysis_inter_data*)m_analysisInfo->interData;
             interSrc = (x265_analysis_inter_data*)src->interData;
-            memcpy(interDst->depth, interSrc->depth, sizeof(uint8_t) * src->depthBytes);
-            memcpy(interDst->modes, interSrc->modes, sizeof(uint8_t) * src->depthBytes);
+            std::memcpy(interDst->depth, interSrc->depth, sizeof(uint8_t) * src->depthBytes);
+            std::memcpy(interDst->modes, interSrc->modes, sizeof(uint8_t) * src->depthBytes);
             if (m_param->rc.cuTree)
-                memcpy(interDst->cuQPOff, interSrc->cuQPOff, sizeof(int8_t) * src->depthBytes);
+                std::memcpy(interDst->cuQPOff, interSrc->cuQPOff, sizeof(int8_t) * src->depthBytes);
             if (m_param->analysisSaveReuseLevel > 4)
             {
                 memcpy(interDst->partSize, interSrc->partSize, sizeof(uint8_t) * src->depthBytes);
