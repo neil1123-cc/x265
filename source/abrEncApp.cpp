@@ -958,7 +958,7 @@ ret:
 
             /* clear progress report */
             if (m_cliopt.bProgress)
-                fprintf(stderr, "%*s\r", 80, " ");
+                std::fprintf(stderr, "%*s\r", 80, " ");
 
         fail:
 

@@ -68,7 +68,7 @@ struct StatisticLog
 
     StatisticLog()
     {
-        memset(this, 0, sizeof(StatisticLog));
+        std::memset(this, 0, sizeof(StatisticLog));
     }
 };
 
@@ -113,7 +113,7 @@ struct CTURow
         avgQPComputed = false;
         sliceId = sid;
         reEncode = 0;
-        memset(&rowStats, 0, sizeof(rowStats));
+        std::memset(&rowStats, 0, sizeof(rowStats));
         rowGoOnCoder.load(initContext);
     }
 };

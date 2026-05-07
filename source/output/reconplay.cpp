@@ -55,7 +55,7 @@ ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
 {
 #ifndef _WIN32
     if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR)
-        general_log(&param, "exec", X265_LOG_ERROR, "Unable to register SIGPIPE handler: %s\n", strerror(errno));
+        general_log(&param, "exec", X265_LOG_ERROR, "Unable to register SIGPIPE handler: %s\n", std::strerror(errno));
 #endif
 
     width = param.sourceWidth;

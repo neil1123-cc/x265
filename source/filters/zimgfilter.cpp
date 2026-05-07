@@ -24,6 +24,7 @@
 #ifdef ENABLE_ZIMG
 #include "zimgfilter.h"
 
+#include <cstdio>
 #include <cstring>
 
 using namespace X265_NS;
@@ -99,7 +100,7 @@ ZimgFilter::ZimgFilter(char* paramString)
         if (!strcasecmp(pName, "crop"))
         {
             double dLeft, dTop, dRight, dBottom;
-            int count = sscanf(pValue, "%lf,%lf,%lf,%lf", &dLeft, &dTop, &dRight, &dBottom);
+            int count = std::sscanf(pValue, "%lf,%lf,%lf,%lf", &dLeft, &dTop, &dRight, &dBottom);
             if (count < 4)
             {
                 general_log(NULL, "zimg", X265_LOG_ERROR, "Crop: invalid parameters: (%s), should be (L,T,W,H) or (L,T,-R,-B)\n", pValue);
@@ -125,7 +126,7 @@ ZimgFilter::ZimgFilter(char* paramString)
             bFail = true;
             return;
         }
-        int count = sscanf(pValue, "%d,%d,%lf,%lf", &rWidth, &rHeight, &param1, &param2);
+        int count = std::sscanf(pValue, "%d,%d,%lf,%lf", &rWidth, &rHeight, &param1, &param2);
         if (count < 2)
         {
             general_log(NULL, "zimg", X265_LOG_ERROR, "Resize: invalid parameters: (%s), should be (W,H[,P1,P2])\n", pValue);

@@ -38,7 +38,7 @@ namespace X265_NS {
 
 struct ReferencePlanes
 {
-    ReferencePlanes() { memset(this, 0, sizeof(ReferencePlanes)); }
+    ReferencePlanes() { std::memset(this, 0, sizeof(ReferencePlanes)); }
 
     pixel*   fpelPlane[3];
     pixel*   lowresPlane[4];

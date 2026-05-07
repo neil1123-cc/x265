@@ -1696,6 +1696,129 @@ def main():
         ])
         expect_pass(run_checker(windows_depth_exclude_both_depths_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
 
+        windows_response_required_file_substring_dir = root / 'windows-response-required-file-substring'
+        windows_response_required_file_substring_dir.mkdir()
+        (windows_response_required_file_substring_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF')
+        write_compile_commands(windows_response_required_file_substring_dir, 'c++ @args.rsp -c source\\input\\lavf.cpp', 'source\\input\\lavf.cpp')
+        expect_pass(run_checker(windows_response_required_file_substring_dir, '--required-file-substring=source/input/lavf.cpp', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'))
+
+        windows_response_forbidden_file_substring_dir = root / 'windows-response-forbidden-file-substring'
+        windows_response_forbidden_file_substring_dir.mkdir()
+        (windows_response_forbidden_file_substring_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(windows_response_forbidden_file_substring_dir, [{
+            'directory': str(windows_response_forbidden_file_substring_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source\\output\\mp4.cpp'],
+            'file': str(root / 'source\\output\\mp4.cpp'),
+        }])
+        expect_fail(run_checker(windows_response_forbidden_file_substring_dir, '--forbidden-file-substring=source\\output\\mp4.cpp'), 'forbidden compile command for file substring source/output/mp4.cpp')
+
+        windows_response_forbidden_file_flag_dir = root / 'windows-response-forbidden-file-flag'
+        windows_response_forbidden_file_flag_dir.mkdir()
+        (windows_response_forbidden_file_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF')
+        write_compile_commands_records(windows_response_forbidden_file_flag_dir, [{
+            'directory': str(windows_response_forbidden_file_flag_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source\\input\\lavf.cpp'],
+            'file': str(root / 'source\\input/lavf.cpp'),
+        }])
+        expect_fail(run_checker(windows_response_forbidden_file_flag_dir, '--forbidden-file-flag=source\\input/lavf.cpp=-DENABLE_LAVF'), 'forbidden flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
+
+        windows_response_forbidden_file_flag_pass_dir = root / 'windows-response-forbidden-file-flag-pass'
+        windows_response_forbidden_file_flag_pass_dir.mkdir()
+        (windows_response_forbidden_file_flag_pass_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(windows_response_forbidden_file_flag_pass_dir, [{
+            'directory': str(windows_response_forbidden_file_flag_pass_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source\\input\\lavf.cpp'],
+            'file': str(root / 'source\\input\\lavf.cpp'),
+        }])
+        expect_pass(run_checker(windows_response_forbidden_file_flag_pass_dir, '--forbidden-file-flag=source\\input/lavf.cpp=-DENABLE_LAVF'))
+
+        response_depth_exclude_dual_field_dir = root / 'response-depth-exclude-dual-field-pass'
+        (response_depth_exclude_dual_field_dir / 'rsp').mkdir(parents=True)
+        (response_depth_exclude_dual_field_dir / 'rsp' / 'excluded-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        (response_depth_exclude_dual_field_dir / 'rsp' / 'excluded-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -DX265_DEPTH=10')
+        (response_depth_exclude_dual_field_dir / 'rsp' / 'common-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        (response_depth_exclude_dual_field_dir / 'rsp' / 'common-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands_records(response_depth_exclude_dual_field_dir, [{
+            'directory': str(response_depth_exclude_dual_field_dir),
+            'command': 'c++ @rsp/excluded-command.rsp -c source/dynamicHDR10/json11.cpp',
+            'arguments': ['c++', '@rsp/excluded-arguments.rsp', '-c', 'source/dynamicHDR10/json11.cpp'],
+            'file': str(root / 'source/dynamicHDR10/json11.cpp'),
+        }, {
+            'directory': str(response_depth_exclude_dual_field_dir),
+            'command': 'c++ @rsp/common-command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@rsp/common-arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(response_depth_exclude_dual_field_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source/dynamicHDR10/'))
+
+        windows_response_depth_exclude_dual_field_dir = root / 'windows-response-depth-exclude-dual-field-pass'
+        (windows_response_depth_exclude_dual_field_dir / 'rsp').mkdir(parents=True)
+        (windows_response_depth_exclude_dual_field_dir / 'rsp' / 'excluded-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        (windows_response_depth_exclude_dual_field_dir / 'rsp' / 'excluded-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -DX265_DEPTH=10')
+        (windows_response_depth_exclude_dual_field_dir / 'rsp' / 'common-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        (windows_response_depth_exclude_dual_field_dir / 'rsp' / 'common-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands_records(windows_response_depth_exclude_dual_field_dir, [{
+            'directory': str(windows_response_depth_exclude_dual_field_dir),
+            'command': 'c++ @rsp/excluded-command.rsp -c source\\dynamicHDR10\\json11.cpp',
+            'arguments': ['c++', '@rsp/excluded-arguments.rsp', '-c', 'source\\dynamicHDR10\\json11.cpp'],
+            'file': str(root / 'source\\dynamicHDR10\\json11.cpp'),
+        }, {
+            'directory': str(windows_response_depth_exclude_dual_field_dir),
+            'command': 'c++ @rsp/common-command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@rsp/common-arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(windows_response_depth_exclude_dual_field_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
+
+        response_depth_exclude_included_mixed_dir = root / 'response-depth-exclude-included-mixed-depth'
+        (response_depth_exclude_included_mixed_dir / 'rsp').mkdir(parents=True)
+        (response_depth_exclude_included_mixed_dir / 'rsp' / 'excluded-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        (response_depth_exclude_included_mixed_dir / 'rsp' / 'excluded-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -DX265_DEPTH=10')
+        (response_depth_exclude_included_mixed_dir / 'rsp' / 'common-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        (response_depth_exclude_included_mixed_dir / 'rsp' / 'common-arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -DX265_DEPTH=10')
+        write_compile_commands_records(response_depth_exclude_included_mixed_dir, [{
+            'directory': str(response_depth_exclude_included_mixed_dir),
+            'command': 'c++ @rsp/excluded-command.rsp -c source/dynamicHDR10/json11.cpp',
+            'arguments': ['c++', '@rsp/excluded-arguments.rsp', '-c', 'source/dynamicHDR10/json11.cpp'],
+            'file': str(root / 'source/dynamicHDR10/json11.cpp'),
+        }, {
+            'directory': str(response_depth_exclude_included_mixed_dir),
+            'command': 'c++ @rsp/common-command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@rsp/common-arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_depth_exclude_included_mixed_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source/dynamicHDR10/'), 'mixed depth defines -DX265_DEPTH=10')
+
+        msvc_tp_response_command_dir = root / 'msvc-tp-response-command'
+        msvc_tp_response_command_dir.mkdir()
+        (msvc_tp_response_command_dir / 'lang.rsp').write_text('/TP /std:c++20')
+        write_compile_commands_records(msvc_tp_response_command_dir, [{
+            'directory': str(msvc_tp_response_command_dir),
+            'command': 'clang-cl @lang.rsp /c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(msvc_tp_response_command_dir, '--min-cpp-commands=1'))
+
+        msvc_fused_tp_response_arguments_dir = root / 'msvc-fused-tp-response-arguments'
+        msvc_fused_tp_response_arguments_dir.mkdir()
+        (msvc_fused_tp_response_arguments_dir / 'lang.rsp').write_text('/Tpsource/common/template.inc /std:c++20')
+        write_compile_commands_records(msvc_fused_tp_response_arguments_dir, [{
+            'directory': str(msvc_fused_tp_response_arguments_dir),
+            'arguments': ['clang-cl', '@lang.rsp', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(msvc_fused_tp_response_arguments_dir, '--min-cpp-commands=1'))
+
+        msvc_fused_tp_response_arguments_missing_std_dir = root / 'msvc-fused-tp-response-arguments-missing-std'
+        msvc_fused_tp_response_arguments_missing_std_dir.mkdir()
+        (msvc_fused_tp_response_arguments_missing_std_dir / 'lang.rsp').write_text('/Tpsource/common/template.inc')
+        write_compile_commands_records(msvc_fused_tp_response_arguments_missing_std_dir, [{
+            'directory': str(msvc_fused_tp_response_arguments_missing_std_dir),
+            'arguments': ['clang-cl', '@lang.rsp', '/c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_fused_tp_response_arguments_missing_std_dir), 'missing GNU++20 dialect')
+
         duplicate_source_dir = root / 'duplicate-source-min-cpp-commands'
         write_compile_commands_entries(duplicate_source_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),

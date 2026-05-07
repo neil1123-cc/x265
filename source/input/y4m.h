@@ -78,8 +78,8 @@ public:
 
     virtual ~Y4MInput();
     void release();
-    bool isEof() const            { return ifs && feof(ifs); }
-    bool isFail()                 { return !(ifs && !ferror(ifs) && threadActive.load()); }
+    bool isEof() const            { return ifs && std::feof(ifs); }
+    bool isFail()                 { return !(ifs && !std::ferror(ifs) && threadActive.load()); }
     void startReader();
     bool readPicture(x265_picture&);
 
