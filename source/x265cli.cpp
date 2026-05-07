@@ -624,9 +624,9 @@ namespace X265_NS {
         if (!outputBitDepth && profile)
         {
             /* try to derive the output bit depth from the requested profile */
-            if (strstr(profile, "10"))
+            if (std::strstr(profile, "10"))
                 outputBitDepth = 10;
-            else if (strstr(profile, "12"))
+            else if (std::strstr(profile, "12"))
                 outputBitDepth = 12;
             else
                 outputBitDepth = 8;
@@ -749,16 +749,16 @@ namespace X265_NS {
                 profile = optarg;
             else if (c == '?')
                 bShowHelp = true;
-            else if (!c && !strcmp(long_options[optionsIndex].name, "svt"))
+            else if (!c && !std::strcmp(long_options[optionsIndex].name, "svt"))
                 svtEnabled = 1;
         }
 
         if (!outputBitDepth && profile)
         {
             /* try to derive the output bit depth from the requested profile */
-            if (strstr(profile, "10"))
+            if (std::strstr(profile, "10"))
                 outputBitDepth = 10;
-            else if (strstr(profile, "12"))
+            else if (std::strstr(profile, "12"))
                 outputBitDepth = 12;
             else
                 outputBitDepth = 8;
@@ -857,7 +857,7 @@ namespace X265_NS {
                 OPT("no-progress") this->bProgress = false;
                 OPT("stylish") this->param->bStylish = true;
                 OPT("output") outputfn = optarg;
-                OPT("input") strncpy(inputfn[0] , optarg, 1024);
+                OPT("input") std::strncpy(inputfn[0] , optarg, 1024);
                 OPT("recon") reconfn[0] = optarg;
                 OPT("input-depth") inputBitDepth = (uint32_t)x265_atoi(optarg, bError);
                 OPT("vf") this->vf = optarg;
@@ -1155,7 +1155,7 @@ namespace X265_NS {
         }
         const char *str = strrchr(info[0].filename, '.');
 
-        if (!strcmp(str, ".y4m"))
+        if (!std::strcmp(str, ".y4m"))
         {
             x265_log(param, X265_LOG_ERROR, "VMAF supports YUV file format only.\n");
             return true;
@@ -1389,9 +1389,9 @@ namespace X265_NS {
         if (!outputBitDepth && profile)
         {
             /*try to derive the output bit depth from the requested profile*/
-            if (strstr(profile, "10"))
+            if (std::strstr(profile, "10"))
                 outputBitDepth = 10;
-            else if (strstr(profile, "12"))
+            else if (std::strstr(profile, "12"))
                 outputBitDepth = 12;
             else
                 outputBitDepth = 8;
