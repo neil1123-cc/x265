@@ -233,6 +233,37 @@ def main():
         write_compile_commands_records(ci_shape_dir, ci_shape_records(ci_shape_dir, root))
         expect_pass(run_ci_shape_checker(ci_shape_dir))
 
+        ci_shape_lavf_command_rsp_leak_dir = root / 'ci-shape-lavf-command-response-forbidden-depth'
+        (ci_shape_lavf_command_rsp_leak_dir / 'rsp').mkdir(parents=True)
+        (ci_shape_lavf_command_rsp_leak_dir / 'rsp' / 'lavf.rsp').write_text('-DENABLE_LAVF -DX265_DEPTH=8 -DX265_DEPTH=12')
+        write_compile_commands_records(ci_shape_lavf_command_rsp_leak_dir, ci_shape_records(ci_shape_lavf_command_rsp_leak_dir, root, {
+            'source/input/lavf.cpp': {
+                'command_flags': ['@rsp/lavf.rsp'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(ci_shape_lavf_command_rsp_leak_dir), 'forbidden flag -DX265_DEPTH=12 for file substring source/input/lavf.cpp')
+
+        ci_shape_mkv_arguments_rsp_missing_dir = root / 'ci-shape-mkv-arguments-response-missing-feature'
+        (ci_shape_mkv_arguments_rsp_missing_dir / 'rsp').mkdir(parents=True)
+        (ci_shape_mkv_arguments_rsp_missing_dir / 'rsp' / 'mkv.rsp').write_text('-DX265_DEPTH=8')
+        write_compile_commands_records(ci_shape_mkv_arguments_rsp_missing_dir, ci_shape_records(ci_shape_mkv_arguments_rsp_missing_dir, root, {
+            'source/output/mkv.cpp': {
+                'argument_flags': ['@rsp/mkv.rsp'],
+            },
+        }))
+        expect_fail(run_ci_shape_checker(ci_shape_mkv_arguments_rsp_missing_dir), 'missing required flag -DENABLE_MKV for file substring source/output/mkv.cpp')
+
+        ci_shape_zimg_both_rsp_pass_dir = root / 'ci-shape-zimg-both-response-pass'
+        (ci_shape_zimg_both_rsp_pass_dir / 'rsp').mkdir(parents=True)
+        (ci_shape_zimg_both_rsp_pass_dir / 'rsp' / 'zimg.rsp').write_text('-DENABLE_ZIMG -DX265_DEPTH=8')
+        write_compile_commands_records(ci_shape_zimg_both_rsp_pass_dir, ci_shape_records(ci_shape_zimg_both_rsp_pass_dir, root, {
+            'source/filters/zimgfilter.cpp': {
+                'command_flags': ['@rsp/zimg.rsp'],
+                'argument_flags': ['@rsp/zimg.rsp'],
+            },
+        }))
+        expect_pass(run_ci_shape_checker(ci_shape_zimg_both_rsp_pass_dir))
+
         asm_shape_missing_dir = root / 'ci-shape-asm-arguments-missing-arch'
         write_compile_commands_records(asm_shape_missing_dir, ci_shape_records(asm_shape_missing_dir, root, {
             'source/common/x86/asm-primitives.cpp': {
