@@ -1183,6 +1183,11 @@ def main():
         write_compile_commands(modmap_reference_dir, 'c++ -std=gnu++20 @encoderCMakeFilesencoder.diranalysis.cpp.obj.modmap -c source/encoder/analysis.cpp', 'source/encoder/analysis.cpp')
         expect_pass(run_checker(modmap_reference_dir, '--min-cpp-commands=1'))
 
+        modmap_missing_std_dir = root / 'modmap-reference-missing-std'
+        modmap_missing_std_dir.mkdir()
+        write_compile_commands(modmap_missing_std_dir, 'c++ @encoderCMakeFilesencoder.diranalysis.cpp.obj.modmap -c source/encoder/analysis.cpp', 'source/encoder/analysis.cpp')
+        expect_fail(run_checker(modmap_missing_std_dir, '--min-cpp-commands=1'), 'missing GNU++20 dialect')
+
         uppercase_suffix_dir = root / 'uppercase-cpp-suffix'
         write_compile_commands_records(uppercase_suffix_dir, [{
             'directory': str(uppercase_suffix_dir),

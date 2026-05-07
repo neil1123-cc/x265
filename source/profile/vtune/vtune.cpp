@@ -22,7 +22,7 @@
  *****************************************************************************/
 
 #include "vtune.h"
-#include <stdio.h>
+#include <cstdio>
 
 namespace {
 
@@ -51,7 +51,7 @@ void vtuneInit()
 void vtuneSetThreadName(const char *name, int id)
 {
     char threadname[128];
-    snprintf(threadname, sizeof(threadname), "%s %d", name, id);
+    std::snprintf(threadname, sizeof(threadname), "%s %d", name, id);
     __itt_thread_set_name(threadname);
 }
 
