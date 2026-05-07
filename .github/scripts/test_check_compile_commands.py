@@ -1364,6 +1364,11 @@ def main():
         }])
         expect_fail(run_checker(missing_arguments_response_dir), 'missing response file')
 
+        missing_response_required_prefix_dir = root / 'missing-response-file-required-prefix'
+        missing_response_required_prefix_dir.mkdir()
+        write_compile_commands(missing_response_required_prefix_dir, 'c++ @missing.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(missing_response_required_prefix_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing response file')
+
         modmap_reference_dir = root / 'modmap-reference-not-response-file'
         modmap_reference_dir.mkdir()
         write_compile_commands(modmap_reference_dir, 'c++ -std=gnu++20 @encoderCMakeFilesencoder.diranalysis.cpp.obj.modmap -c source/encoder/analysis.cpp', 'source/encoder/analysis.cpp')
@@ -1530,6 +1535,17 @@ def main():
             'file': str(root / 'source/input/lavf.cpp'),
         }])
         expect_fail(run_checker(response_dual_field_std_drift_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'duplicate standard flags -std=c++20,-std=gnu++20')
+
+        response_dual_field_std_drift_required_file_substring_dir = root / 'response-dual-field-required-file-substring-std-drift'
+        response_dual_field_std_drift_required_file_substring_dir.mkdir()
+        (response_dual_field_std_drift_required_file_substring_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_std_drift_required_file_substring_dir, [{
+            'directory': str(response_dual_field_std_drift_required_file_substring_dir),
+            'command': 'c++ @command.rsp -c source/input/lavf.cpp',
+            'arguments': ['c++', '-std=c++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/input/lavf.cpp'],
+            'file': str(root / 'source/input/lavf.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_std_drift_required_file_substring_dir, '--required-file-substring=source/input/lavf.cpp'), 'duplicate standard flags -std=c++20,-std=gnu++20')
 
         response_dual_field_required_prefix_missing_dir = root / 'response-dual-field-required-prefix-missing-command'
         response_dual_field_required_prefix_missing_dir.mkdir()
@@ -1822,6 +1838,16 @@ def main():
         }])
         expect_pass(run_checker(windows_response_forbidden_file_flag_pass_dir, '--forbidden-file-flag=source\\input/lavf.cpp=-DENABLE_LAVF'))
 
+        windows_response_forbidden_partial_file_flag_dir = root / 'windows-response-forbidden-partial-file-flag'
+        windows_response_forbidden_partial_file_flag_dir.mkdir()
+        (windows_response_forbidden_partial_file_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_MP4')
+        write_compile_commands_records(windows_response_forbidden_partial_file_flag_dir, [{
+            'directory': str(windows_response_forbidden_partial_file_flag_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source\\output\\mp4.cpp'],
+            'file': str(root / 'source/output/mp4.cpp'),
+        }])
+        expect_fail(run_checker(windows_response_forbidden_partial_file_flag_dir, '--forbidden-file-flag=source\\output\\mp4=-DENABLE_MP4'), 'forbidden flag -DENABLE_MP4 for file substring source/output/mp4')
+
         response_depth_exclude_dual_field_dir = root / 'response-depth-exclude-dual-field-pass'
         (response_depth_exclude_dual_field_dir / 'rsp').mkdir(parents=True)
         (response_depth_exclude_dual_field_dir / 'rsp' / 'excluded-command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
@@ -1888,6 +1914,16 @@ def main():
             'file': str(root / 'source/common/template.inc'),
         }])
         expect_pass(run_checker(msvc_tp_response_command_dir, '--min-cpp-commands=1'))
+
+        msvc_tp_response_required_file_flag_dir = root / 'msvc-tp-response-required-file-flag'
+        msvc_tp_response_required_file_flag_dir.mkdir()
+        (msvc_tp_response_required_file_flag_dir / 'lang.rsp').write_text('/TP /std:c++20 /DCPP_TEMPLATE=1')
+        write_compile_commands_records(msvc_tp_response_required_file_flag_dir, [{
+            'directory': str(msvc_tp_response_required_file_flag_dir),
+            'command': 'clang-cl @lang.rsp /c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(msvc_tp_response_required_file_flag_dir, '--required-file-flag=source/common/template.inc=/DCPP_TEMPLATE=1', '--min-cpp-commands=1'))
 
         msvc_fused_tp_response_arguments_dir = root / 'msvc-fused-tp-response-arguments'
         msvc_fused_tp_response_arguments_dir.mkdir()
@@ -2079,6 +2115,22 @@ def main():
             },
         ])
         expect_fail(run_checker(duplicate_source_response_dir, '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
+
+        duplicate_source_mixed_cxx_language_flags_dir = root / 'duplicate-source-mixed-cxx-language-flags'
+        write_compile_commands_records(duplicate_source_mixed_cxx_language_flags_dir, [
+            {
+                'directory': str(duplicate_source_mixed_cxx_language_flags_dir),
+                'arguments': ['cc', '-x', 'c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/template.inc'],
+                'file': str(root / 'source/common/template.inc'),
+            },
+            {
+                'directory': str(duplicate_source_mixed_cxx_language_flags_dir),
+                'command': 'clang-cl /TP /std:c++20 /c source/common/template.inc',
+                'file': str(root / 'source/common/template.inc'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_mixed_cxx_language_flags_dir, '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
+
         duplicate_source_forbidden_flag_dir = root / 'duplicate-source-forbidden-flag'
         write_compile_commands_entries(duplicate_source_forbidden_flag_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
