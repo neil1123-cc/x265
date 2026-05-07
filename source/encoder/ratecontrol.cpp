@@ -1866,7 +1866,7 @@ double RateControl::tuneAbrQScaleFromFeedback(double qScale)
     if (wantedBits > 0 && encodedBits > 0 && (!m_partialResidualFrames || 
         m_param->rc.bStrictCbr || m_isGrainEnabled))
     {
-        abrBuffer *= X265_MAX(1, sqrt(timeDone));
+        abrBuffer *= X265_MAX(1, std::sqrt(timeDone));
         overflow = x265_clip3(.5, 2.0, 1.0 + (encodedBits - wantedBits) / abrBuffer);
         qScale *= overflow;
     }
@@ -1934,7 +1934,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         {
             double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
             double qComp = (m_param->rc.cuTree && !m_param->rc.hevcAq) ? 0.99 : m_param->rc.qCompress;
-            m_rateFactorConstant = pow(m_currentSatd, 1.0 - qComp) /
+            m_rateFactorConstant = std::pow(m_currentSatd, 1.0 - qComp) /
                 x265_qp2qScale(curFrame->m_targetCrf + mbtree_offset);
         }
     }
@@ -1944,7 +1944,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         int addPos = (pos + s_slidingWindowFrames - 1) % s_slidingWindowFrames;
         if (m_sliderPos > s_slidingWindowFrames)
         {
-            const static double base = pow(0.5, s_slidingWindowFrames - 1);
+            const static double base = std::pow(0.5, s_slidingWindowFrames - 1);
             m_movingAvgSum -= m_lastRemovedSatdCost * base;
             m_movingAvgSum *= 0.5;
             m_movingAvgSum += m_satdCostWindow[addPos];
@@ -2138,7 +2138,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
             {
                 uint64_t finalBits = m_rce2Pass[m_numEntries - 1].expectedBits;
                 double videoPos = (double)rce->expectedBits / finalBits;
-                double scaleFactor = sqrt((1 - videoPos) * m_numEntries);
+                double scaleFactor = std::sqrt((1 - videoPos) * m_numEntries);
                 abrBuffer *= 0.5 * X265_MAX(scaleFactor, 0.5);
             }
             diff = m_predictedBits - (int64_t)rce->expectedBits;
@@ -2160,7 +2160,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
                  * achieved and expected bitrate so far */
                 double curTime = (double)rce->encodeOrder / m_numEntries;
                 double w = x265_clip3(0.0, 1.0, curTime);
-                q *= pow((double)m_totalBits / m_expectedBitsSum, w);
+                q *= std::pow((double)m_totalBits / m_expectedBitsSum, w);
             }
             if (m_framesDone == 0 && m_param->rc.rateControlMode == X265_RC_ABR && m_isGrainEnabled)
                 q = X265_MIN(x265_qp2qScale(ABR_INIT_QP_GRAIN_MAX), q);
@@ -2263,7 +2263,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
                     double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
                     double qComp = (m_param->rc.cuTree && !m_param->rc.hevcAq) ? 1.0 : m_param->rc.qCompress;
                     double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
-                    m_rateFactorConstant = pow(baseCplx, 1.0 - qComp) /
+                    m_rateFactorConstant = std::pow(baseCplx, 1.0 - qComp) /
                         x265_qp2qScale(rfConstant + mbtree_offset);
 
                     if (IS_REFERENCED(curFrame))
@@ -3007,10 +3007,10 @@ double RateControl::getQScale(RateControlEntry *rce, double rateFactor)
     {
         // Scale and units are obtained from rateNum and rateDenom for videos with fixed frame rates.
         double timescale = (double)m_param->fpsDenom / (2 * m_param->fpsNum);
-        q = pow(BASE_FRAME_DURATION / CLIP_DURATION(2 * timescale), 1 - m_param->rc.qCompress);
+        q = std::pow(BASE_FRAME_DURATION / CLIP_DURATION(2 * timescale), 1 - m_param->rc.qCompress);
     }
     else
-        q = pow(rce->blurredComplexity, 1 - m_param->rc.qCompress);
+        q = std::pow(rce->blurredComplexity, 1 - m_param->rc.qCompress);
 
     // avoid NaN's in the Rceq
     if (rce->coeffBits + rce->mvBits == 0)
