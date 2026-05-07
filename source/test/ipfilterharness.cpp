@@ -27,6 +27,8 @@
 #include "common.h"
 #include "ipfilterharness.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 using namespace X265_NS;
@@ -38,8 +40,8 @@ IPFilterHarness::IPFilterHarness()
      * [2] --- Maximum */
     for (int i = 0; i < TEST_BUF_SIZE; i++)
     {
-        pixel_test_buff[0][i] = rand() & PIXEL_MAX;
-        short_test_buff[0][i] = (rand() % (2 * SMAX)) - SMAX;
+        pixel_test_buff[0][i] = std::rand() & PIXEL_MAX;
+        short_test_buff[0][i] = (std::rand() % (2 * SMAX)) - SMAX;
         pixel_test_buff[1][i] = PIXEL_MIN;
         short_test_buff[1][i] = (int16_t)SMIN;
         pixel_test_buff[2][i] = PIXEL_MAX;
@@ -55,9 +57,9 @@ IPFilterHarness::IPFilterHarness()
     int shortMax = (1 << 15) - 1;
     for (int i = 0; i < TEST_BUF_SIZE; i++)
     {
-        pixel_buff[i] = (pixel)(rand() & pixelMax);
-        int isPositive = (rand() & 1) ? 1 : -1;
-        short_buff[i] = (int16_t)(isPositive * (rand() & shortMax));
+        pixel_buff[i] = (pixel)(std::rand() & pixelMax);
+        int isPositive = (std::rand() & 1) ? 1 : -1;
+        short_buff[i] = (int16_t)(isPositive * (std::rand() & shortMax));
     }
 }
 
@@ -71,8 +73,8 @@ bool IPFilterHarness::check_IPFilterChroma_primitive(filter_pp_t ref, filter_pp_
 
         for (int coeffIdx = 1; coeffIdx < 8; coeffIdx++)
         {
-            rand_srcStride = rand() % 100 + 2;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100 + 2;
+            rand_dstStride = std::rand() % 100 + 64;
 
             checked(opt, pixel_test_buff[index] + 3 * rand_srcStride,
                     rand_srcStride,
@@ -106,8 +108,8 @@ bool IPFilterHarness::check_IPFilterChroma_ps_primitive(filter_ps_t ref, filter_
 
         for (int coeffIdx = 1; coeffIdx < 8; coeffIdx++)
         {
-            rand_srcStride = rand() % 100;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100;
+            rand_dstStride = std::rand() % 100 + 64;
 
             ref(pixel_test_buff[index] + 3 * rand_srcStride,
                 rand_srcStride,
@@ -151,8 +153,8 @@ bool IPFilterHarness::check_IPFilterChroma_hps_primitive(filter_hps_t ref, filte
             // 0 : Interpolate W x H, 1 : Interpolate W x (H + 7)
             for (int isRowExt = 0; isRowExt < 2; isRowExt++)
             {
-                rand_srcStride = rand() % 100 + 2;
-                rand_dstStride = rand() % 100 + 64;
+                rand_srcStride = std::rand() % 100 + 2;
+                rand_dstStride = std::rand() % 100 + 64;
 
                 ref(pixel_test_buff[index] + 3 * rand_srcStride,
                     rand_srcStride,
@@ -189,8 +191,8 @@ bool IPFilterHarness::check_IPFilterChroma_sp_primitive(filter_sp_t ref, filter_
 
         for (int coeffIdx = 1; coeffIdx < 8; coeffIdx++)
         {
-            rand_srcStride = rand() % 100;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100;
+            rand_dstStride = std::rand() % 100 + 64;
 
             ref(short_test_buff[index] + 3 * rand_srcStride,
                 rand_srcStride,
@@ -224,8 +226,8 @@ bool IPFilterHarness::check_IPFilterChroma_ss_primitive(filter_ss_t ref, filter_
 
         for (int coeffIdx = 1; coeffIdx < 8; coeffIdx++)
         {
-            rand_srcStride = rand() % 100;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100;
+            rand_dstStride = std::rand() % 100 + 64;
 
             ref(short_test_buff[index] + 3 * rand_srcStride,
                 rand_srcStride,
@@ -259,8 +261,8 @@ bool IPFilterHarness::check_IPFilterLuma_primitive(filter_pp_t ref, filter_pp_t 
 
         for (int coeffIdx = 1; coeffIdx < 4; coeffIdx++)
         {
-            rand_srcStride = rand() % 100;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100;
+            rand_dstStride = std::rand() % 100 + 64;
 
             checked(opt, pixel_test_buff[index] + 3 * rand_srcStride + 6,
                     rand_srcStride,
@@ -294,8 +296,8 @@ bool IPFilterHarness::check_IPFilterLuma_ps_primitive(filter_ps_t ref, filter_ps
 
         for (int coeffIdx = 1; coeffIdx < 4; coeffIdx++)
         {
-            rand_srcStride = rand() % 100;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100;
+            rand_dstStride = std::rand() % 100 + 64;
 
             ref(pixel_test_buff[index] + 3 * rand_srcStride,
                 rand_srcStride,
@@ -332,8 +334,8 @@ bool IPFilterHarness::check_IPFilterLuma_hps_primitive(filter_hps_t ref, filter_
             // 0 : Interpolate W x H, 1 : Interpolate W x (H + 7)
             for (int isRowExt = 0; isRowExt < 2; isRowExt++)
             {
-                rand_srcStride = rand() % 100;
-                rand_dstStride = rand() % 100 + 64;
+                rand_srcStride = std::rand() % 100;
+                rand_dstStride = std::rand() % 100 + 64;
 
                 ref(pixel_test_buff[index] + 3 * rand_srcStride + 6,
                     rand_srcStride,
@@ -370,8 +372,8 @@ bool IPFilterHarness::check_IPFilterLuma_sp_primitive(filter_sp_t ref, filter_sp
 
         for (int coeffIdx = 1; coeffIdx < 4; coeffIdx++)
         {
-            rand_srcStride = rand() % 100;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100;
+            rand_dstStride = std::rand() % 100 + 64;
 
             ref(short_test_buff[index] + 3 * rand_srcStride,
                 rand_srcStride,
@@ -405,8 +407,8 @@ bool IPFilterHarness::check_IPFilterLuma_ss_primitive(filter_ss_t ref, filter_ss
 
         for (int coeffIdx = 1; coeffIdx < 4; coeffIdx++)
         {
-            rand_srcStride = rand() % 100;
-            rand_dstStride = rand() % 100 + 64;
+            rand_srcStride = std::rand() % 100;
+            rand_dstStride = std::rand() % 100 + 64;
 
             ref(short_test_buff[index] + 3 * rand_srcStride,
                 rand_srcStride,
@@ -442,8 +444,8 @@ bool IPFilterHarness::check_IPFilterLumaHV_primitive(filter_hv_pp_t ref, filter_
         {
             for (int coeffIdxY = 1; coeffIdxY < 4; coeffIdxY++)
             {
-                rand_srcStride = rand() % 100;
-                rand_dstStride = rand() % 100 + 64;
+                rand_srcStride = std::rand() % 100;
+                rand_dstStride = std::rand() % 100 + 64;
 
                 ref(pixel_test_buff[index] + 3 * rand_srcStride + 3,
                     rand_srcStride,
@@ -474,9 +476,9 @@ bool IPFilterHarness::check_IPFilterLumaP2S_primitive(filter_p2s_t ref, filter_p
 {
     for (int i = 0; i < ITERS; i++)
     {
-        intptr_t rand_srcStride = rand() % 100;
+        intptr_t rand_srcStride = std::rand() % 100;
         int index = i % TEST_CASES;
-        intptr_t dstStride = rand() % 100 + 64;
+        intptr_t dstStride = std::rand() % 100 + 64;
 
         ref(pixel_test_buff[index] + i, rand_srcStride, IPF_C_output_s, dstStride);
 
@@ -515,9 +517,9 @@ bool IPFilterHarness::check_IPFilterChromaP2S_primitive(filter_p2s_t ref, filter
 {
     for (int i = 0; i < ITERS; i++)
     {
-        intptr_t rand_srcStride = rand() % 100;
+        intptr_t rand_srcStride = std::rand() % 100;
         int index = i % TEST_CASES;
-        intptr_t dstStride = rand() % 100 + 64;
+        intptr_t dstStride = std::rand() % 100 + 64;
 
         ref(pixel_test_buff[index] + i, rand_srcStride, IPF_C_output_s, dstStride);
 
@@ -564,7 +566,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLuma_primitive(ref.pu[value].luma_hpp, opt.pu[value].luma_hpp))
             {
-                printf("luma_hpp[%s]", lumaPartStr[value]);
+                std::printf("luma_hpp[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -572,7 +574,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLuma_hps_primitive(ref.pu[value].luma_hps, opt.pu[value].luma_hps))
             {
-                printf("luma_hps[%s]", lumaPartStr[value]);
+                std::printf("luma_hps[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -580,7 +582,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLuma_primitive(ref.pu[value].luma_vpp, opt.pu[value].luma_vpp))
             {
-                printf("luma_vpp[%s]", lumaPartStr[value]);
+                std::printf("luma_vpp[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -588,7 +590,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLuma_ps_primitive(ref.pu[value].luma_vps, opt.pu[value].luma_vps))
             {
-                printf("luma_vps[%s]", lumaPartStr[value]);
+                std::printf("luma_vps[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -596,7 +598,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLuma_sp_primitive(ref.pu[value].luma_vsp, opt.pu[value].luma_vsp))
             {
-                printf("luma_vsp[%s]", lumaPartStr[value]);
+                std::printf("luma_vsp[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -604,7 +606,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLuma_ss_primitive(ref.pu[value].luma_vss, opt.pu[value].luma_vss))
             {
-                printf("luma_vss[%s]", lumaPartStr[value]);
+                std::printf("luma_vss[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -612,7 +614,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLumaHV_primitive(ref.pu[value].luma_hvpp, opt.pu[value].luma_hvpp))
             {
-                printf("luma_hvpp[%s]", lumaPartStr[value]);
+                std::printf("luma_hvpp[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -620,7 +622,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLumaP2S_primitive(ref.pu[value].convert_p2s[NONALIGNED], opt.pu[value].convert_p2s[NONALIGNED]))
             {
-                printf("convert_p2s[%s]", lumaPartStr[value]);
+                std::printf("convert_p2s[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -628,7 +630,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
         {
             if (!check_IPFilterLumaP2S_aligned_primitive(ref.pu[value].convert_p2s[ALIGNED], opt.pu[value].convert_p2s[ALIGNED]))
             {
-                printf("convert_p2s_aligned[%s]", lumaPartStr[value]);
+                std::printf("convert_p2s_aligned[%s]", lumaPartStr[value]);
                 return false;
             }
         }
@@ -642,7 +644,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChroma_primitive(ref.chroma[csp].pu[value].filter_hpp, opt.chroma[csp].pu[value].filter_hpp))
                 {
-                    printf("chroma_hpp[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_hpp[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -650,7 +652,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChroma_hps_primitive(ref.chroma[csp].pu[value].filter_hps, opt.chroma[csp].pu[value].filter_hps))
                 {
-                    printf("chroma_hps[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_hps[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -658,7 +660,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChroma_primitive(ref.chroma[csp].pu[value].filter_vpp, opt.chroma[csp].pu[value].filter_vpp))
                 {
-                    printf("chroma_vpp[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_vpp[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -666,7 +668,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChroma_ps_primitive(ref.chroma[csp].pu[value].filter_vps, opt.chroma[csp].pu[value].filter_vps))
                 {
-                    printf("chroma_vps[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_vps[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -674,7 +676,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChroma_sp_primitive(ref.chroma[csp].pu[value].filter_vsp, opt.chroma[csp].pu[value].filter_vsp))
                 {
-                    printf("chroma_vsp[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_vsp[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -682,7 +684,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChroma_ss_primitive(ref.chroma[csp].pu[value].filter_vss, opt.chroma[csp].pu[value].filter_vss))
                 {
-                    printf("chroma_vss[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_vss[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -690,7 +692,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChromaP2S_aligned_primitive(ref.chroma[csp].pu[value].p2s[ALIGNED], opt.chroma[csp].pu[value].p2s[ALIGNED]))
                 {
-                    printf("chroma_p2s_aligned[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_p2s_aligned[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -698,7 +700,7 @@ bool IPFilterHarness::testCorrectness(const EncoderPrimitives& ref, const Encode
             {
                 if (!check_IPFilterChromaP2S_primitive(ref.chroma[csp].pu[value].p2s[NONALIGNED], opt.chroma[csp].pu[value].p2s[NONALIGNED]))
                 {
-                    printf("chroma_p2s[%s]", chromaPartStr[csp][value]);
+                    std::printf("chroma_p2s[%s]", chromaPartStr[csp][value]);
                     return false;
                 }
             }
@@ -718,14 +720,14 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
     {
         if (opt.pu[value].luma_hpp)
         {
-            printf("luma_hpp[%s]\t", lumaPartStr[value]);
+            std::printf("luma_hpp[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].luma_hpp, ref.pu[value].luma_hpp,
                 pixel_buff + srcStride, srcStride, IPF_vec_output_p, dstStride, 1);
         }
 
         if (opt.pu[value].luma_hps)
         {
-            printf("luma_hps[%s]\t", lumaPartStr[value]);
+            std::printf("luma_hps[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].luma_hps, ref.pu[value].luma_hps,
                 pixel_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                 IPF_vec_output_s, dstStride, 1, 1);
@@ -733,7 +735,7 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
 
         if (opt.pu[value].luma_vpp)
         {
-            printf("luma_vpp[%s]\t", lumaPartStr[value]);
+            std::printf("luma_vpp[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].luma_vpp, ref.pu[value].luma_vpp,
                 pixel_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                 IPF_vec_output_p, dstStride, 1);
@@ -741,7 +743,7 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
 
         if (opt.pu[value].luma_vps)
         {
-            printf("luma_vps[%s]\t", lumaPartStr[value]);
+            std::printf("luma_vps[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].luma_vps, ref.pu[value].luma_vps,
                 pixel_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                 IPF_vec_output_s, dstStride, 1);
@@ -749,7 +751,7 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
 
         if (opt.pu[value].luma_vsp)
         {
-            printf("luma_vsp[%s]\t", lumaPartStr[value]);
+            std::printf("luma_vsp[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].luma_vsp, ref.pu[value].luma_vsp,
                 short_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                 IPF_vec_output_p, dstStride, 1);
@@ -757,7 +759,7 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
 
         if (opt.pu[value].luma_vss)
         {
-            printf("luma_vss[%s]\t", lumaPartStr[value]);
+            std::printf("luma_vss[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].luma_vss, ref.pu[value].luma_vss,
                 short_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                 IPF_vec_output_s, dstStride, 1);
@@ -765,14 +767,14 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
 
         if (opt.pu[value].luma_hvpp)
         {
-            printf("luma_hv [%s]\t", lumaPartStr[value]);
+            std::printf("luma_hv [%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].luma_hvpp, ref.pu[value].luma_hvpp,
                 pixel_buff + 3 * srcStride, srcStride, IPF_vec_output_p, srcStride, 1, 3);
         }
 
         if (opt.pu[value].convert_p2s[NONALIGNED])
         {
-            printf("convert_p2s[%s]\t", lumaPartStr[value]);
+            std::printf("convert_p2s[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].convert_p2s[NONALIGNED], ref.pu[value].convert_p2s[NONALIGNED],
                 pixel_buff, srcStride,
                 IPF_vec_output_s, dstStride);
@@ -780,7 +782,7 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
 
         if (opt.pu[value].convert_p2s[ALIGNED])
         {
-            printf("convert_p2s_aligned[%s]\t", lumaPartStr[value]);
+            std::printf("convert_p2s_aligned[%s]\t", lumaPartStr[value]);
             REPORT_SPEEDUP(opt.pu[value].convert_p2s[ALIGNED], ref.pu[value].convert_p2s[ALIGNED],
                 pixel_buff, srcStride,
                 IPF_vec_output_s, dstStride);
@@ -789,58 +791,58 @@ void IPFilterHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPr
 
     for (int csp = X265_CSP_I420; csp < X265_CSP_COUNT; csp++)
     {
-        printf("= Color Space %s =\n", x265_source_csp_names[csp]);
+        std::printf("= Color Space %s =\n", x265_source_csp_names[csp]);
         for (int value = 0; value < NUM_PU_SIZES; value++)
         {
             if (opt.chroma[csp].pu[value].filter_hpp)
             {
-                printf("chroma_hpp[%s]", chromaPartStr[csp][value]);
+                std::printf("chroma_hpp[%s]", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].filter_hpp, ref.chroma[csp].pu[value].filter_hpp,
                     pixel_buff + srcStride, srcStride, IPF_vec_output_p, dstStride, 1);
             }
             if (opt.chroma[csp].pu[value].filter_hps)
             {
-                printf("chroma_hps[%s]", chromaPartStr[csp][value]);
+                std::printf("chroma_hps[%s]", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].filter_hps, ref.chroma[csp].pu[value].filter_hps,
                     pixel_buff + srcStride, srcStride, IPF_vec_output_s, dstStride, 1, 1);
             }
             if (opt.chroma[csp].pu[value].filter_vpp)
             {
-                printf("chroma_vpp[%s]", chromaPartStr[csp][value]);
+                std::printf("chroma_vpp[%s]", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].filter_vpp, ref.chroma[csp].pu[value].filter_vpp,
                     pixel_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                     IPF_vec_output_p, dstStride, 1);
             }
             if (opt.chroma[csp].pu[value].filter_vps)
             {
-                printf("chroma_vps[%s]", chromaPartStr[csp][value]);
+                std::printf("chroma_vps[%s]", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].filter_vps, ref.chroma[csp].pu[value].filter_vps,
                     pixel_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                     IPF_vec_output_s, dstStride, 1);
             }
             if (opt.chroma[csp].pu[value].filter_vsp)
             {
-                printf("chroma_vsp[%s]", chromaPartStr[csp][value]);
+                std::printf("chroma_vsp[%s]", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].filter_vsp, ref.chroma[csp].pu[value].filter_vsp,
                     short_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                     IPF_vec_output_p, dstStride, 1);
             }
             if (opt.chroma[csp].pu[value].filter_vss)
             {
-                printf("chroma_vss[%s]", chromaPartStr[csp][value]);
+                std::printf("chroma_vss[%s]", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].filter_vss, ref.chroma[csp].pu[value].filter_vss,
                     short_buff + maxVerticalfilterHalfDistance * srcStride, srcStride,
                     IPF_vec_output_s, dstStride, 1);
             }
             if (opt.chroma[csp].pu[value].p2s[NONALIGNED])
             {
-                printf("chroma_p2s[%s]\t", chromaPartStr[csp][value]);
+                std::printf("chroma_p2s[%s]\t", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].p2s[NONALIGNED], ref.chroma[csp].pu[value].p2s[NONALIGNED],
                     pixel_buff, srcStride, IPF_vec_output_s, dstStride);
             }
             if (opt.chroma[csp].pu[value].p2s[ALIGNED])
             {
-                printf("chroma_p2s_aligned[%s]\t", chromaPartStr[csp][value]);
+                std::printf("chroma_p2s_aligned[%s]\t", chromaPartStr[csp][value]);
                 REPORT_SPEEDUP(opt.chroma[csp].pu[value].p2s[ALIGNED], ref.chroma[csp].pu[value].p2s[ALIGNED],
                     pixel_buff, srcStride, IPF_vec_output_s, dstStride);
             }
