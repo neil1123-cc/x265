@@ -24,6 +24,8 @@
 #ifdef ENABLE_ZIMG
 #include "zimgfilter.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 using namespace std;
 
@@ -70,7 +72,7 @@ ZimgFilter::ZimgFilter(char* paramString)
     temp = nullptr;
 
     char* begin = paramString;
-    char* end = paramString + strlen(paramString);
+    char* end = paramString + std::strlen(paramString);
     char* p = begin;
 
     while (p < end)
@@ -82,14 +84,14 @@ ZimgFilter::ZimgFilter(char* paramString)
         while (p[0] != '(' && p < end) p++;
         length = p - begin;
         pName[length] = 0;
-        strncpy(pName, begin, length);
+        std::strncpy(pName, begin, length);
         p = begin = p + 1;
 
         // Scan )
         while (p[0] != ')' && p < end) p++;
         length = p - begin;
         pValue[length] = 0;
-        strncpy(pValue, begin, length);
+        std::strncpy(pValue, begin, length);
         p = begin = p + 1;
 
         if (!pName[0])
@@ -334,8 +336,8 @@ void ZimgFilter::processFrame(x265_picture& picture)
         return;
     }
 
-    memcpy(picture.stride, stride, sizeof(stride));
-    memcpy(picture.planes, planes, sizeof(planes));
+    std::memcpy(picture.stride, stride, sizeof(stride));
+    std::memcpy(picture.planes, planes, sizeof(planes));
     picture.bitDepth = OutputDepth;
     picture.width = rWidth;
     picture.height = rHeight;
