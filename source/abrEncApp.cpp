@@ -617,7 +617,7 @@ ret:
 #if ENABLE_LIBVMAF
             x265_vmaf_data* vmafdata = m_cliopt.vmafData;
 #endif
-            memcpy(&m_parent->m_param[m_id], m_param, sizeof(x265_param));
+            std::memcpy(&m_parent->m_param[m_id], m_param, sizeof(x265_param));
             /* This allows muxers to modify bitstream format */
             m_cliopt.output->setParam(m_param);
             if (m_cliopt.output->isFail())
@@ -648,7 +648,7 @@ ret:
             x265_picture* pic_recon;
             x265_picture pic_out[MAX_LAYERS];
 
-            pic_recon = (m_cliopt.recon[0] || strlen(m_param->analysisSave) || strlen(m_param->analysisLoad) || pts_queue || reconPlay || m_param->csvLogLevel) ? pic_out : nullptr;
+            pic_recon = (m_cliopt.recon[0] || std::strlen(m_param->analysisSave) || std::strlen(m_param->analysisLoad) || pts_queue || reconPlay || m_param->csvLogLevel) ? pic_out : nullptr;
             uint32_t inFrameCount = 0;
             uint32_t outFrameCount = 0;
             x265_nal *p_nal;
@@ -709,7 +709,7 @@ ret:
             {
                 errorBuf = X265_MALLOC(int16_t, m_param->sourceWidth + 1);
                 if (errorBuf)
-                    memset(errorBuf, 0, (m_param->sourceWidth + 1) * sizeof(int16_t));
+                    std::memset(errorBuf, 0, (m_param->sourceWidth + 1) * sizeof(int16_t));
                 else
                     m_cliopt.bDither = false;
             }
@@ -809,8 +809,8 @@ ret:
 
                                     for (int y = 0; y < (height >> x265_cli_csps[pic_in[view]->colorSpace].height[i]); y++)
                                     {
-                                        memcpy(p1, srcP1, stride);
-                                        memcpy(p2, srcP2, stride);
+                                        std::memcpy(p1, srcP1, stride);
+                                        std::memcpy(p2, srcP2, stride);
                                         srcP1 += 2 * stride;
                                         srcP2 += 2 * stride;
                                         p1 += stride;
@@ -965,7 +965,7 @@ ret:
             delete reconPlay;
 
             api->encoder_get_stats(m_encoder, &stats, sizeof(stats));
-            if (strlen(m_param->csvfn) && !b_ctrl_c)
+            if (std::strlen(m_param->csvfn) && !b_ctrl_c)
 #if ENABLE_LIBVMAF
                 api->vmaf_encoder_log(m_encoder, m_cliopt.argCnt, m_cliopt.argString, m_cliopt.param, vmafdata);
 #else
@@ -1260,7 +1260,7 @@ ret:
                     if (!dest->planes[0])
                         dest->planes[0] = X265_MALLOC(char, dest->framesize);
 
-                    memcpy(dest->planes[0], src->planes[0], src->framesize * sizeof(char));
+                    std::memcpy(dest->planes[0], src->planes[0], src->framesize * sizeof(char));
                     int height = (src->height * (src->format == 2 ? 2 : 1));
                     dest->planes[1] = (char*)dest->planes[0] + src->stride[0] * height;
                     dest->planes[2] = (char*)dest->planes[1] + src->stride[1] * (height >> x265_cli_csps[src->colorSpace].height[1]);
