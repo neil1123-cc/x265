@@ -485,7 +485,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
             else
             {
                 int count = std::atoi(nodeStr);
-                if (i > 0 || strchr(nodeStr, ','))   // it is comma -> old logic
+                if (i > 0 || std::strchr(nodeStr, ','))   // it is comma -> old logic
                 {
                     threadsPerPool[i] = X265_MIN(count, cpusPerNode[i]);
                     nodeMaskPerPool[i] = ((uint64_t)1 << i);

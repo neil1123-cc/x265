@@ -94,7 +94,7 @@ namespace X265_NS {
 x265_param *x265_param_alloc()
 {
     x265_param* param = (x265_param*)x265_malloc(sizeof(x265_param));
-    memset(param, 0, sizeof(x265_param));
+    std::memset(param, 0, sizeof(x265_param));
 #ifdef SVT_HEVC
     param->svtHevcParam = (EB_H265_ENC_CONFIGURATION*)x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
 #endif
@@ -156,7 +156,7 @@ void x265_param_default(x265_param* param)
     EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
 #endif
 
-    memset(param, 0, sizeof(x265_param));
+    std::memset(param, 0, sizeof(x265_param));
 
     /* Applying default values to all elements in the param structure */
     param->cpuid = X265_NS::cpu_detect(false);
@@ -840,11 +840,11 @@ int x265_scenecut_aware_qp_param_parse(x265_param* p, const char* name, const ch
     if (name[0] == '-' && name[1] == '-')
         name += 2;
     // s/_/-/g
-    if (strlen(name) + 1 < sizeof(nameBuf) && strchr(name, '_'))
+    if (std::strlen(name) + 1 < sizeof(nameBuf) && std::strchr(name, '_'))
     {
         char *c;
         strcpy(nameBuf, name);
-        while ((c = strchr(nameBuf, '_')) != 0)
+        while ((c = std::strchr(nameBuf, '_')) != 0)
             *c = '-';
         name = nameBuf;
     }
