@@ -659,6 +659,10 @@ def main():
         }])
         expect_fail(run_checker(msvc_latest_arguments_dir), 'old standard flag /std:c++latest')
 
+        msvc_required_depth_missing_dir = root / 'msvc-required-depth-missing'
+        write_compile_commands(msvc_required_depth_missing_dir, 'clang-cl /std:c++20 /c source/common/common.cpp')
+        expect_fail(run_checker(msvc_required_depth_missing_dir, '--required-depth-define=-DX265_DEPTH=8', '--min-cpp-commands=1'), 'missing -DX265_DEPTH=8')
+
         both_fields_dir = root / 'pass-command-arguments-same-std'
         write_compile_commands_records(both_fields_dir, [{
             'directory': str(both_fields_dir),
@@ -1117,6 +1121,24 @@ def main():
         }])
         expect_pass(run_checker(cxx_language_arguments_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
+        command_c_arguments_cxx_boundary_dir = root / 'command-c-arguments-cxx-boundary'
+        write_compile_commands_records(command_c_arguments_cxx_boundary_dir, [{
+            'directory': str(command_c_arguments_cxx_boundary_dir),
+            'command': 'cc -std=c11 -c source/common/template.inc',
+            'arguments': ['cc', '-x', 'c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(command_c_arguments_cxx_boundary_dir, '--min-cpp-commands=1'), 'duplicate standard flags -std=gnu++20,-std=c11')
+
+        command_cxx_arguments_c_boundary_dir = root / 'command-cxx-arguments-c-boundary'
+        write_compile_commands_records(command_cxx_arguments_c_boundary_dir, [{
+            'directory': str(command_cxx_arguments_c_boundary_dir),
+            'command': 'cc -x c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/template.inc',
+            'arguments': ['cc', '-std=c11', '-c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(command_cxx_arguments_c_boundary_dir, '--min-cpp-commands=1'), 'duplicate standard flags -std=c11,-std=gnu++20')
+
         msvc_tp_language_dir = root / 'msvc-tp-cxx-language'
         write_compile_commands_records(msvc_tp_language_dir, [{
             'directory': str(msvc_tp_language_dir),
@@ -1291,6 +1313,15 @@ def main():
             'file': str(root / 'source\\common\\common.cpp'),
         }])
         expect_fail(run_checker(quoted_windows_arguments_response_forbidden_substring_dir, '--forbidden-flag-substring=-Wno-deprecated', '--required-file-substring=source\\common\\common.cpp'), 'forbidden flag substring -Wno-deprecated')
+        quoted_windows_path_source_substring_response_dir = root / 'quoted-windows-path-source-substring-response-file'
+        quoted_windows_path_source_substring_response_dir.mkdir()
+        (quoted_windows_path_source_substring_response_dir / 'args file.rsp').write_text('-std=gnu++20 -DENABLE_LAVF "-FI=C:/Program Files/x265/config.h"')
+        write_compile_commands_records(quoted_windows_path_source_substring_response_dir, [{
+            'directory': str(quoted_windows_path_source_substring_response_dir),
+            'arguments': ['c++', '@args file.rsp', '-c', 'source\\input\\lavf.cpp'],
+            'file': str(root / 'source\\input\\lavf.cpp'),
+        }])
+        expect_pass(run_checker(quoted_windows_path_source_substring_response_dir, '--required-file-substring=source\\input\\lavf.cpp', '--required-file-flag=source\\input\\lavf.cpp=-DENABLE_LAVF', '--required-flag-prefix=-FI='))
 
         quoted_response_missing_flag_dir = root / 'quoted-response-file-arguments-missing-flag'
         quoted_response_missing_flag_dir.mkdir()
@@ -1913,6 +1944,21 @@ def main():
             },
         ])
         expect_fail(run_checker(duplicate_source_response_dir, '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands')
+        duplicate_source_forbidden_flag_dir = root / 'duplicate-source-forbidden-flag'
+        write_compile_commands_entries(duplicate_source_forbidden_flag_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12 -c source/common/common.cpp', 'source/common/common.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/encoder/encoder.cpp', 'source/encoder/encoder.cpp'),
+        ])
+        expect_fail(run_checker(duplicate_source_forbidden_flag_dir, '--forbidden-flag=-DX265_DEPTH=12', '--min-cpp-commands=2'), 'forbidden flag -DX265_DEPTH=12')
+
+        duplicate_source_forbidden_flag_substring_dir = root / 'duplicate-source-forbidden-flag-substring'
+        write_compile_commands_entries(duplicate_source_forbidden_flag_substring_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -Wno-deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/encoder/encoder.cpp', 'source/encoder/encoder.cpp'),
+        ])
+        expect_fail(run_checker(duplicate_source_forbidden_flag_substring_dir, '--forbidden-flag-substring=-Wno-deprecated', '--min-cpp-commands=2'), 'forbidden flag substring -Wno-deprecated')
 
         duplicate_source_dir = root / 'duplicate-source-min-cpp-commands'
         write_compile_commands_entries(duplicate_source_dir, [
