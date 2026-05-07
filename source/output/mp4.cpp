@@ -9,8 +9,8 @@
 
 #include "mp4.h"
 
-#include <inttypes.h>
-#include <limits.h>
+#include <cinttypes>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <vector>
