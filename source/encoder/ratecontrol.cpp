@@ -38,6 +38,7 @@
 #include "ratecontrol.h"
 #include "sei.h"
 #include <atomic>
+#include <cmath>
 
 #define BR_SHIFT  6
 #define CPB_SHIFT 4
@@ -131,8 +132,8 @@ inline double qScale2bits(RateControlEntry *rce, double qScale)
 {
     if (qScale < 0.1)
         qScale = 0.1;
-    return (rce->coeffBits + .1) * pow(rce->qScale / qScale, 1.1)
-           + rce->mvBits * pow(X265_MAX(rce->qScale, 1) / X265_MAX(qScale, 1), 0.5)
+    return (rce->coeffBits + .1) * std::pow(rce->qScale / qScale, 1.1)
+           + rce->mvBits * std::pow(X265_MAX(rce->qScale, 1) / X265_MAX(qScale, 1), 0.5)
            + rce->miscBits;
 }
 
@@ -206,7 +207,7 @@ RateControl::RateControl(x265_param& p, Encoder *top)
 
         double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
         double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
-        m_rateFactorConstant = pow(baseCplx, 1 - m_qCompress) /
+        m_rateFactorConstant = std::pow(baseCplx, 1 - m_qCompress) /
             x265_qp2qScale(m_param->rc.rfConstant + mbtree_offset);
         if (m_param->rc.rfConstantMax)
         {
@@ -347,7 +348,7 @@ RateControl::RateControl(x265_param& p, Encoder *top)
     m_bRcReConfig = false;
 
     /* qpstep - value set as encoder specific */
-    m_lstep = pow(2, m_param->rc.qpStep / 6.0);
+    m_lstep = std::pow(2, m_param->rc.qpStep / 6.0);
 
     for (int i = 0; i < 2; i++)
         m_cuTreeStats.qpBuffer[i] = NULL;
@@ -479,7 +480,7 @@ bool RateControl::init(const SPS& sps)
     double tuneCplxFactor = (m_ncu > 3600 && m_param->rc.cuTree && !m_param->rc.hevcAq) ? 2.5 : m_param->rc.hevcAq ? 1.5 : m_isGrainEnabled ? 1.9 : 1.0;
 
     /* estimated ratio that produces a reasonable QP for the first I-frame */
-    m_cplxrSum = .01 * pow(7.0e5, m_qCompress) * pow(m_ncu, 0.5) * tuneCplxFactor;
+    m_cplxrSum = .01 * std::pow(7.0e5, m_qCompress) * std::pow(m_ncu, 0.5) * tuneCplxFactor;
     m_wantedBitsWindow = m_bitrate * m_frameDuration;
     m_accumPNorm = .01;
     m_accumPQp = (m_param->rc.rateControlMode == X265_RC_CRF ? CRF_INIT_QP : ABR_INIT_QP_MIN) * m_accumPNorm;
@@ -852,7 +853,7 @@ void RateControl::reconfigureRC()
         m_param->rc.bitrate = 0;
         double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
         double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
-        m_rateFactorConstant = pow(baseCplx, 1 - m_qCompress) /
+        m_rateFactorConstant = std::pow(baseCplx, 1 - m_qCompress) /
             x265_qp2qScale(m_param->rc.rfConstant + mbtree_offset);
         if (m_param->rc.rfConstantMax)
         {
@@ -1002,7 +1003,7 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
         m_accumPNorm = 0;
 
         m_lastQScaleFor[0] = m_lastQScaleFor[1] =
-        m_lastQScaleFor[2] = pow(baseCplx, 1 - m_qCompress) / rateFactor;
+        m_lastQScaleFor[2] = std::pow(baseCplx, 1 - m_qCompress) / rateFactor;
 
         /* find qscale */
         for (int i = 0; i < m_numEntries; i++)
@@ -3160,7 +3161,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
             double crfFactor = rce->qRceq /x265_qp2qScale(qpRef);
             double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
             double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
-            crfVal = x265_qScale2qp(pow(baseCplx, 1 - m_qCompress) / crfFactor) - mbtree_offset;
+            crfVal = x265_qScale2qp(std::pow(baseCplx, 1 - m_qCompress) / crfFactor) - mbtree_offset;
         }
         else
         {
