@@ -1198,6 +1198,13 @@ def main():
         write_compile_commands(nested_response_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_pass(run_checker(nested_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
+        nested_response_forbidden_dir = root / 'nested-response-file-forbidden-exact-flag'
+        nested_response_forbidden_dir.mkdir()
+        (nested_response_forbidden_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated -DX265_DEPTH=12')
+        (nested_response_forbidden_dir / 'args.rsp').write_text('@std.rsp -Werror=deprecated')
+        write_compile_commands(nested_response_forbidden_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(nested_response_forbidden_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         nested_parent_response_dir = root / 'nested-parent-response-file'
         nested_parent_response_dir.mkdir()
         nested_parent_response_subdir = nested_parent_response_dir / 'sub'

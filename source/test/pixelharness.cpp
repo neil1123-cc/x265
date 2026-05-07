@@ -26,6 +26,8 @@
 #include "primitives.h"
 #include "entropy.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 PixelHarness::PixelHarness()
@@ -205,8 +207,8 @@ bool PixelHarness::check_calresidual(calcresidual_t ref, calcresidual_t opt)
 {
     ALIGN_VAR_16(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_16(int16_t, opt_dest[64 * 64]);
-    memset(ref_dest, 0, 64 * 64 * sizeof(int16_t));
-    memset(opt_dest, 0, 64 * 64 * sizeof(int16_t));
+    std::memset(ref_dest, 0, 64 * 64 * sizeof(int16_t));
+    std::memset(opt_dest, 0, 64 * 64 * sizeof(int16_t));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -216,7 +218,7 @@ bool PixelHarness::check_calresidual(calcresidual_t ref, calcresidual_t opt)
         checked(opt, pbuf1 + j, pixel_test_buff[index] + j, opt_dest, stride);
         ref(pbuf1 + j, pixel_test_buff[index] + j, ref_dest, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -230,8 +232,8 @@ bool PixelHarness::check_calresidual_aligned(calcresidual_t ref, calcresidual_t 
 {
     ALIGN_VAR_16(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_16(int16_t, opt_dest[64 * 64]);
-    memset(ref_dest, 0, 64 * 64 * sizeof(int16_t));
-    memset(opt_dest, 0, 64 * 64 * sizeof(int16_t));
+    std::memset(ref_dest, 0, 64 * 64 * sizeof(int16_t));
+    std::memset(opt_dest, 0, 64 * 64 * sizeof(int16_t));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -241,7 +243,7 @@ bool PixelHarness::check_calresidual_aligned(calcresidual_t ref, calcresidual_t 
         checked(opt, pbuf1 + j, pixel_test_buff[index] + j, opt_dest, stride);
         ref(pbuf1 + j, pixel_test_buff[index] + j, ref_dest, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -293,8 +295,8 @@ bool PixelHarness::check_weightp(weightp_sp_t ref, weightp_sp_t opt)
     ALIGN_VAR_16(pixel, ref_dest[64 * (64 + 1)]);
     ALIGN_VAR_16(pixel, opt_dest[64 * (64 + 1)]);
 
-    memset(ref_dest, 0, 64 * 64 * sizeof(pixel));
-    memset(opt_dest, 0, 64 * 64 * sizeof(pixel));
+    std::memset(ref_dest, 0, 64 * 64 * sizeof(pixel));
+    std::memset(opt_dest, 0, 64 * 64 * sizeof(pixel));
     int j = 0;
     int width = 2 * (rand() % 32 + 1);
     int height = 8;
@@ -311,7 +313,7 @@ bool PixelHarness::check_weightp(weightp_sp_t ref, weightp_sp_t opt)
         checked(opt, short_test_buff[index] + j, opt_dest, stride, stride + 1, width, height, w0, round << correction, shift + correction, offset);
         ref(short_test_buff[index] + j, ref_dest, stride, stride + 1, width, height, w0, round << correction, shift + correction, offset);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
         {
             opt(short_test_buff[index] + j, opt_dest, stride, stride + 1, width, height, w0, round << correction, shift + correction, offset);
             return false;
@@ -329,8 +331,8 @@ bool PixelHarness::check_weightp(weightp_pp_t ref, weightp_pp_t opt)
     ALIGN_VAR_16(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0, 64 * 64 * sizeof(pixel));
-    memset(opt_dest, 0, 64 * 64 * sizeof(pixel));
+    std::memset(ref_dest, 0, 64 * 64 * sizeof(pixel));
+    std::memset(opt_dest, 0, 64 * 64 * sizeof(pixel));
     int j = 0;
     bool enableavx512 = true;
     int width = 16 * (rand() % 4 + 1);
@@ -356,7 +358,7 @@ bool PixelHarness::check_weightp(weightp_pp_t ref, weightp_pp_t opt)
             checked(opt, pixel_test_buff[index] + j, opt_dest, stride, width, height, w0, round << correction, shift + correction, offset);
             ref(pixel_test_buff[index] + j, ref_dest, stride, width, height, w0, round << correction, shift + correction, offset);
 
-            if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+            if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             {
                 checked(opt, pixel_test_buff[index] + j, opt_dest, stride, width, height, w0, round << correction, shift + correction, offset);
                 return false;
@@ -397,13 +399,13 @@ bool PixelHarness::check_downscale_t(downscale_t ref, downscale_t opt)
         checked(opt, pixel_test_buff[index] + j, opt_destf, opt_desth, opt_destv,
                 opt_destc, src_stride, dst_stride, bx, by);
 
-        if (memcmp(ref_destf, opt_destf, 32 * 32 * sizeof(pixel)))
+        if (std::memcmp(ref_destf, opt_destf, 32 * 32 * sizeof(pixel)))
             return false;
-        if (memcmp(ref_desth, opt_desth, 32 * 32 * sizeof(pixel)))
+        if (std::memcmp(ref_desth, opt_desth, 32 * 32 * sizeof(pixel)))
             return false;
-        if (memcmp(ref_destv, opt_destv, 32 * 32 * sizeof(pixel)))
+        if (std::memcmp(ref_destv, opt_destv, 32 * 32 * sizeof(pixel)))
             return false;
-        if (memcmp(ref_destc, opt_destc, 32 * 32 * sizeof(pixel)))
+        if (std::memcmp(ref_destc, opt_destc, 32 * 32 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -429,7 +431,7 @@ bool PixelHarness::check_downscaleluma_t(downscaleluma_t ref, downscaleluma_t op
         ref(pixel_test_buff[index] + j, ref_destf, src_stride, dst_stride, bx, by);
         checked(opt, pixel_test_buff[index] + j, opt_destf, src_stride, dst_stride, bx, by);
 
-        if (memcmp(ref_destf, opt_destf, 32 * 32 * sizeof(pixel)))
+        if (std::memcmp(ref_destf, opt_destf, 32 * 32 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -444,8 +446,8 @@ bool PixelHarness::check_cpy2Dto1D_shl_t(cpy2Dto1D_shl_t ref, cpy2Dto1D_shl_t op
     ALIGN_VAR_16(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_16(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -457,7 +459,7 @@ bool PixelHarness::check_cpy2Dto1D_shl_t(cpy2Dto1D_shl_t ref, cpy2Dto1D_shl_t op
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
         ref(ref_dest, short_test_buff[index] + j, stride, shift);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -472,8 +474,8 @@ bool PixelHarness::check_cpy2Dto1D_shr_t(cpy2Dto1D_shr_t ref, cpy2Dto1D_shr_t op
     ALIGN_VAR_16(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_16(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -485,7 +487,7 @@ bool PixelHarness::check_cpy2Dto1D_shr_t(cpy2Dto1D_shr_t ref, cpy2Dto1D_shr_t op
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
         ref(ref_dest, short_test_buff[index] + j, stride, shift);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -500,8 +502,8 @@ bool PixelHarness::check_copy_cnt_t(copy_cnt_t ref, copy_cnt_t opt)
     ALIGN_VAR_16(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_16(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -511,7 +513,7 @@ bool PixelHarness::check_copy_cnt_t(copy_cnt_t ref, copy_cnt_t opt)
         int opt_cnt = (int)checked(opt, opt_dest, short_test_buff1[index] + j, stride);
         int ref_cnt = ref(ref_dest, short_test_buff1[index] + j, stride);
 
-        if ((ref_cnt != opt_cnt) || memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if ((ref_cnt != opt_cnt) || std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -524,8 +526,8 @@ bool PixelHarness::check_cpy1Dto2D_shl_t(cpy1Dto2D_shl_t ref, cpy1Dto2D_shl_t op
 {
     ALIGN_VAR_64(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_64(int16_t, opt_dest[64 * 64]);
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -537,7 +539,7 @@ bool PixelHarness::check_cpy1Dto2D_shl_t(cpy1Dto2D_shl_t ref, cpy1Dto2D_shl_t op
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
         ref(ref_dest, short_test_buff[index] + j, stride, shift);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -551,8 +553,8 @@ bool PixelHarness::check_cpy1Dto2D_shl_aligned_t(cpy1Dto2D_shl_t ref, cpy1Dto2D_
     ALIGN_VAR_64(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_64(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -564,7 +566,7 @@ bool PixelHarness::check_cpy1Dto2D_shl_aligned_t(cpy1Dto2D_shl_t ref, cpy1Dto2D_
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
         ref(ref_dest, short_test_buff[index] + j, stride, shift);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -579,8 +581,8 @@ bool PixelHarness::check_cpy1Dto2D_shr_t(cpy1Dto2D_shr_t ref, cpy1Dto2D_shr_t op
     ALIGN_VAR_16(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_16(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -592,7 +594,7 @@ bool PixelHarness::check_cpy1Dto2D_shr_t(cpy1Dto2D_shr_t ref, cpy1Dto2D_shr_t op
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
         ref(ref_dest, short_test_buff[index] + j, stride, shift);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -606,8 +608,8 @@ bool PixelHarness::check_pixelavg_pp(pixelavg_pp_t ref, pixelavg_pp_t opt)
     ALIGN_VAR_64(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_64(pixel, opt_dest[64 * 64]);
     int j = 0;
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
@@ -619,7 +621,7 @@ bool PixelHarness::check_pixelavg_pp(pixelavg_pp_t ref, pixelavg_pp_t opt)
         opt(opt_dest, stride, pixel_test_buff[index1] + j,
             stride, pixel_test_buff[index2] + j, stride, 32);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -635,8 +637,8 @@ bool PixelHarness::check_pixelavg_pp_aligned(pixelavg_pp_t ref, pixelavg_pp_t op
 
     int j = 0;
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
@@ -648,7 +650,7 @@ bool PixelHarness::check_pixelavg_pp_aligned(pixelavg_pp_t ref, pixelavg_pp_t op
         opt(opt_dest, stride, pixel_test_buff[index1] + j,
             stride, pixel_test_buff[index2] + j, stride, 32);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -665,8 +667,8 @@ bool PixelHarness::check_copy_pp(copy_pp_t ref, copy_pp_t opt)
 
     // we don't know the partition size so we are checking the entire output buffer so
     // we must initialize the buffers
-    memset(ref_dest, 0, sizeof(ref_dest));
-    memset(opt_dest, 0, sizeof(opt_dest));
+    std::memset(ref_dest, 0, sizeof(ref_dest));
+    std::memset(opt_dest, 0, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -676,7 +678,7 @@ bool PixelHarness::check_copy_pp(copy_pp_t ref, copy_pp_t opt)
         checked(opt, opt_dest, stride, pixel_test_buff[index] + j, stride);
         ref(ref_dest, stride, pixel_test_buff[index] + j, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -693,8 +695,8 @@ bool PixelHarness::check_copy_sp(copy_sp_t ref, copy_sp_t opt)
 
     // we don't know the partition size so we are checking the entire output buffer so
     // we must initialize the buffers
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride1 = 64, stride2 = STRIDE;
@@ -704,7 +706,7 @@ bool PixelHarness::check_copy_sp(copy_sp_t ref, copy_sp_t opt)
         checked(opt, opt_dest, stride1, short_test_buff1[index] + j, stride2);
         ref(ref_dest, stride1, short_test_buff1[index] + j, stride2);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -721,8 +723,8 @@ bool PixelHarness::check_copy_ps(copy_ps_t ref, copy_ps_t opt)
 
     // we don't know the partition size so we are checking the entire output buffer so
     // we must initialize the buffers
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -732,7 +734,7 @@ bool PixelHarness::check_copy_ps(copy_ps_t ref, copy_ps_t opt)
         checked(opt, opt_dest, stride, pixel_test_buff[index] + j, stride);
         ref(ref_dest, stride, pixel_test_buff[index] + j, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -749,8 +751,8 @@ bool PixelHarness::check_copy_ss(copy_ss_t ref, copy_ss_t opt)
 
     // we don't know the partition size so we are checking the entire output buffer so
     // we must initialize the buffers
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -760,7 +762,7 @@ bool PixelHarness::check_copy_ss(copy_ss_t ref, copy_ss_t opt)
         checked(opt, opt_dest, stride, short_test_buff1[index] + j, stride);
         ref(ref_dest, stride, short_test_buff1[index] + j, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -775,8 +777,8 @@ bool PixelHarness::check_blockfill_s(blockfill_s_t ref, blockfill_s_t opt)
     ALIGN_VAR_64(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_64(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     intptr_t stride = 64;
     for (int i = 0; i < ITERS; i++)
@@ -786,7 +788,7 @@ bool PixelHarness::check_blockfill_s(blockfill_s_t ref, blockfill_s_t opt)
         checked(opt, opt_dest, stride, value);
         ref(ref_dest, stride, value);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -800,8 +802,8 @@ bool PixelHarness::check_blockfill_s_aligned(blockfill_s_t ref, blockfill_s_t op
     ALIGN_VAR_64(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_64(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     intptr_t stride = 64;
     for (int i = 0; i < ITERS; i++)
@@ -811,7 +813,7 @@ bool PixelHarness::check_blockfill_s_aligned(blockfill_s_t ref, blockfill_s_t op
         checked(opt, opt_dest, stride, value);
         ref(ref_dest, stride, value);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -825,8 +827,8 @@ bool PixelHarness::check_pixel_sub_ps(pixel_sub_ps_t ref, pixel_sub_ps_t opt)
     ALIGN_VAR_16(int16_t, ref_dest[64 * 64]);
     ALIGN_VAR_16(int16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride2 = 64, stride = STRIDE;
@@ -839,7 +841,7 @@ bool PixelHarness::check_pixel_sub_ps(pixel_sub_ps_t ref, pixel_sub_ps_t opt)
         ref(ref_dest, stride2, pixel_test_buff[index1] + j,
             pixel_test_buff[index2] + j, stride, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -854,8 +856,8 @@ bool PixelHarness::check_scale1D_pp(scale1D_t ref, scale1D_t opt)
     ALIGN_VAR_64(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_64(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0, sizeof(ref_dest));
-    memset(opt_dest, 0, sizeof(opt_dest));
+    std::memset(ref_dest, 0, sizeof(ref_dest));
+    std::memset(opt_dest, 0, sizeof(opt_dest));
 
     int j = 0;
     for (int i = 0; i < ITERS; i++)
@@ -864,7 +866,7 @@ bool PixelHarness::check_scale1D_pp(scale1D_t ref, scale1D_t opt)
         checked(opt, opt_dest, pixel_test_buff[index] + j);
         ref(ref_dest, pixel_test_buff[index] + j);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -879,8 +881,8 @@ bool PixelHarness::check_scale1D_pp_aligned(scale1D_t ref, scale1D_t opt)
     ALIGN_VAR_64(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_64(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0, sizeof(ref_dest));
-    memset(opt_dest, 0, sizeof(opt_dest));
+    std::memset(ref_dest, 0, sizeof(ref_dest));
+    std::memset(opt_dest, 0, sizeof(opt_dest));
 
     int j = 0;
     for (int i = 0; i < ITERS; i++)
@@ -889,7 +891,7 @@ bool PixelHarness::check_scale1D_pp_aligned(scale1D_t ref, scale1D_t opt)
         checked(opt, opt_dest, pixel_test_buff[index] + j);
         ref(ref_dest, pixel_test_buff[index] + j);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -904,8 +906,8 @@ bool PixelHarness::check_scale2D_pp(scale2D_t ref, scale2D_t opt)
     ALIGN_VAR_16(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0, sizeof(ref_dest));
-    memset(opt_dest, 0, sizeof(opt_dest));
+    std::memset(ref_dest, 0, sizeof(ref_dest));
+    std::memset(opt_dest, 0, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -915,7 +917,7 @@ bool PixelHarness::check_scale2D_pp(scale2D_t ref, scale2D_t opt)
         checked(opt, opt_dest, pixel_test_buff[index] + j, stride);
         ref(ref_dest, pixel_test_buff[index] + j, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -930,8 +932,8 @@ bool PixelHarness::check_transpose(transpose_t ref, transpose_t opt)
     ALIGN_VAR_16(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0, sizeof(ref_dest));
-    memset(opt_dest, 0, sizeof(opt_dest));
+    std::memset(ref_dest, 0, sizeof(ref_dest));
+    std::memset(opt_dest, 0, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride = STRIDE;
@@ -941,7 +943,7 @@ bool PixelHarness::check_transpose(transpose_t ref, transpose_t opt)
         checked(opt, opt_dest, pixel_test_buff[index] + j, stride);
         ref(ref_dest, pixel_test_buff[index] + j, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -956,8 +958,8 @@ bool PixelHarness::check_pixel_add_ps(pixel_add_ps_t ref, pixel_add_ps_t opt)
     ALIGN_VAR_16(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride2 = 64, stride = STRIDE;
@@ -968,7 +970,7 @@ bool PixelHarness::check_pixel_add_ps(pixel_add_ps_t ref, pixel_add_ps_t opt)
         checked(opt, opt_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
         ref(ref_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -983,8 +985,8 @@ bool PixelHarness::check_pixel_add_ps_aligned(pixel_add_ps_t ref, pixel_add_ps_t
     ALIGN_VAR_64(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_64(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
     intptr_t stride2 = 64, stride = STRIDE;
@@ -994,7 +996,7 @@ bool PixelHarness::check_pixel_add_ps_aligned(pixel_add_ps_t ref, pixel_add_ps_t
         int index2 = rand() % TEST_CASES;
         checked(opt, opt_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
         ref(ref_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -1034,7 +1036,7 @@ bool PixelHarness::check_ssim_4x4x2_core(ssim_4x4x2_core_t ref, ssim_4x4x2_core_
         ref(pixel_test_buff[index1] + i, stride, pixel_test_buff[index2] + i, stride, sum0);
         checked(opt, pixel_test_buff[index1] + i, stride, pixel_test_buff[index2] + i, stride, sum1);
 
-        if (memcmp(sum0, sum1, sizeof(sum0)))
+        if (std::memcmp(sum0, sum1, sizeof(sum0)))
             return false;
 
         reportfail();
@@ -1077,8 +1079,8 @@ bool PixelHarness::check_addAvg(addAvg_t ref, addAvg_t opt)
 
     int j = 0;
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
     intptr_t stride = STRIDE;
 
     for (int i = 0; i < ITERS; i++)
@@ -1087,7 +1089,7 @@ bool PixelHarness::check_addAvg(addAvg_t ref, addAvg_t opt)
         int index2 = rand() % TEST_CASES;
         ref(short_test_buff2[index1] + j, short_test_buff2[index2] + j, ref_dest, stride, stride, stride);
         checked(opt, short_test_buff2[index1] + j, short_test_buff2[index2] + j, opt_dest, stride, stride, stride);
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -1104,8 +1106,8 @@ bool PixelHarness::check_addAvg_aligned(addAvg_t ref, addAvg_t opt)
 
     int j = 0;
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
     intptr_t stride = STRIDE;
 
     for (int i = 0; i < ITERS; i++)
@@ -1114,7 +1116,7 @@ bool PixelHarness::check_addAvg_aligned(addAvg_t ref, addAvg_t opt)
         int index2 = rand() % TEST_CASES;
         ref(short_test_buff2[index1] + j, short_test_buff2[index2] + j, ref_dest, stride, stride, stride);
         checked(opt, short_test_buff2[index1] + j, short_test_buff2[index2] + j, opt_dest, stride, stride, stride);
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -1127,8 +1129,8 @@ bool PixelHarness::check_calSign(sign_t ref, sign_t opt)
     ALIGN_VAR_16(int8_t, ref_dest[64 * 2]);
     ALIGN_VAR_16(int8_t, opt_dest[64 * 2]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
 
@@ -1139,7 +1141,7 @@ bool PixelHarness::check_calSign(sign_t ref, sign_t opt)
         ref(ref_dest, pbuf2 + j, pbuf3 + j, width);
         checked(opt, opt_dest, pbuf2 + j, pbuf3 + j, width);
 
-        if (memcmp(ref_dest, opt_dest, sizeof(ref_dest)))
+        if (std::memcmp(ref_dest, opt_dest, sizeof(ref_dest)))
             return false;
 
         reportfail();
@@ -1167,7 +1169,7 @@ bool PixelHarness::check_saoCuOrgE0_t(saoCuOrgE0_t ref, saoCuOrgE0_t opt)
         ref(ref_dest, psbuf1 + j, width, psbuf2 + j, stride);
         checked(opt, opt_dest, psbuf1 + j, width, psbuf5 + j, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -1195,7 +1197,7 @@ bool PixelHarness::check_saoCuOrgE1_t(saoCuOrgE1_t ref, saoCuOrgE1_t opt)
         ref(ref_dest, psbuf2 + j, psbuf1 + j, stride, width);
         checked(opt, opt_dest, psbuf5 + j, psbuf1 + j, stride, width);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)) || memcmp(psbuf2, psbuf5, BUFFSIZE))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)) || std::memcmp(psbuf2, psbuf5, BUFFSIZE))
             return false;
 
         reportfail();
@@ -1226,10 +1228,10 @@ bool PixelHarness::check_saoCuOrgE2_t(saoCuOrgE2_t ref[2], saoCuOrgE2_t opt[2])
                 ref[width > 16](ref_dest, psbuf1 + j, psbuf2 + j, psbuf3 + j, width, stride);
                 checked(opt[width > 16], opt_dest, psbuf4 + j, psbuf2 + j, psbuf3 + j, width, stride);
 
-                if (memcmp(psbuf1 + j, psbuf4 + j, width * sizeof(int8_t)))
+                if (std::memcmp(psbuf1 + j, psbuf4 + j, width * sizeof(int8_t)))
                     return false;
 
-                if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+                if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
                     return false;
 
                 reportfail();
@@ -1260,7 +1262,7 @@ bool PixelHarness::check_saoCuOrgE3_t(saoCuOrgE3_t ref, saoCuOrgE3_t opt)
         ref(ref_dest, psbuf2 + j, psbuf1 + j, stride, start, end);
         checked(opt, opt_dest, psbuf5 + j, psbuf1 + j, stride, start, end);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)) || memcmp(psbuf2, psbuf5, BUFFSIZE))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)) || std::memcmp(psbuf2, psbuf5, BUFFSIZE))
             return false;
 
         reportfail();
@@ -1296,7 +1298,7 @@ bool PixelHarness::check_saoCuStatsBO_t(saoCuStatsBO_t ref, saoCuStatsBO_t opt)
         ref(sbuf2 + j + 1, pbuf3 + 1, stride, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + j + 1, pbuf3 + 1, stride, endX, endY, stats_vec, count_vec);
 
-        if (memcmp(stats_ref, stats_vec, sizeof(stats_ref)) || memcmp(count_ref, count_vec, sizeof(count_ref)))
+        if (std::memcmp(stats_ref, stats_vec, sizeof(stats_ref)) || std::memcmp(count_ref, count_vec, sizeof(count_ref)))
             return false;
 
         reportfail();
@@ -1332,7 +1334,7 @@ bool PixelHarness::check_saoCuStatsE0_t(saoCuStatsE0_t ref, saoCuStatsE0_t opt)
         ref(sbuf2 + j + 1, pbuf3 + j + 1, stride, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + j + 1, pbuf3 + j + 1, stride, endX, endY, stats_vec, count_vec);
 
-        if (memcmp(stats_ref, stats_vec, sizeof(stats_ref)) || memcmp(count_ref, count_vec, sizeof(count_ref)))
+        if (std::memcmp(stats_ref, stats_vec, sizeof(stats_ref)) || std::memcmp(count_ref, count_vec, sizeof(count_ref)))
             return false;
 
         reportfail();
@@ -1374,8 +1376,8 @@ bool PixelHarness::check_saoCuStatsE1_t(saoCuStatsE1_t ref, saoCuStatsE1_t opt)
         ref(sbuf2 + 1, pbuf3 + 1, stride, upBuff1_ref, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + 1, pbuf3 + 1, stride, upBuff1_vec, endX, endY, stats_vec, count_vec);
 
-        if (   memcmp(stats_ref, stats_vec, sizeof(stats_ref))
-            || memcmp(count_ref, count_vec, sizeof(count_ref)))
+        if (   std::memcmp(stats_ref, stats_vec, sizeof(stats_ref))
+            || std::memcmp(count_ref, count_vec, sizeof(count_ref)))
             return false;
 
         reportfail();
@@ -1423,8 +1425,8 @@ bool PixelHarness::check_saoCuStatsE2_t(saoCuStatsE2_t ref, saoCuStatsE2_t opt)
         ref(sbuf2 + 1, pbuf3 + 1, stride, upBuff1_ref, upBufft_ref, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + 1, pbuf3 + 1, stride, upBuff1_vec, upBufft_vec, endX, endY, stats_vec, count_vec);
 
-        if (   memcmp(stats_ref, stats_vec, sizeof(stats_ref))
-            || memcmp(count_ref, count_vec, sizeof(count_ref)))
+        if (   std::memcmp(stats_ref, stats_vec, sizeof(stats_ref))
+            || std::memcmp(count_ref, count_vec, sizeof(count_ref)))
             return false;
 
         reportfail();
@@ -1468,8 +1470,8 @@ bool PixelHarness::check_saoCuStatsE3_t(saoCuStatsE3_t ref, saoCuStatsE3_t opt)
         ref(sbuf2, pbuf3, stride, upBuff1_ref, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2, pbuf3, stride, upBuff1_vec, endX, endY, stats_vec, count_vec);
 
-        if (   memcmp(stats_ref, stats_vec, sizeof(stats_ref))
-            || memcmp(count_ref, count_vec, sizeof(count_ref)))
+        if (   std::memcmp(stats_ref, stats_vec, sizeof(stats_ref))
+            || std::memcmp(count_ref, count_vec, sizeof(count_ref)))
             return false;
 
         reportfail();
@@ -1497,7 +1499,7 @@ bool PixelHarness::check_saoCuOrgE3_32_t(saoCuOrgE3_t ref, saoCuOrgE3_t opt)
         ref(ref_dest, psbuf2 + j, psbuf1 + j, stride, start, end);
         checked(opt, opt_dest, psbuf5 + j, psbuf1 + j, stride, start, end);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)) || memcmp(psbuf2, psbuf5, BUFFSIZE))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)) || std::memcmp(psbuf2, psbuf5, BUFFSIZE))
             return false;
 
         reportfail();
@@ -1512,8 +1514,8 @@ bool PixelHarness::check_planecopy_sp(planecopy_sp_t ref, planecopy_sp_t opt)
     ALIGN_VAR_16(pixel, ref_dest[64 * 64]);
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
     int width = 32 + (rand() % 32);
     int height = 32 + (rand() % 32);
     intptr_t srcStride = 64;
@@ -1527,7 +1529,7 @@ bool PixelHarness::check_planecopy_sp(planecopy_sp_t ref, planecopy_sp_t opt)
         checked(opt, ushort_test_buff[index] + j, srcStride, opt_dest, dstStride, width, height, (int)8, (uint16_t)((1 << X265_DEPTH) - 1));
         ref(ushort_test_buff[index] + j, srcStride, ref_dest, dstStride, width, height, (int)8, (uint16_t)((1 << X265_DEPTH) - 1));
 
-        if (memcmp(ref_dest, opt_dest, dstStride * height * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, dstStride * height * sizeof(pixel)))
         {
             memcpy(opt_dest, ref_dest, sizeof(ref_dest));
             opt(ushort_test_buff[index] + j, srcStride, opt_dest, dstStride, width, height, (int)8, (uint16_t)((1 << X265_DEPTH) - 1));
@@ -1553,8 +1555,8 @@ bool PixelHarness::check_planecopy_pp_shr(planecopy_pp_t ref, planecopy_pp_t opt
     ALIGN_VAR_16(pixel, ref_dest[64 * 64 * 2]);
     ALIGN_VAR_16(pixel, opt_dest[64 * 64 * 2]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int width = 16 + rand() % 48;
     int height = 16 + rand() % 48;
@@ -1569,7 +1571,7 @@ bool PixelHarness::check_planecopy_pp_shr(planecopy_pp_t ref, planecopy_pp_t opt
         checked(opt, pixel_test_buff[index] + j, srcStride, opt_dest, dstStride, width, height, shift);
         ref(pixel_test_buff[index] + j, srcStride, ref_dest, dstStride, width, height, shift);
 
-        if (memcmp(ref_dest, opt_dest, sizeof(ref_dest)))
+        if (std::memcmp(ref_dest, opt_dest, sizeof(ref_dest)))
             return false;
 
         // check tail memory area
@@ -1591,8 +1593,8 @@ bool PixelHarness::check_planecopy_cp(planecopy_cp_t ref, planecopy_cp_t opt)
     ALIGN_VAR_16(pixel, ref_dest[64 * 64 * 2]);
     ALIGN_VAR_16(pixel, opt_dest[64 * 64 * 2]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int width = 16 + rand() % 48;
     int height = 16 + rand() % 48;
@@ -1607,7 +1609,7 @@ bool PixelHarness::check_planecopy_cp(planecopy_cp_t ref, planecopy_cp_t opt)
         checked(opt, uchar_test_buff[index] + j, srcStride, opt_dest, dstStride, width, height, shift);
         ref(uchar_test_buff[index] + j, srcStride, ref_dest, dstStride, width, height, shift);
 
-        if (memcmp(ref_dest, opt_dest, sizeof(ref_dest)))
+        if (std::memcmp(ref_dest, opt_dest, sizeof(ref_dest)))
             return false;
 
         // check tail memory area
@@ -1629,8 +1631,8 @@ bool PixelHarness::check_cutree_propagate_cost(cutree_propagate_cost ref, cutree
     ALIGN_VAR_16(int, ref_dest[64 * 64]);
     ALIGN_VAR_16(int, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     double fps = 1.0;
     int j = 0;
@@ -1642,7 +1644,7 @@ bool PixelHarness::check_cutree_propagate_cost(cutree_propagate_cost ref, cutree
         checked(opt, opt_dest, ushort_test_buff[index] + j, int_test_buff[index] + j, ushort_test_buff[index] + j, int_test_buff[index] + j, &fps, width);
         ref(ref_dest, ushort_test_buff[index] + j, int_test_buff[index] + j, ushort_test_buff[index] + j, int_test_buff[index] + j, &fps, width);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -1657,8 +1659,8 @@ bool PixelHarness::check_cutree_fix8_pack(cutree_fix8_pack ref, cutree_fix8_pack
     ALIGN_VAR_32(uint16_t, ref_dest[64 * 64]);
     ALIGN_VAR_32(uint16_t, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
 
@@ -1669,7 +1671,7 @@ bool PixelHarness::check_cutree_fix8_pack(cutree_fix8_pack ref, cutree_fix8_pack
         checked(opt, opt_dest, double_test_buff[index] + j, count);
         ref(ref_dest, double_test_buff[index] + j, count);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(uint16_t)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(uint16_t)))
             return false;
 
         reportfail();
@@ -1684,8 +1686,8 @@ bool PixelHarness::check_cutree_fix8_unpack(cutree_fix8_unpack ref, cutree_fix8_
     ALIGN_VAR_32(double, ref_dest[64 * 64]);
     ALIGN_VAR_32(double, opt_dest[64 * 64]);
 
-    memset(ref_dest, 0xCD, sizeof(ref_dest));
-    memset(opt_dest, 0xCD, sizeof(opt_dest));
+    std::memset(ref_dest, 0xCD, sizeof(ref_dest));
+    std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
     int j = 0;
 
@@ -1696,7 +1698,7 @@ bool PixelHarness::check_cutree_fix8_unpack(cutree_fix8_unpack ref, cutree_fix8_
         checked(opt, opt_dest, ushort_test_buff[index] + j, count);
         ref(ref_dest, ushort_test_buff[index] + j, count);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(double)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(double)))
             return false;
 
         reportfail();
@@ -1747,7 +1749,7 @@ bool PixelHarness::check_saoCuOrgB0_t(saoCuOrgB0_t ref, saoCuOrgB0_t opt)
         ref(ref_dest, psbuf1 + j, width, height, stride);
         checked(opt, opt_dest, psbuf1 + j, width, height, stride);
 
-        if (memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();
@@ -1783,13 +1785,13 @@ bool PixelHarness::check_scanPosLast(scanPosLast_t ref, scanPosLast_t opt)
         ref_src[32 * 32 + i] = 0x1234;
     }
 
-    memset(ref_coeffNum, 0xCD, sizeof(ref_coeffNum));
-    memset(ref_coeffSign, 0xCD, sizeof(ref_coeffSign));
-    memset(ref_coeffFlag, 0xCD, sizeof(ref_coeffFlag));
+    std::memset(ref_coeffNum, 0xCD, sizeof(ref_coeffNum));
+    std::memset(ref_coeffSign, 0xCD, sizeof(ref_coeffSign));
+    std::memset(ref_coeffFlag, 0xCD, sizeof(ref_coeffFlag));
 
-    memset(opt_coeffNum, 0xCD, sizeof(opt_coeffNum));
-    memset(opt_coeffSign, 0xCD, sizeof(opt_coeffSign));
-    memset(opt_coeffFlag, 0xCD, sizeof(opt_coeffFlag));
+    std::memset(opt_coeffNum, 0xCD, sizeof(opt_coeffNum));
+    std::memset(opt_coeffSign, 0xCD, sizeof(opt_coeffSign));
+    std::memset(opt_coeffFlag, 0xCD, sizeof(opt_coeffFlag));
 
     for (int i = 0; i < ITERS; i++)
     {
@@ -1843,7 +1845,7 @@ bool PixelHarness::check_scanPosLast(scanPosLast_t ref, scanPosLast_t opt)
 bool PixelHarness::check_findPosFirstLast(findPosFirstLast_t ref, findPosFirstLast_t opt)
 {
     ALIGN_VAR_16(coeff_t, ref_src[4 * 32 + ITERS * 2]);
-    memset(ref_src, 0, sizeof(ref_src));
+    std::memset(ref_src, 0, sizeof(ref_src));
 
     // minus ITERS for keep probability to generate all zeros block
     for (int i = 0; i < 4 * 32 - ITERS; i++)
@@ -1895,8 +1897,8 @@ bool PixelHarness::check_costCoeffNxN(costCoeffNxN_t ref, costCoeffNxN_t opt)
     ALIGN_VAR_32(uint16_t, ref_absCoeff[(1 << MLS_CG_SIZE)]);
     ALIGN_VAR_32(uint16_t, opt_absCoeff[(1 << MLS_CG_SIZE) + 4]);
 
-    memset(ref_absCoeff, 0xCD, sizeof(ref_absCoeff));
-    memset(opt_absCoeff, 0xCD, sizeof(opt_absCoeff));
+    std::memset(ref_absCoeff, 0xCD, sizeof(ref_absCoeff));
+    std::memset(opt_absCoeff, 0xCD, sizeof(opt_absCoeff));
 
     for (int i = 0; i < 32 * 32; i++)
     {
@@ -2018,11 +2020,11 @@ bool PixelHarness::check_costCoeffNxN(costCoeffNxN_t ref, costCoeffNxN_t opt)
 
         if (ref_sum != opt_sum)
             return false;
-        if (memcmp(ref_baseCtx, opt_baseCtx, sizeof(m_contextState_ref)))
+        if (std::memcmp(ref_baseCtx, opt_baseCtx, sizeof(m_contextState_ref)))
             return false;
 
         // NOTE: just first rand_numCoeff valid, but I check full buffer for confirm no overwrite bug
-        if (memcmp(ref_absCoeff, opt_absCoeff, rand_numCoeff * sizeof(ref_absCoeff[0])))
+        if (std::memcmp(ref_absCoeff, opt_absCoeff, rand_numCoeff * sizeof(ref_absCoeff[0])))
             return false;
 
         // Check memory beyond-bound write
@@ -2145,7 +2147,7 @@ bool PixelHarness::check_pelFilterLumaStrong_H(pelFilterLumaStrong_t ref, pelFil
         ref(pixel_test_buff[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
         checked(opt, pixel_test_buff1[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
 
-        if (memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
+        if (std::memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
             return false;
 
         reportfail()
@@ -2178,7 +2180,7 @@ bool PixelHarness::check_pelFilterLumaStrong_V(pelFilterLumaStrong_t ref, pelFil
         ref(pixel_test_buff[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
         checked(opt, pixel_test_buff1[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
 
-        if (memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
+        if (std::memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
             return false;
 
         reportfail()
@@ -2212,7 +2214,7 @@ bool PixelHarness::check_pelFilterChroma_H(pelFilterChroma_t ref, pelFilterChrom
             ref(pixel_test_buff[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
             checked(opt, pixel_test_buff1[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
 
-            if (memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
+            if (std::memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
                 return false;
 
             reportfail();
@@ -2247,7 +2249,7 @@ bool PixelHarness::check_pelFilterChroma_V(pelFilterChroma_t ref, pelFilterChrom
             ref(pixel_test_buff[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
             checked(opt, pixel_test_buff1[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
 
-            if (memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
+            if (std::memcmp(pixel_test_buff[index], pixel_test_buff1[index], sizeof(pixel) * BUFFSIZE))
                 return false;
 
             reportfail();
@@ -2287,7 +2289,7 @@ bool PixelHarness::check_integral_initv(integralv_t ref, integralv_t opt)
         ref(dst_ref_ptr, srcStep);
         checked(opt, dst_opt_ptr, srcStep);
 
-        if (memcmp(dst_ref, dst_opt, sizeof(uint32_t) * BUFFSIZE))
+        if (std::memcmp(dst_ref, dst_opt, sizeof(uint32_t) * BUFFSIZE))
             return false;
 
         reportfail()
@@ -2315,7 +2317,7 @@ bool PixelHarness::check_integral_inith(integralh_t ref, integralh_t opt)
             ref(dst_ref_ptr, pixel_test_buff[0], srcStep[l]);
             checked(opt, dst_opt_ptr, pixel_test_buff[0], srcStep[l]);
 
-            if (memcmp(dst_ref, dst_opt, sizeof(uint32_t) * BUFFSIZE))
+            if (std::memcmp(dst_ref, dst_opt, sizeof(uint32_t) * BUFFSIZE))
                 return false;
 
             reportfail()
@@ -3677,7 +3679,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         int32_t stats[5], count[5];
         int8_t upBuff1[MAX_CU_SIZE + 2];
-        memset(upBuff1, 1, sizeof(upBuff1));
+        std::memset(upBuff1, 1, sizeof(upBuff1));
         HEADER0("saoCuStatsE1");
         REPORT_SPEEDUP(opt.saoCuStatsE1, ref.saoCuStatsE1, sbuf2, pbuf3, 64, upBuff1 + 1,60, 61, stats, count);
     }
@@ -3687,8 +3689,8 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
         int32_t stats[5], count[5];
         int8_t upBuff1[MAX_CU_SIZE + 2];
         int8_t upBufft[MAX_CU_SIZE + 2];
-        memset(upBuff1, 1, sizeof(upBuff1));
-        memset(upBufft, -1, sizeof(upBufft));
+        std::memset(upBuff1, 1, sizeof(upBuff1));
+        std::memset(upBufft, -1, sizeof(upBufft));
         HEADER0("saoCuStatsE2");
         REPORT_SPEEDUP(opt.saoCuStatsE2, ref.saoCuStatsE2, sbuf2, pbuf3, 64, upBuff1 + 1, upBufft + 1, 60, 61, stats, count);
     }
@@ -3697,7 +3699,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         int8_t upBuff1[MAX_CU_SIZE + 2];
         int32_t stats[5], count[5];
-        memset(upBuff1, 1, sizeof(upBuff1));
+        std::memset(upBuff1, 1, sizeof(upBuff1));
         HEADER0("saoCuStatsE3");
         REPORT_SPEEDUP(opt.saoCuStatsE3, ref.saoCuStatsE3, sbuf2, pbuf3, 64, upBuff1 + 1, 60, 61, stats, count);
     }
@@ -3749,15 +3751,15 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         HEADER0("scanPosLast");
         coeff_t coefBuf[32 * 32];
-        memset(coefBuf, 0, sizeof(coefBuf));
-        memset(coefBuf + 32 * 31, 1, 32 * sizeof(coeff_t));
+        std::memset(coefBuf, 0, sizeof(coefBuf));
+        std::memset(coefBuf + 32 * 31, 1, 32 * sizeof(coeff_t));
         REPORT_SPEEDUP(opt.scanPosLast, ref.scanPosLast, g_scanOrder[SCAN_DIAG][NUM_SCAN_SIZE - 1], coefBuf, (uint16_t*)sbuf1, (uint16_t*)sbuf2, (uint8_t*)psbuf1, 32, g_scan4x4[SCAN_DIAG], 32);
     }
 
     if (opt.findPosFirstLast)
     {
         coeff_t coefBuf[32 * MLS_CG_SIZE];
-        memset(coefBuf, 0, sizeof(coefBuf));
+        std::memset(coefBuf, 0, sizeof(coefBuf));
         // every CG can't be all zeros!
         coefBuf[3 + 0 * 32] = 0x0BAD;
         coefBuf[3 + 1 * 32] = 0x0BAD;
@@ -3780,7 +3782,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
         HEADER0("costCoeffNxN");
         coeff_t coefBuf[32 * 32];
         uint16_t tmpOut[16];
-        memset(coefBuf, 1, sizeof(coefBuf));
+        std::memset(coefBuf, 1, sizeof(coefBuf));
         ALIGN_VAR_32(static uint8_t const, ctxSig[]) =
         {
             0, 1, 4, 5,
@@ -3789,7 +3791,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             7, 7, 8, 8
         };
         uint8_t ctx[OFF_SIG_FLAG_CTX + NUM_SIG_FLAG_CTX_LUMA];
-        memset(ctx, 120, sizeof(ctx));
+        std::memset(ctx, 120, sizeof(ctx));
 
         REPORT_SPEEDUP(opt.costCoeffNxN, ref.costCoeffNxN, g_scan4x4[SCAN_DIAG], coefBuf, 32, tmpOut, ctxSig, 0xFFFF, ctx, 1, 15, 32);
     }
@@ -3798,8 +3800,8 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         HEADER0("costCoeffRemain");
         uint16_t abscoefBuf[32 * 32];
-        memset(abscoefBuf, 0, sizeof(abscoefBuf));
-        memset(abscoefBuf + 32 * 31, 1, 32 * sizeof(uint16_t));
+        std::memset(abscoefBuf, 0, sizeof(abscoefBuf));
+        std::memset(abscoefBuf + 32 * 31, 1, 32 * sizeof(uint16_t));
         REPORT_SPEEDUP(opt.costCoeffRemain, ref.costCoeffRemain, abscoefBuf, 16, 3);
     }
 
@@ -3807,7 +3809,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         HEADER0("costC1C2Flag");
         ALIGN_VAR_32(uint16_t, abscoefBuf[C1FLAG_NUMBER]);
-        memset(abscoefBuf, 1, sizeof(abscoefBuf));
+        std::memset(abscoefBuf, 1, sizeof(abscoefBuf));
         abscoefBuf[C1FLAG_NUMBER - 2] = 2;
         abscoefBuf[C1FLAG_NUMBER - 1] = 3;
         REPORT_SPEEDUP(opt.costC1C2Flag, ref.costC1C2Flag, abscoefBuf, C1FLAG_NUMBER, (uint8_t*)psbuf1, 1);
