@@ -1385,6 +1385,18 @@ def main():
         }])
         expect_fail(run_checker(missing_arguments_response_dir), 'missing response file')
 
+        missing_response_min_cpp_interaction_dir = root / 'missing-response-file-min-cpp-interaction'
+        write_compile_commands_records(missing_response_min_cpp_interaction_dir, [{
+            'directory': str(missing_response_min_cpp_interaction_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+            'file': str(root / 'source/common/common.cpp'),
+        }, {
+            'directory': str(missing_response_min_cpp_interaction_dir),
+            'arguments': ['c++', '@missing.rsp', '-c', 'source/encoder/encoder.cpp'],
+            'file': str(root / 'source/encoder/encoder.cpp'),
+        }])
+        expect_fail(run_checker(missing_response_min_cpp_interaction_dir, '--min-cpp-commands=2'), 'missing response file')
+
         missing_response_required_prefix_dir = root / 'missing-response-file-required-prefix'
         missing_response_required_prefix_dir.mkdir()
         write_compile_commands(missing_response_required_prefix_dir, 'c++ @missing.rsp -c source/common/common.cpp')
