@@ -10,6 +10,7 @@
 #include "threading.h"
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -50,7 +51,7 @@ public:
     LavfInput(InputFileInfo& info)
     {
         h = &handle;
-        memset(h, 0, sizeof(handle));
+        std::memset(h, 0, sizeof(handle));
         openfile(info);
         _info = info;
     }

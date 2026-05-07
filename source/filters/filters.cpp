@@ -31,7 +31,7 @@
 
 using namespace X265_NS;
 
-bool Filter::parseFilterString(char* paramString, vector<Filter *>* filters)
+bool Filter::parseFilterString(char* paramString, std::vector<Filter *>* filters)
 {
     // --vf func1:param1/func2:param2
     char* end = paramString + std::strlen(paramString);

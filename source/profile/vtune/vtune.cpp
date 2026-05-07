@@ -22,6 +22,7 @@
  *****************************************************************************/
 
 #include "vtune.h"
+#include <cstddef>
 #include <cstdio>
 
 namespace {

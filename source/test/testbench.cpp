@@ -34,6 +34,7 @@
 #include "param.h"
 #include "cpu.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

@@ -24,6 +24,8 @@
 #include "vpy.h"
 #include "common.h"
 
+#include <cstring>
+
 static void frameDoneCallback(void* userData, const VSFrameRef* f, const int n, VSNodeRef* node, const char*)
 {
     VSFDCallbackData* vpyCallbackData = static_cast<VSFDCallbackData*>(userData);
@@ -87,11 +89,11 @@ fail:
 
 VPYInput::VPYInput(InputFileInfo& info)
 {
-    const char * filename_pos = strstr(info.filename, "]://");
+    const char * filename_pos = std::strstr(info.filename, "]://");
     if(info.filename[0] == '[' && filename_pos) {
         char real_libname[BUFFER_SIZE] {0};
-        strncpy(real_libname, info.filename + 1, BUFFER_SIZE - 1);
-        strncpy(real_filename, filename_pos + 4, BUFFER_SIZE - 1);
+        std::strncpy(real_libname, info.filename + 1, BUFFER_SIZE - 1);
+        std::strncpy(real_filename, filename_pos + 4, BUFFER_SIZE - 1);
         real_libname[filename_pos - info.filename - 1] = 0;
         #if _WIN32
             if(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, real_libname, -1, libname_buffer, sizeof(libname_buffer)/sizeof(wchar_t))) {
@@ -103,13 +105,13 @@ VPYInput::VPYInput(InputFileInfo& info)
                 return;
             }
         #else
-            strncpy(libname_buffer, real_libname, BUFFER_SIZE);
+            std::strncpy(libname_buffer, real_libname, BUFFER_SIZE);
             libname = libname_buffer;
         #endif
         general_log(nullptr, "vpy", X265_LOG_INFO, "Using external VapourSynth library from %s\n", real_libname);
     }
     else {
-        strncpy(real_filename, info.filename, BUFFER_SIZE - 1);
+        std::strncpy(real_filename, info.filename, BUFFER_SIZE - 1);
     }
 
     load_vs();
@@ -339,7 +341,7 @@ bool VPYInput::readPicture(x265_picture& pic)
         pic.planes[i] = ptr;
         auto len = vsapi->getFrameHeight(currentFrame, i) * pic.stride[i];
 
-        memcpy(pic.planes[i], const_cast<unsigned char*>(vsapi->getReadPtr(currentFrame, i)), len);
+        std::memcpy(pic.planes[i], const_cast<unsigned char*>(vsapi->getReadPtr(currentFrame, i)), len);
         ptr += len;
     }
 

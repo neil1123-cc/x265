@@ -443,7 +443,7 @@ static const struct option long_options[] =
         char *stringPool;
         char* inputfn[MAX_VIEWS];
         char* vf;
-        vector<Filter*> filters;
+        std::vector<Filter*> filters;
 
         /* ABR ladder settings */
         bool isAbrLadderConfig;

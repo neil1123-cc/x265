@@ -346,7 +346,7 @@ void LavfInput::openfile(InputFileInfo& info)
         // Matroska store frame count in metadata
         AVDictionaryEntry *entry = av_dict_get(s->metadata, "NUMBER_OF_FRAMES", nullptr, AV_DICT_MATCH_CASE);
         if (entry) {
-            info.frameCount = atoi(entry->value);
+            info.frameCount = std::atoi(entry->value);
         }
     }
 
