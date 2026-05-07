@@ -25,6 +25,8 @@
 #include "predict.h"
 #include "intrapredharness.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 IntraPredHarness::IntraPredHarness()
@@ -49,8 +51,8 @@ bool IntraPredHarness::check_dc_primitive(intra_pred_t ref, intra_pred_t opt, in
     intptr_t stride = FENC_STRIDE;
 
 #if _DEBUG
-    memset(pixel_out_vec, 0xCD, OUTPUT_SIZE);
-    memset(pixel_out_c, 0xCD, OUTPUT_SIZE);
+    std::memset(pixel_out_vec, 0xCD, OUTPUT_SIZE);
+    std::memset(pixel_out_c, 0xCD, OUTPUT_SIZE);
 #endif
 
     for (int i = 0; i <= 100; i++)
@@ -64,7 +66,7 @@ bool IntraPredHarness::check_dc_primitive(intra_pred_t ref, intra_pred_t opt, in
 
         for (int k = 0; k < width; k++)
         {
-            if (memcmp(pixel_out_vec + k * FENC_STRIDE, pixel_out_c + k * FENC_STRIDE, width * sizeof(pixel)))
+            if (std::memcmp(pixel_out_vec + k * FENC_STRIDE, pixel_out_c + k * FENC_STRIDE, width * sizeof(pixel)))
                 return false;
         }
 
@@ -81,8 +83,8 @@ bool IntraPredHarness::check_planar_primitive(intra_pred_t ref, intra_pred_t opt
     intptr_t stride = FENC_STRIDE;
 
 #if _DEBUG
-    memset(pixel_out_vec, 0xCD, OUTPUT_SIZE);
-    memset(pixel_out_c, 0xCD, OUTPUT_SIZE);
+    std::memset(pixel_out_vec, 0xCD, OUTPUT_SIZE);
+    std::memset(pixel_out_c, 0xCD, OUTPUT_SIZE);
 #endif
 
     for (int i = 0; i <= 100; i++)
@@ -92,7 +94,7 @@ bool IntraPredHarness::check_planar_primitive(intra_pred_t ref, intra_pred_t opt
 
         for (int k = 0; k < width; k++)
         {
-            if (memcmp(pixel_out_vec + k * FENC_STRIDE, pixel_out_c + k * FENC_STRIDE, width * sizeof(pixel)))
+            if (std::memcmp(pixel_out_vec + k * FENC_STRIDE, pixel_out_c + k * FENC_STRIDE, width * sizeof(pixel)))
                 return false;
         }
 
@@ -109,8 +111,8 @@ bool IntraPredHarness::check_angular_primitive(const intra_pred_t ref[], const i
     intptr_t stride = FENC_STRIDE;
 
 #if _DEBUG
-    memset(pixel_out_vec, 0xCD, OUTPUT_SIZE);
-    memset(pixel_out_c, 0xCD, OUTPUT_SIZE);
+    std::memset(pixel_out_vec, 0xCD, OUTPUT_SIZE);
+    std::memset(pixel_out_c, 0xCD, OUTPUT_SIZE);
 #endif
 
     int width = 1 << (sizeIdx + 2);
@@ -127,7 +129,7 @@ bool IntraPredHarness::check_angular_primitive(const intra_pred_t ref[], const i
 
             for (int k = 0; k < width; k++)
             {
-                if (memcmp(pixel_out_vec + k * FENC_STRIDE, pixel_out_c + k * FENC_STRIDE, width * sizeof(pixel)))
+                if (std::memcmp(pixel_out_vec + k * FENC_STRIDE, pixel_out_c + k * FENC_STRIDE, width * sizeof(pixel)))
                 {
                     printf("ang_%dx%d, Mode = %d, Row = %d failed !!\n", width, width, pmode, k);
                     ref[pmode](pixel_out_c, stride, pixel_buff + j, pmode, bFilter);
@@ -151,8 +153,8 @@ bool IntraPredHarness::check_allangs_primitive(const intra_allangs_t ref, const 
     int isLuma;
 
 #if _DEBUG
-    memset(pixel_out_33_vec, 0xCD, OUTPUT_SIZE_33);
-    memset(pixel_out_33_c, 0xCD, OUTPUT_SIZE_33);
+    std::memset(pixel_out_33_vec, 0xCD, OUTPUT_SIZE_33);
+    std::memset(pixel_out_33_c, 0xCD, OUTPUT_SIZE_33);
 #endif
 
     const int width = 1 << (sizeIdx + 2);
@@ -173,7 +175,7 @@ bool IntraPredHarness::check_allangs_primitive(const intra_allangs_t ref, const 
         {
             for (int k = 0; k < width; k++)
             {
-                if (memcmp(pixel_out_33_c + p * (width * width) + k * width, pixel_out_33_vec + p * (width * width) + k * width, width * sizeof(pixel)))
+                if (std::memcmp(pixel_out_33_c + p * (width * width) + k * width, pixel_out_33_vec + p * (width * width) + k * width, width * sizeof(pixel)))
                 {
                     printf("\nFailed: (%dx%d) Mode(%2d), Line[%2d], bfilter=%d\n", width, width, p + 2, k, isLuma);
                     opt(pixel_out_33_vec, refAbove0, refLeft0, isLuma);
@@ -191,8 +193,8 @@ bool IntraPredHarness::check_allangs_primitive(const intra_allangs_t ref, const 
 
 bool IntraPredHarness::check_intra_filter_primitive(const intra_filter_t ref, const intra_filter_t opt)
 {
-    memset(pixel_out_c, 0, 64 * 64 * sizeof(pixel));
-    memset(pixel_out_vec, 0, 64 * 64 * sizeof(pixel));
+    std::memset(pixel_out_c, 0, 64 * 64 * sizeof(pixel));
+    std::memset(pixel_out_vec, 0, 64 * 64 * sizeof(pixel));
     int j = 0;
 
     for (int i = 0; i < 100; i++)
@@ -202,7 +204,7 @@ bool IntraPredHarness::check_intra_filter_primitive(const intra_filter_t ref, co
         ref(pixel_test_buff[index] + j, pixel_out_c);
         checked(opt, pixel_test_buff[index] + j, pixel_out_vec);
 
-        if (memcmp(pixel_out_c, pixel_out_vec, 64 * 64 * sizeof(pixel)))
+        if (std::memcmp(pixel_out_c, pixel_out_vec, 64 * 64 * sizeof(pixel)))
             return false;
 
         reportfail();

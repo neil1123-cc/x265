@@ -1331,6 +1331,17 @@ def main():
         }])
         expect_fail(run_checker(response_command_missing_std_dir), 'missing GNU++20 dialect')
 
+        response_command_forbidden_flag_dir = root / 'response-command-forbidden-flag-dual-field'
+        response_command_forbidden_flag_dir.mkdir()
+        (response_command_forbidden_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        write_compile_commands_records(response_command_forbidden_flag_dir, [{
+            'directory': str(response_command_forbidden_flag_dir),
+            'command': 'c++ @args.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_command_forbidden_flag_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         response_missing_flag_dir = root / 'response-file-missing-required-flag'
         response_missing_flag_dir.mkdir()
         (response_missing_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated')
