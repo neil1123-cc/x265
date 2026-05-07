@@ -69,7 +69,7 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
     }
     else
         ifs = x265_fopen(info.filename, "rb");
-    if (ifs && !ferror(ifs) && parseHeader())
+    if (ifs && !std::ferror(ifs) && parseHeader())
     {
         if (format == 1) width /= 2;
         if (format == 2) height /= 2;
@@ -165,19 +165,19 @@ bool Y4MInput::parseHeader()
     int csp = 0;
     int d = 0;
     int c;
-    while ((c = fgetc(ifs)) != EOF)
+    while ((c = std::fgetc(ifs)) != EOF)
     {
         // Skip Y4MPEG string
         while ((c != EOF) && (c != ' ') && (c != '\n'))
-            c = fgetc(ifs);
+            c = std::fgetc(ifs);
         while (c == ' ')
         {
             // read parameter identifier
-            switch (fgetc(ifs))
+            switch (std::fgetc(ifs))
             {
             case 'W':
                 width = 0;
-                while ((c = fgetc(ifs)) != EOF)
+                while ((c = std::fgetc(ifs)) != EOF)
                 {
                     if (c == ' ' || c == '\n')
                         break;
@@ -187,7 +187,7 @@ bool Y4MInput::parseHeader()
                 break;
             case 'H':
                 height = 0;
-                while ((c = fgetc(ifs)) != EOF)
+                while ((c = std::fgetc(ifs)) != EOF)
                 {
                     if (c == ' ' || c == '\n')
                         break;
@@ -199,12 +199,12 @@ bool Y4MInput::parseHeader()
             case 'F':
                 rateNum = 0;
                 rateDenom = 0;
-                while ((c = fgetc(ifs)) != EOF)
+                while ((c = std::fgetc(ifs)) != EOF)
                 {
                     if (c == '.')
                     {
                         rateDenom = 1;
-                        while ((c = fgetc(ifs)) != EOF)
+                        while ((c = std::fgetc(ifs)) != EOF)
                         {
                             if (c == ' ' || c == '\n')
                                 break;
@@ -218,7 +218,7 @@ bool Y4MInput::parseHeader()
                     }
                     else if (c == ':')
                     {
-                        while ((c = fgetc(ifs)) != EOF)
+                        while ((c = std::fgetc(ifs)) != EOF)
                         {
                             if (c == ' ' || c == '\n')
                                 break;
@@ -235,11 +235,11 @@ bool Y4MInput::parseHeader()
             case 'A':
                 sarWidth = 0;
                 sarHeight = 0;
-                while ((c = fgetc(ifs)) != EOF)
+                while ((c = std::fgetc(ifs)) != EOF)
                 {
                     if (c == ':')
                     {
-                        while ((c = fgetc(ifs)) != EOF)
+                        while ((c = std::fgetc(ifs)) != EOF)
                         {
                             if (c == ' ' || c == '\n')
                                 break;
@@ -256,14 +256,14 @@ bool Y4MInput::parseHeader()
             case 'C':
                 csp = 0;
                 d = 0;
-                while ((c = fgetc(ifs)) != EOF)
+                while ((c = std::fgetc(ifs)) != EOF)
                 {
                     if (c <= 'o' && c >= '0')
                         csp = csp * 10 + (c - '0');
                     else if (c == 'p')
                     {
                         // example: C420p16
-                        while ((c = fgetc(ifs)) != EOF)
+                        while ((c = std::fgetc(ifs)) != EOF)
                         {
                             if (c <= '9' && c >= '0')
                                 d = d * 10 + (c - '0');
@@ -298,7 +298,7 @@ bool Y4MInput::parseHeader()
                     depth = d;
                 break;
             default:
-                while ((c = fgetc(ifs)) != EOF)
+                while ((c = std::fgetc(ifs)) != EOF)
                 {
                     // consume this unsupported configuration word
                     if (c == ' ' || c == '\n')
@@ -344,20 +344,20 @@ void Y4MInput::threadMain()
 }
 bool Y4MInput::populateFrameQueue()
 {
-    if (!ifs || ferror(ifs))
+    if (!ifs || std::ferror(ifs))
         return false;
     /* strip off the FRAME\n header */
     char hbuf[sizeof(header) + 1];
     if (std::fread(hbuf, sizeof(hbuf), 1, ifs) != 1 || std::memcmp(hbuf, header, sizeof(header)))
     {
-        if (!feof(ifs))
+        if (!std::feof(ifs))
             x265_log(nullptr, X265_LOG_ERROR, "y4m: frame header missing\n");
         return false;
     }
     /* consume bytes up to line feed */
     int c = hbuf[sizeof(header)];
     while (c != '\n')
-        if ((c = fgetc(ifs)) == EOF)
+        if ((c = std::fgetc(ifs)) == EOF)
             break;
     /* wait for room in the ring buffer */
     int written = writeCount.get();

@@ -83,7 +83,7 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
     }
     else
         ifs = x265_fopen(info.filename, "rb");
-    if (ifs && !ferror(ifs))
+    if (ifs && !std::ferror(ifs))
         threadActive.store(true);
     else
     {
@@ -174,7 +174,7 @@ void YUVInput::threadMain()
 }
 bool YUVInput::populateFrameQueue()
 {
-    if (!ifs || ferror(ifs))
+    if (!ifs || std::ferror(ifs))
         return false;
     /* wait for room in the ring buffer */
     int written = writeCount.get();

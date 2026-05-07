@@ -230,14 +230,14 @@ typedef int16_t  coeff_t;      // transform coefficient
 
 static inline char *strcatFilename(const char *input, const char *suffix)
 {
-    char *output = (char*)malloc(strlen(input) + strlen(suffix) + 1);
+    char *output = (char*)std::malloc(std::strlen(input) + std::strlen(suffix) + 1);
     if (!output)
     {
-        fprintf(stderr, "x265: unable to allocate memory for filename\n");
+        std::fprintf(stderr, "x265: unable to allocate memory for filename\n");
         return nullptr;
     }
-    strcpy(output, input);
-    strcat(output, suffix);
+    std::strcpy(output, input);
+    std::strcat(output, suffix);
     return output;
 }
 #define X265_FREE_ZERO(ptr)         { x265_free(ptr); (ptr) = nullptr; }
@@ -254,7 +254,7 @@ static inline char *strcatFilename(const char *input, const char *suffix)
     { \
         var = (type*)x265_malloc(sizeof(type) * (count)); \
         if (var) \
-            memset((void*)var, 0, sizeof(type) * (count)); \
+            std::memset((void*)var, 0, sizeof(type) * (count)); \
         else \
         { \
             x265_log(NULL, X265_LOG_ERROR, "malloc of size %llu failed\n", sizeof(type) * (count)); \
@@ -263,11 +263,11 @@ static inline char *strcatFilename(const char *input, const char *suffix)
     }
 
 #if defined(_MSC_VER)
-#define X265_LOG2F(x) (logf((float)(x)) * 1.44269504088896405f)
-#define X265_LOG2(x) (log((double)(x)) * 1.4426950408889640513713538072172)
+#define X265_LOG2F(x) (std::logf((float)(x)) * 1.44269504088896405f)
+#define X265_LOG2(x) (std::log((double)(x)) * 1.4426950408889640513713538072172)
 #else
-#define X265_LOG2F(x) log2f(x)
-#define X265_LOG2(x)  log2(x)
+#define X265_LOG2F(x) std::log2f(x)
+#define X265_LOG2(x)  std::log2(x)
 #endif
 
 #define NUM_CU_DEPTH            4                           // maximum number of CU depths

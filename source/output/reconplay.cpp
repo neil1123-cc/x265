@@ -78,7 +78,7 @@ ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
         const char* csp = (colorSpace >= X265_CSP_I444) ? "444" : (colorSpace >= X265_CSP_I422) ? "422" : "420";
         const char* depth = (param.internalBitDepth == 10) ? "p10" : (param.internalBitDepth == 12) ? "p12" : "";
 
-        fprintf(outputPipe, "YUV4MPEG2 W%d H%d F%d:%d Ip C%s%s\n", width, height, param.fpsNum, param.fpsDenom, csp, depth);
+        std::fprintf(outputPipe, "YUV4MPEG2 W%d H%d F%d:%d Ip C%s%s\n", width, height, param.fpsNum, param.fpsDenom, csp, depth);
 
         pipeValid = true;
         threadActive.store(true);
@@ -181,10 +181,10 @@ bool ReconPlay::outputFrame()
     char* buf = (char*)frameData[currentCursor];
     intptr_t remainSize = frameSize * sizeof(pixel);
 
-    fprintf(outputPipe, "FRAME\n");
+    std::fprintf(outputPipe, "FRAME\n");
     while (remainSize > 0)
     {
-        intptr_t retCount = (intptr_t)fwrite(buf, sizeof(char), remainSize, outputPipe);
+        intptr_t retCount = (intptr_t)std::fwrite(buf, sizeof(char), remainSize, outputPipe);
 
         if (retCount < 0 || !pipeValid)
             /* pipe failure, stop writing and start dropping recon pictures */

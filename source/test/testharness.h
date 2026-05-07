@@ -31,6 +31,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 
 #if _MSC_VER
 #pragma warning(disable: 4324) // structure was padded due to __declspec(align())
@@ -89,7 +90,7 @@ static inline uint32_t __rdtsc(void)
     // asm volatile("mrc p15, 0, %0, c9, c13, 0" : "=r"(a));
 
     // TO-DO: replace clock() function with appropriate ARM cpu instructions
-    a = clock();
+    a = std::clock();
 #elif  X265_ARCH_ARM64
     asm volatile("isb" : : : "memory");
     asm volatile("mrs %x0, cntvct_el0" : "=r"(a));

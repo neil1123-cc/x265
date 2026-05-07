@@ -24,7 +24,7 @@
 #if defined(ENABLE_PPA)
 
 #include "ppa.h"
-#include <stdlib.h>
+#include <cstdlib>
 
 #define PPA_REGISTER_CPU_EVENT2GROUP(x, y) # x, # y,
 #define CPU_EVENT(x) PPA_REGISTER_CPU_EVENT2GROUP(x, NoGroup)
@@ -93,7 +93,7 @@ void initializePPA(void)
         return;
     }
 
-    atexit(_ppaReleaseAtExit);
+    std::atexit(_ppaReleaseAtExit);
 }
 
 #else /* linux & unix & cygwin */
@@ -139,7 +139,7 @@ void initializePPA(void)
         return;
     }
 
-    atexit(_ppaReleaseAtExit);
+    std::atexit(_ppaReleaseAtExit);
 }
 
 #endif /* !_WIN32 */

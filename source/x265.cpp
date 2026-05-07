@@ -142,14 +142,14 @@ static uint8_t getNumAbrEncodes(FILE* abrConfig)
     char line[1024];
     uint8_t numEncodes = 0;
 
-    while (fgets(line, sizeof(line), abrConfig))
+    while (std::fgets(line, sizeof(line), abrConfig))
     {
         if (std::strcmp(line, "\n") == 0)
             continue;
         else if (!(*line == '#'))
             numEncodes++;
     }
-    rewind(abrConfig);
+    std::rewind(abrConfig);
     return numEncodes;
 }
 
@@ -166,25 +166,25 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
         cliopt[i].stringPool = (i == 0 ? strPool : NULL);
         cliopt[i].argString = argv;
         cliopt[i].orgArgv = NULL;
-        if (fgets(line, sizeof(line), abrConfig) == NULL) {
-            fprintf(stderr, "Error reading line from configuration file.\n");
+        if (std::fgets(line, sizeof(line), abrConfig) == NULL) {
+            std::fprintf(stderr, "Error reading line from configuration file.\n");
             return false;
         }
         if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
             continue;
-        int index = (int)strcspn(line, "\r\n");
+        int index = (int)std::strcspn(line, "\r\n");
         line[index] = '\0';
         argLine = line;
-        char* start = strchr(argLine, ' ');
-        while (isspace((unsigned char)*start)) start++;
+        char* start = std::strchr(argLine, ' ');
+        while (std::isspace((unsigned char)*start)) start++;
         int argc = 0;
         // Adding a dummy string to avoid file parsing error
         argv[argc++] = (char *)"x265";
 
         /* Parse CLI header to identify the ID of the load encode and the reuse level */
-        char *header = strtok(argLine, "[]");
+        char *header = std::strtok(argLine, "[]");
         uint32_t idCount = 0;
-        char *id = strtok(header, ":");
+        char *id = std::strtok(header, ":");
         char *head[X265_HEAD_ENTRIES];
         cliopt[i].encId = i;
         cliopt[i].isAbrLadderConfig = true;
@@ -192,7 +192,7 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
         while (id && (idCount <= X265_HEAD_ENTRIES))
         {
             head[idCount] = id;
-            id = strtok(NULL, ":");
+            id = std::strtok(NULL, ":");
             idCount++;
         }
         if (idCount != X265_HEAD_ENTRIES)
@@ -203,18 +203,18 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
         else
         {
             std::snprintf(cliopt[i].encName, X265_MAX_STRING_SIZE, "%s", head[0]);
-            cliopt[i].loadLevel = atoi(head[1]);
+            cliopt[i].loadLevel = std::atoi(head[1]);
             std::snprintf(cliopt[i].reuseName, X265_MAX_STRING_SIZE, "%s", head[2]);
         }
 
-        char* token = strtok(start, " ");
+        char* token = std::strtok(start, " ");
         while (token)
         {
             argv[argc] = strPool;
             strPool += std::strlen(token) + 1;
             strPoolSize = strPoolSize - (int)std::strlen(token) + 1;
             std::strcpy(argv[argc], token);
-            token = strtok(NULL, " ");
+            token = std::strtok(NULL, " ");
             argc++;
         }
         argv[argc] = NULL;
@@ -223,7 +223,7 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
             cliopt[i].destroy();
             if (cliopt[i].api)
                 cliopt[i].api->param_free(cliopt[i].param);
-            exit(1);
+            std::exit(1);
         }
     }
     X265_CHECK(strPoolSize >= 0, "string pool broken!");
@@ -302,16 +302,16 @@ int main(int argc, char **argv)
     if (isAbrLadder)
     {
         if (!parseAbrConfig(abrConfig, cliopt, numEncodes))
-            exit(1);
+            std::exit(1);
         if (!setRefContext(cliopt, numEncodes))
-            exit(1);
+            std::exit(1);
     }
     else if (cliopt[0].parse(argc, argv))
     {
         cliopt[0].destroy();
         if (cliopt[0].api)
             cliopt[0].api->param_free(cliopt[0].param);
-        exit(1);
+        std::exit(1);
     }
 
     int ret = 0;

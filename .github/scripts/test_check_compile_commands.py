@@ -1228,6 +1228,46 @@ def main():
         }])
         expect_pass(run_checker(windows_arguments_response_dir, '--required-file-substring=source/common/common.cpp', '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
+        windows_command_response_dir = root / 'windows-command-response-file'
+        windows_command_response_dir.mkdir()
+        (windows_command_response_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF')
+        write_compile_commands_records(windows_command_response_dir, [{
+            'directory': str(windows_command_response_dir),
+            'command': 'c++ @args.rsp -c source/input/lavf.cpp',
+            'file': str(root / 'source\\input\\lavf.cpp'),
+        }])
+        expect_pass(run_checker(windows_command_response_dir, '--required-file-substring=source\\input\\lavf.cpp', '--required-file-flag=source\\input\\lavf.cpp=-DENABLE_LAVF'))
+
+        windows_command_response_missing_flag_dir = root / 'windows-command-response-file-missing-file-flag'
+        windows_command_response_missing_flag_dir.mkdir()
+        (windows_command_response_missing_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(windows_command_response_missing_flag_dir, [{
+            'directory': str(windows_command_response_missing_flag_dir),
+            'command': 'c++ @args.rsp -c source/input/lavf.cpp',
+            'file': str(root / 'source\\input\\lavf.cpp'),
+        }])
+        expect_fail(run_checker(windows_command_response_missing_flag_dir, '--required-file-flag=source\\input\\lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
+
+        windows_arguments_response_forbidden_file_flag_dir = root / 'windows-arguments-response-forbidden-file-flag'
+        windows_arguments_response_forbidden_file_flag_dir.mkdir()
+        (windows_arguments_response_forbidden_file_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF')
+        write_compile_commands_records(windows_arguments_response_forbidden_file_flag_dir, [{
+            'directory': str(windows_arguments_response_forbidden_file_flag_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source\\common\\common.cpp'],
+            'file': str(root / 'source\\common\\common.cpp'),
+        }])
+        expect_fail(run_checker(windows_arguments_response_forbidden_file_flag_dir, '--forbidden-file-flag=source\\common\\common.cpp=-DENABLE_LAVF'), 'forbidden flag -DENABLE_LAVF for file substring source/common/common.cpp')
+
+        quoted_windows_arguments_response_forbidden_substring_dir = root / 'quoted-windows-arguments-response-forbidden-substring'
+        quoted_windows_arguments_response_forbidden_substring_dir.mkdir()
+        (quoted_windows_arguments_response_forbidden_substring_dir / 'args file.rsp').write_text('"-std=gnu++20" "-Wdeprecated" "-Werror=deprecated" "-Wno-deprecated"')
+        write_compile_commands_records(quoted_windows_arguments_response_forbidden_substring_dir, [{
+            'directory': str(quoted_windows_arguments_response_forbidden_substring_dir),
+            'arguments': ['c++', '@args file.rsp', '-c', 'source\\common\\common.cpp'],
+            'file': str(root / 'source\\common\\common.cpp'),
+        }])
+        expect_fail(run_checker(quoted_windows_arguments_response_forbidden_substring_dir, '--forbidden-flag-substring=-Wno-deprecated', '--required-file-substring=source\\common\\common.cpp'), 'forbidden flag substring -Wno-deprecated')
+
         quoted_response_missing_flag_dir = root / 'quoted-response-file-arguments-missing-flag'
         quoted_response_missing_flag_dir.mkdir()
         (quoted_response_missing_flag_dir / 'args file.rsp').write_text('"-std=gnu++20" "-Wdeprecated" "-DX265_DEPTH=8"')
@@ -1423,6 +1463,55 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_pass(run_checker(response_dual_field_equivalent_std_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        response_dual_field_forbidden_substring_dir = root / 'response-dual-field-forbidden-substring'
+        response_dual_field_forbidden_substring_dir.mkdir()
+        (response_dual_field_forbidden_substring_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (response_dual_field_forbidden_substring_dir / 'arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -Wno-deprecated')
+        write_compile_commands_records(response_dual_field_forbidden_substring_dir, [{
+            'directory': str(response_dual_field_forbidden_substring_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_forbidden_substring_dir, '--forbidden-flag-substring=-Wno-deprecated'), 'forbidden flag substring -Wno-deprecated')
+
+        response_dual_field_missing_required_prefix_dir = root / 'response-dual-field-missing-required-prefix'
+        response_dual_field_missing_required_prefix_dir.mkdir()
+        (response_dual_field_missing_required_prefix_dir / 'command.rsp').write_text('-std=gnu++20 -fprofile-instr-use=C:/tmp/x265.profdata')
+        (response_dual_field_missing_required_prefix_dir / 'arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_missing_required_prefix_dir, [{
+            'directory': str(response_dual_field_missing_required_prefix_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_missing_required_prefix_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
+
+        response_dual_field_split_prefix_dir = root / 'response-dual-field-split-prefix'
+        response_dual_field_split_prefix_dir.mkdir()
+        (response_dual_field_split_prefix_dir / 'command.rsp').write_text('-std=gnu++20 -fprofile-instr-use=C:/tmp/x265.profdata')
+        (response_dual_field_split_prefix_dir / 'arguments.rsp').write_text('-std=gnu++20 -fprofile-instr-use C:/tmp/x265.profdata')
+        write_compile_commands_records(response_dual_field_split_prefix_dir, [{
+            'directory': str(response_dual_field_split_prefix_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_split_prefix_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
+
+        nested_windows_response_file_flag_dir = root / 'nested-windows-response-file-flag'
+        nested_windows_response_file_flag_dir.mkdir()
+        nested_windows_response_subdir = nested_windows_response_file_flag_dir / 'rsp dir'
+        nested_windows_response_subdir.mkdir()
+        (nested_windows_response_subdir / 'feature.rsp').write_text('-DENABLE_LAVF')
+        (nested_windows_response_file_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated @"rsp dir/feature.rsp"')
+        write_compile_commands_records(nested_windows_response_file_flag_dir, [{
+            'directory': str(nested_windows_response_file_flag_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source\\input\\lavf.cpp'],
+            'file': str(root / 'source\\input\\lavf.cpp'),
+        }])
+        expect_pass(run_checker(nested_windows_response_file_flag_dir, '--required-file-substring=source\\input\\lavf.cpp', '--required-file-flag=source\\input\\lavf.cpp=-DENABLE_LAVF'))
 
         response_dual_field_split_std_dir = root / 'response-dual-field-split-std'
         response_dual_field_split_std_dir.mkdir()

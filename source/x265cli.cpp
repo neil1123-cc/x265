@@ -614,7 +614,7 @@ namespace X265_NS {
             if (c == -1)
                 break;
             else if (c == 'D')
-                outputBitDepth = atoi(optarg);
+                outputBitDepth = std::atoi(optarg);
             else if (c == 'P')
                 profile = optarg;
             else if (c == '?')
@@ -744,7 +744,7 @@ namespace X265_NS {
             else if (c == 't')
                 tune = optarg;
             else if (c == 'D')
-                outputBitDepth = atoi(optarg);
+                outputBitDepth = std::atoi(optarg);
             else if (c == 'P')
                 profile = optarg;
             else if (c == '?')
@@ -1121,7 +1121,7 @@ namespace X265_NS {
             {
                 char* temp = new char[std::strlen(reconfn[0])];
                 std::strcpy(temp, reconfn[0]);
-                const char* token = strtok(temp, ".");
+                const char* token = std::strtok(temp, ".");
                 for (int view = 0; view < param->numLayers; view++)
                 {
                     char* buf = new char[std::strlen(temp) + 7];
@@ -1231,37 +1231,37 @@ namespace X265_NS {
         char* argLine;
         param->rc.zonefileCount = 0;
 
-        while (fgets(line, sizeof(line), zoneFile))
+        while (std::fgets(line, sizeof(line), zoneFile))
         {
             if (!((*line == '#') || (std::strcmp(line, "\r\n") == 0)))
                 param->rc.zonefileCount++;
         }
 
-        rewind(zoneFile);
+        std::rewind(zoneFile);
         char **args = (char**)alloca(256 * sizeof(char *));
         param->rc.zones = x265_zone_alloc(param->rc.zonefileCount, 1);;
         for (int i = 0; i < param->rc.zonefileCount; i++)
         {
             param->rc.zones[i].startFrame = -1;
-            while (fgets(line, sizeof(line), zoneFile))
+            while (std::fgets(line, sizeof(line), zoneFile))
             {
                 if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
                     continue;
                 int index = (int)std::strcspn(line, "\r\n");
                 line[index] = '\0';
                 argLine = line;
-                while (isspace((unsigned char)*argLine)) argLine++;
+                while (std::isspace((unsigned char)*argLine)) argLine++;
                 char* start = std::strchr(argLine, ' ');
                 start++;
-                param->rc.zones[i].startFrame = atoi(argLine);
+                param->rc.zones[i].startFrame = std::atoi(argLine);
                 int argCount = 0;
                 // Adding a dummy string to avoid file parsing error
                 args[argCount++] = (char *)"x265";
-                char* token = strtok(start, " ");
+                char* token = std::strtok(start, " ");
                 while (token)
                 {
                     args[argCount++] = token;
-                    token = strtok(NULL, " ");
+                    token = std::strtok(NULL, " ");
                 }
                 args[argCount] = NULL;
                 CLIOptions cliopt;
@@ -1334,25 +1334,25 @@ namespace X265_NS {
     {
         char line[256];
         char* argLine;
-        rewind(scenecutAwareQpConfig);
-        while (fgets(line, sizeof(line), scenecutAwareQpConfig))
+        std::rewind(scenecutAwareQpConfig);
+        while (std::fgets(line, sizeof(line), scenecutAwareQpConfig))
         {
             if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
                 continue;
             int index = (int)std::strcspn(line, "\r\n");
             line[index] = '\0';
             argLine = line;
-            while (isspace((unsigned char)*argLine)) argLine++;
+            while (std::isspace((unsigned char)*argLine)) argLine++;
             char* start = std::strchr(argLine, '-');
             int argCount = 0;
             char **args = (char**)std::malloc(256 * sizeof(char *));
             //Adding a dummy string to avoid file parsing error
             args[argCount++] = (char *)"x265";
-            char* token = strtok(start, " ");
+            char* token = std::strtok(start, " ");
             while (token)
             {
                 args[argCount++] = token;
-                token = strtok(NULL, " ");
+                token = std::strtok(NULL, " ");
             }
             args[argCount] = NULL;
             CLIOptions cliopt;
@@ -1380,7 +1380,7 @@ namespace X265_NS {
             if (c == -1)
                 break;
             else if (c == 'D')
-                outputBitDepth = atoi(optarg);
+                outputBitDepth = std::atoi(optarg);
             else if (c == 'P')
                 profile = optarg;
             else if (c == '?')
@@ -1457,32 +1457,32 @@ namespace X265_NS {
     {
         char line[256];
         char* argLine;
-        rewind(multiViewConfig);
+        std::rewind(multiViewConfig);
         int linenum = 0;
         int numInput = 0;
         char** args = (char**)std::malloc(256 * sizeof(char*));
-        while (fgets(line, sizeof(line), multiViewConfig))
+        while (std::fgets(line, sizeof(line), multiViewConfig))
         {
             if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
                 continue;
             int index = (int)std::strcspn(line, "\r\n");
             line[index] = '\0';
             argLine = line;
-            while (isspace((unsigned char)*argLine)) argLine++;
+            while (std::isspace((unsigned char)*argLine)) argLine++;
             char* start = std::strchr(argLine, '-');
             int argCount = 0;
             char flag[] = "true";
             //Adding a dummy string to avoid file parsing error
             args[argCount++] = (char*)"x265";
-            char* token = strtok(start, " ");
+            char* token = std::strtok(start, " ");
             while (token)
             {
                 args[argCount++] = token;
-                token = strtok(NULL, " ");
+                token = std::strtok(NULL, " ");
                 while (token && std::strchr(token, '"'))
                 {
                     token = std::strchr(token, '"');
-                    token = strtok(token, "\"");
+                    token = std::strtok(token, "\"");
                 }
             }
             args[argCount] = NULL;

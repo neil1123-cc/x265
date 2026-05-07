@@ -42,9 +42,9 @@ public:
         , m_mvp(0)
         , s_bitsizes(NULL)
     {
-        memset(m_fpelMvCosts, 0, sizeof(m_fpelMvCosts));
-        memset(s_costs, 0, sizeof(s_costs));
-        memset(s_fpelMvCosts, 0, sizeof(s_fpelMvCosts));
+        std::memset(m_fpelMvCosts, 0, sizeof(m_fpelMvCosts));
+        std::memset(s_costs, 0, sizeof(s_costs));
+        std::memset(s_fpelMvCosts, 0, sizeof(s_fpelMvCosts));
     }
     ~BitCost() { destroy(); }
 
