@@ -1403,6 +1403,13 @@ def main():
         ])
         expect_pass(run_checker(windows_depth_exclude_backslash_arg_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
 
+        windows_depth_exclude_forbidden_dir = root / 'windows-depth-exclude-forbidden-depth'
+        write_compile_commands_entries(windows_depth_exclude_forbidden_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12 -c source/dynamicHDR10/json11.cpp', 'source\\dynamicHDR10\\json11.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(windows_depth_exclude_forbidden_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
+
         duplicate_source_dir = root / 'duplicate-source-min-cpp-commands'
         write_compile_commands_entries(duplicate_source_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),

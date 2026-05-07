@@ -26,6 +26,7 @@
 #include "primitives.h"
 #include "entropy.h"
 
+#include <cstdio>
 #include <cstring>
 
 using namespace X265_NS;
@@ -1531,7 +1532,7 @@ bool PixelHarness::check_planecopy_sp(planecopy_sp_t ref, planecopy_sp_t opt)
 
         if (std::memcmp(ref_dest, opt_dest, dstStride * height * sizeof(pixel)))
         {
-            memcpy(opt_dest, ref_dest, sizeof(ref_dest));
+            std::memcpy(opt_dest, ref_dest, sizeof(ref_dest));
             opt(ushort_test_buff[index] + j, srcStride, opt_dest, dstStride, width, height, (int)8, (uint16_t)((1 << X265_DEPTH) - 1));
             return false;
         }
@@ -2132,7 +2133,7 @@ bool PixelHarness::check_pelFilterLumaStrong_H(pelFilterLumaStrong_t ref, pelFil
 
     pixel pixel_test_buff1[TEST_CASES][BUFFSIZE];
     for (int i = 0; i < TEST_CASES; i++)
-        memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
+        std::memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
 
     for (int i = 0; i < ITERS; i++)
     {
@@ -2165,7 +2166,7 @@ bool PixelHarness::check_pelFilterLumaStrong_V(pelFilterLumaStrong_t ref, pelFil
 
     pixel pixel_test_buff1[TEST_CASES][BUFFSIZE];
     for (int i = 0; i < TEST_CASES; i++)
-        memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
+        std::memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
 
     for (int i = 0; i < ITERS; i++)
     {
@@ -2198,7 +2199,7 @@ bool PixelHarness::check_pelFilterChroma_H(pelFilterChroma_t ref, pelFilterChrom
 
     pixel pixel_test_buff1[TEST_CASES][BUFFSIZE];
     for (int i = 0; i < TEST_CASES; i++)
-        memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
+        std::memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
 
     int32_t masks[NUM_MASKS][2] = {{-1, -1}, {-1, 0}, {0, -1}};
 
@@ -2233,7 +2234,7 @@ bool PixelHarness::check_pelFilterChroma_V(pelFilterChroma_t ref, pelFilterChrom
 
     pixel pixel_test_buff1[TEST_CASES][BUFFSIZE];
     for (int i = 0; i < TEST_CASES; i++)
-        memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
+        std::memcpy(pixel_test_buff1[i], pixel_test_buff[i], sizeof(pixel) * BUFFSIZE);
 
     int32_t masks[NUM_MASKS][2] = {{-1, -1}, {-1, 0}, {0, -1}};
 
@@ -3243,7 +3244,7 @@ void PixelHarness::measurePartition(int part, const EncoderPrimitives& ref, cons
     ALIGN_VAR_16(int, cres[16]);
     pixel *fref = pbuf2 + 2 * INCR;
     char header[128];
-#define HEADER(str, ...) snprintf(header, sizeof(header), str, __VA_ARGS__); printf("%22s", header);
+#define HEADER(str, ...) std::snprintf(header, sizeof(header), str, __VA_ARGS__); printf("%22s", header);
 
     if (opt.pu[part].satd)
     {
@@ -3415,7 +3416,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
 {
     char header[128];
 
-#define HEADER(str, ...) snprintf(header, sizeof(header), str, __VA_ARGS__); printf("%22s", header);
+#define HEADER(str, ...) std::snprintf(header, sizeof(header), str, __VA_ARGS__); printf("%22s", header);
 #define HEADER0(str) printf("%22s", str);
 
     for (int size = 4; size <= 64; size *= 2)
