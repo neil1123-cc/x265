@@ -95,7 +95,7 @@ struct FrameStats
 
     FrameStats()
     {
-        memset(this, 0, sizeof(FrameStats));
+        std::memset(this, 0, sizeof(FrameStats));
     }
 };
 

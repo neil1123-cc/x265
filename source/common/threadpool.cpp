@@ -484,7 +484,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
             }
             else
             {
-                int count = atoi(nodeStr);
+                int count = std::atoi(nodeStr);
                 if (i > 0 || strchr(nodeStr, ','))   // it is comma -> old logic
                 {
                     threadsPerPool[i] = X265_MIN(count, cpusPerNode[i]);
@@ -992,7 +992,7 @@ double getCPUFrequencyMHz()
                 size_t colon = line.find(':');
                 if (colon != std::string::npos)
                 {
-                    double mhz = strtod(line.c_str() + colon + 1, nullptr);
+                    double mhz = std::strtod(line.c_str() + colon + 1, nullptr);
                     if (mhz > maxMhz)
                         maxMhz = mhz;
                 }

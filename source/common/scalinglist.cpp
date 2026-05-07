@@ -131,8 +131,8 @@ const int32_t ScalingList::s_invQuantScales[NUM_REM] = { 40, 45, 51, 57, 64, 72 
 
 ScalingList::ScalingList()
 {
-    memset(m_quantCoef, 0, sizeof(m_quantCoef));
-    memset(m_dequantCoef, 0, sizeof(m_dequantCoef));
+    std::memset(m_quantCoef, 0, sizeof(m_quantCoef));
+    std::memset(m_dequantCoef, 0, sizeof(m_dequantCoef));
     memset(m_scalingListCoef, 0, sizeof(m_scalingListCoef));
 }
 
