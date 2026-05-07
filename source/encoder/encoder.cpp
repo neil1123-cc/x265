@@ -43,6 +43,7 @@
 
 #include "x265.h"
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -472,7 +473,7 @@ void Encoder::create()
                     double start = quantF / (m_scalingList.m_quantCoef[trSize][numList][QP_MAX_SPEC % 6][i]);
 
                     // Formula chosen as an exponential scale to vaguely mimic the effects of a higher quantizer.
-                    double bias = (pow(2, pos * (QP_MAX_MAX - QP_MAX_SPEC)) * 0.003 - 0.003) * start;
+                    double bias = (std::pow(2, pos * (QP_MAX_MAX - QP_MAX_SPEC)) * 0.003 - 0.003) * start;
                     nrOffset[i] = (uint16_t)X265_MIN(bias + 0.5, INT16_MAX);
                 }
             }
@@ -5662,7 +5663,7 @@ int Encoder::getCUIndex(cuLocation* cuLoc, uint32_t* count, int bytes, int flag)
         {
             /* Number of 4x4 blocks in out of bound region */
             int outOfBound = m_param->maxCUSize / 2;
-            uint32_t sum = (uint32_t)pow((outOfBound >> 2), 2);
+            uint32_t sum = (uint32_t)std::pow((outOfBound >> 2), 2);
             index += sum;
         }
         cuLoc->switchCondition += m_param->num4x4Partitions;
@@ -5689,7 +5690,7 @@ int Encoder::getCUIndex(cuLocation* cuLoc, uint32_t* count, int bytes, int flag)
             else
             {
                 int outOfBound = m_param->maxCUSize / 2;
-                uint32_t sum = (uint32_t)(2 * pow((std::abs(outOfBound) >> 2), 2));
+                uint32_t sum = (uint32_t)(2 * std::pow((std::abs(outOfBound) >> 2), 2));
                 index += sum;
             }
             *count = cuLoc->evenRowIndex;
@@ -5759,7 +5760,7 @@ void Encoder::computeDistortionOffset(x265_analysis_data* analysis)
         sqrSum += distortionData->scaledDistortion[i] * distortionData->scaledDistortion[i];
     }
     double avg = sum / analysis->numCUsInFrame;
-    distortionData->sdDistortion = pow(((sqrSum / analysis->numCUsInFrame) - (avg * avg)), 0.5);
+    distortionData->sdDistortion = std::pow(((sqrSum / analysis->numCUsInFrame) - (avg * avg)), 0.5);
     distortionData->averageDistortion = avg;
     distortionData->highDistortionCtuCount = distortionData->lowDistortionCtuCount = 0;
     for (uint32_t i = 0; i < analysis->numCUsInFrame; ++i)
