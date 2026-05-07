@@ -1153,7 +1153,7 @@ namespace X265_NS {
             x265_log(param, X265_LOG_ERROR, "recon file must be specified to get VMAF score, try --help for help\n");
             return true;
         }
-        const char *str = strrchr(info[0].filename, '.');
+        const char *str = std::strrchr(info[0].filename, '.');
 
         if (!std::strcmp(str, ".y4m"))
         {
@@ -1251,7 +1251,7 @@ namespace X265_NS {
                 line[index] = '\0';
                 argLine = line;
                 while (isspace((unsigned char)*argLine)) argLine++;
-                char* start = strchr(argLine, ' ');
+                char* start = std::strchr(argLine, ' ');
                 start++;
                 param->rc.zones[i].startFrame = atoi(argLine);
                 int argCount = 0;
@@ -1343,7 +1343,7 @@ namespace X265_NS {
             line[index] = '\0';
             argLine = line;
             while (isspace((unsigned char)*argLine)) argLine++;
-            char* start = strchr(argLine, '-');
+            char* start = std::strchr(argLine, '-');
             int argCount = 0;
             char **args = (char**)std::malloc(256 * sizeof(char *));
             //Adding a dummy string to avoid file parsing error
@@ -1469,7 +1469,7 @@ namespace X265_NS {
             line[index] = '\0';
             argLine = line;
             while (isspace((unsigned char)*argLine)) argLine++;
-            char* start = strchr(argLine, '-');
+            char* start = std::strchr(argLine, '-');
             int argCount = 0;
             char flag[] = "true";
             //Adding a dummy string to avoid file parsing error
@@ -1479,9 +1479,9 @@ namespace X265_NS {
             {
                 args[argCount++] = token;
                 token = strtok(NULL, " ");
-                while (token && strchr(token, '"'))
+                while (token && std::strchr(token, '"'))
                 {
-                    token = strchr(token, '"');
+                    token = std::strchr(token, '"');
                     token = strtok(token, "\"");
                 }
             }
