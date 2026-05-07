@@ -320,8 +320,8 @@ namespace X265_NS {
 
         m_param->analysisLoadReuseLevel = m_cliopt.loadLevel;
         m_param->analysisSaveReuseLevel = m_cliopt.saveLevel;
-        strcpy(m_param->analysisSave, m_cliopt.saveLevel ? "save.dat" : "");
-        strcpy(m_param->analysisLoad, m_cliopt.loadLevel ? "load.dat" : "");
+        std::strcpy(m_param->analysisSave, m_cliopt.saveLevel ? "save.dat" : "");
+        std::strcpy(m_param->analysisLoad, m_cliopt.loadLevel ? "load.dat" : "");
         m_param->bUseAnalysisFile = 0;
 
         if (m_cliopt.loadLevel)
@@ -425,17 +425,17 @@ namespace X265_NS {
         x265_analysis_data *m_analysisInfo = &m_parent->m_analysisBuffer[m_id][index];
 
         x265_free_analysis_data(m_param, m_analysisInfo);
-        memcpy(m_analysisInfo, src, sizeof(x265_analysis_data));
+        std::memcpy(m_analysisInfo, src, sizeof(x265_analysis_data));
         m_analysisInfo->wt = nullptr;
         x265_alloc_analysis_data(m_param, m_analysisInfo);
 
         bool isVbv = m_param->rc.vbvBufferSize && m_param->rc.vbvMaxBitrate;
         if (m_param->bDisableLookahead && isVbv)
         {
-            memcpy(m_analysisInfo->lookahead.intraSatdForVbv, src->lookahead.intraSatdForVbv, src->numCuInHeight * sizeof(uint32_t));
-            memcpy(m_analysisInfo->lookahead.satdForVbv, src->lookahead.satdForVbv, src->numCuInHeight * sizeof(uint32_t));
-            memcpy(m_analysisInfo->lookahead.intraVbvCost, src->lookahead.intraVbvCost, src->numCUsInFrame * sizeof(uint32_t));
-            memcpy(m_analysisInfo->lookahead.vbvCost, src->lookahead.vbvCost, src->numCUsInFrame * sizeof(uint32_t));
+            std::memcpy(m_analysisInfo->lookahead.intraSatdForVbv, src->lookahead.intraSatdForVbv, src->numCuInHeight * sizeof(uint32_t));
+            std::memcpy(m_analysisInfo->lookahead.satdForVbv, src->lookahead.satdForVbv, src->numCuInHeight * sizeof(uint32_t));
+            std::memcpy(m_analysisInfo->lookahead.intraVbvCost, src->lookahead.intraVbvCost, src->numCUsInFrame * sizeof(uint32_t));
+            std::memcpy(m_analysisInfo->lookahead.vbvCost, src->lookahead.vbvCost, src->numCUsInFrame * sizeof(uint32_t));
         }
 
         if (src->sliceType == X265_TYPE_IDR || src->sliceType == X265_TYPE_I)
