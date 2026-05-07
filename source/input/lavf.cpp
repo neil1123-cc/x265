@@ -27,6 +27,10 @@
 #ifdef ENABLE_LAVF
 
 #include "lavf.h"
+
+#include <cstdlib>
+#include <cstring>
+
 #define FAIL_IF_ERROR( cond, ... )\
 if( cond )\
 {\
@@ -75,18 +79,18 @@ void LavfInput::fill_buffer(x265_picture& pic, uint8_t** planes, int* stride) {
     uint8_t* ptr = frame_buffer;
     pic.planes[0] = ptr;
     pic.stride[0] = stride[0];
-    memcpy(pic.planes[0], planes[0], stride[0] * height);
+    std::memcpy(pic.planes[0], planes[0], stride[0] * height);
     if (stride[1])
     {
         ptr += stride[0] * height;
         pic.planes[1] = ptr;
         pic.stride[1] = stride[1];
-        memcpy(pic.planes[1], planes[1], stride[1] * height_uv);
+        std::memcpy(pic.planes[1], planes[1], stride[1] * height_uv);
 
         ptr += stride[1] * height_uv;
         pic.planes[2] = ptr;
         pic.stride[2] = stride[2];
-        memcpy(pic.planes[2], planes[2], stride[2] * height_uv);
+        std::memcpy(pic.planes[2], planes[2], stride[2] * height_uv);
     }
 }
 
@@ -101,15 +105,15 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
     {
         /* see if the frame we are requesting is the frame we have already read and stored.
          * if so, retrieve the pts and image data before freeing it. */
-        memcpy(p_pic.stride, h->first_pic->stride, sizeof(p_pic.stride));
-        memcpy(p_pic.planes, h->first_pic->planes, sizeof(p_pic.planes));
+        std::memcpy(p_pic.stride, h->first_pic->stride, sizeof(p_pic.stride));
+        std::memcpy(p_pic.planes, h->first_pic->planes, sizeof(p_pic.planes));
         p_pic.pts = h->first_pic->pts;
         p_pic.colorSpace = h->first_pic->colorSpace;
         p_pic.bitDepth = h->first_pic->bitDepth;
         p_pic.framesize = frame_size;
         p_pic.width = _info.width;
         p_pic.height = _info.height;
-        free(h->first_pic);
+        std::free(h->first_pic);
         h->first_pic = nullptr;
         return true;
     }
@@ -275,7 +279,7 @@ void LavfInput::openfile(InputFileInfo& info)
 #if ( LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(58,9,100) )
     av_register_all();
 #endif
-    if(!strcmp(info.filename, "-"))
+    if(!std::strcmp(info.filename, "-"))
         info.filename = "pipe:";
 
     h->frame = av_frame_alloc();
@@ -322,7 +326,7 @@ void LavfInput::openfile(InputFileInfo& info)
         av_dict_free(&avcodec_opts);
 
     /* prefetch the first frame and set/confirm flags */
-    h->first_pic = (x265_picture*) malloc(sizeof(x265_picture));
+    h->first_pic = (x265_picture*) std::malloc(sizeof(x265_picture));
     FAIL_IF_ERROR(!h->first_pic, "malloc failed\n")
     _info.width  = cp->width;
     _info.height = cp->height;
