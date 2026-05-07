@@ -1390,6 +1390,13 @@ def main():
         write_compile_commands(two_file_response_cycle_dir, 'c++ @a.rsp -c source/common/common.cpp')
         expect_pass(run_checker(two_file_response_cycle_dir, '--required-flag=-Werror=deprecated'))
 
+        two_file_response_cycle_forbidden_dir = root / 'two-file-response-cycle-forbidden-exact-flag'
+        two_file_response_cycle_forbidden_dir.mkdir()
+        (two_file_response_cycle_forbidden_dir / 'a.rsp').write_text('-std=gnu++20 -Wdeprecated @b.rsp')
+        (two_file_response_cycle_forbidden_dir / 'b.rsp').write_text('-Werror=deprecated -DX265_DEPTH=12 @a.rsp')
+        write_compile_commands(two_file_response_cycle_forbidden_dir, 'c++ @a.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(two_file_response_cycle_forbidden_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         write_compile_commands_entries(root / 'depth-exclude', [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/dynamicHDR10/json11.cpp', 'source/dynamicHDR10/json11.cpp'),
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),

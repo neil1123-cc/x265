@@ -27,6 +27,7 @@
 #include "common.h"
 #include "mbdstharness.h"
 
+#include <cstdio>
 #include <cstring>
 
 using namespace X265_NS;
@@ -486,7 +487,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_dct_primitive(ref.cu[i].dct, opt.cu[i].dct, dctInfo[i].width))
             {
-                printf("\n%s failed\n", dctInfo[i].name);
+                std::printf("\n%s failed\n", dctInfo[i].name);
                 return false;
             }
         }
@@ -498,7 +499,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_idct_primitive(ref.cu[i].idct, opt.cu[i].idct, idctInfo[i].width))
             {
-                printf("%s failed\n", idctInfo[i].name);
+                std::printf("%s failed\n", idctInfo[i].name);
                 return false;
             }
         }
@@ -508,7 +509,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dct_primitive(ref.dst4x4, opt.dst4x4, 4))
         {
-            printf("dst4x4: Failed\n");
+            std::printf("dst4x4: Failed\n");
             return false;
         }
     }
@@ -517,7 +518,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_idct_primitive(ref.idst4x4, opt.idst4x4, 4))
         {
-            printf("idst4x4: Failed\n");
+            std::printf("idst4x4: Failed\n");
             return false;
         }
     }
@@ -526,7 +527,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dequant_primitive(ref.dequant_normal, opt.dequant_normal))
         {
-            printf("dequant_normal: Failed!\n");
+            std::printf("dequant_normal: Failed!\n");
             return false;
         }
     }
@@ -535,7 +536,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dequant_primitive(ref.dequant_scaling, opt.dequant_scaling))
         {
-            printf("dequant_scaling: Failed!\n");
+            std::printf("dequant_scaling: Failed!\n");
             return false;
         }
     }
@@ -544,7 +545,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_quant_primitive(ref.quant, opt.quant))
         {
-            printf("quant: Failed!\n");
+            std::printf("quant: Failed!\n");
             return false;
         }
     }
@@ -553,7 +554,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_nquant_primitive(ref.nquant, opt.nquant))
         {
-            printf("nquant: Failed!\n");
+            std::printf("nquant: Failed!\n");
             return false;
         }
     }
@@ -564,7 +565,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_nonPsyRdoQuant_primitive(ref.cu[i].nonPsyRdoQuant, opt.cu[i].nonPsyRdoQuant))
             {
-                printf("nonPsyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
+                std::printf("nonPsyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -575,7 +576,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_psyRdoQuant_primitive(ref.cu[i].psyRdoQuant, opt.cu[i].psyRdoQuant))
             {
-                printf("psyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
+                std::printf("psyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -586,7 +587,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_psyRdoQuant_primitive_avx2(ref.cu[i].psyRdoQuant_1p, opt.cu[i].psyRdoQuant_1p))
             {
-                printf("psyRdoQuant_1p[%dx%d]: Failed!\n", 4 << i, 4 << i);
+                std::printf("psyRdoQuant_1p[%dx%d]: Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -597,7 +598,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_count_nonzero_primitive(ref.cu[i].count_nonzero, opt.cu[i].count_nonzero))
             {
-                printf("count_nonzero[%dx%d] Failed!\n", 4 << i, 4 << i);
+                std::printf("count_nonzero[%dx%d] Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -606,7 +607,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dequant_primitive(ref.dequant_scaling, opt.dequant_scaling))
         {
-            printf("dequant_scaling: Failed!\n");
+            std::printf("dequant_scaling: Failed!\n");
             return false;
         }
     }
@@ -615,7 +616,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_denoise_dct_primitive(ref.denoiseDct, opt.denoiseDct))
         {
-            printf("denoiseDct: Failed!\n");
+            std::printf("denoiseDct: Failed!\n");
             return false;
         }
     }
@@ -627,7 +628,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
 {
     if (opt.dst4x4)
     {
-        printf("dst4x4\t");
+        std::printf("dst4x4\t");
         REPORT_SPEEDUP(opt.dst4x4, ref.dst4x4, mbuf1, mshortbuf2, 4);
     }
 
@@ -635,14 +636,14 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         if (opt.cu[value].dct)
         {
-            printf("%s\t", dctInfo[value].name);
+            std::printf("%s\t", dctInfo[value].name);
             REPORT_SPEEDUP(opt.cu[value].dct, ref.cu[value].dct, mbuf1, mshortbuf2, dctInfo[value].width);
         }
     }
 
     if (opt.idst4x4)
     {
-        printf("idst4x4\t");
+        std::printf("idst4x4\t");
         REPORT_SPEEDUP(opt.idst4x4, ref.idst4x4, mbuf1, mshortbuf2, 4);
     }
 
@@ -650,7 +651,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         if (opt.cu[value].idct)
         {
-            printf("%s\t", idctInfo[value].name);
+            std::printf("%s\t", idctInfo[value].name);
             REPORT_SPEEDUP(opt.cu[value].idct, ref.cu[value].idct, mshortbuf3, mshortbuf2, idctInfo[value].width);
         }
     }
@@ -659,25 +660,25 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         int scale = 72 << X265_DEPTH;
         int shift = X265_DEPTH - 4;
-        printf("dequant_normal\t");
+        std::printf("dequant_normal\t");
         REPORT_SPEEDUP(opt.dequant_normal, ref.dequant_normal, short_test_buff[0], mshortbuf2, 32 * 32, scale, shift);
     }
 
     if (opt.dequant_scaling)
     {
-        printf("dequant_scaling\t");
+        std::printf("dequant_scaling\t");
         REPORT_SPEEDUP(opt.dequant_scaling, ref.dequant_scaling, short_test_buff[0], mintbuf3, mshortbuf2, 32 * 32, 5, 1);
     }
 
     if (opt.quant)
     {
-        printf("quant\t\t");
+        std::printf("quant\t\t");
         REPORT_SPEEDUP(opt.quant, ref.quant, short_test_buff[0], int_test_buff[1], mintbuf3, mshortbuf2, 23, 23785, 32 * 32);
     }
 
     if (opt.nquant)
     {
-        printf("nquant\t\t");
+        std::printf("nquant\t\t");
         REPORT_SPEEDUP(opt.nquant, ref.nquant, short_test_buff[0], int_test_buff[1], mshortbuf2, 23, 23785, 32 * 32);
     }
 
@@ -688,7 +689,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             ALIGN_VAR_32(int64_t, opt_dest[4 * MAX_TU_SIZE]);
             int64_t totalRdCost = 0;
             int64_t totalUncodedCost = 0;
-            printf("nonPsyRdoQuant[%dx%d]", 4 << value, 4 << value);
+            std::printf("nonPsyRdoQuant[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].nonPsyRdoQuant, ref.cu[value].nonPsyRdoQuant, short_test_buff[0], opt_dest, &totalUncodedCost, &totalRdCost, 0);
         }
     }
@@ -701,7 +702,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             int64_t totalUncodedCost = 0;
             int64_t *psyScale = X265_MALLOC(int64_t, 1);
             *psyScale = 0;
-            printf("psyRdoQuant[%dx%d]", 4 << value, 4 << value);
+            std::printf("psyRdoQuant[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].psyRdoQuant, ref.cu[value].psyRdoQuant, short_test_buff[0], short_test_buff1[0], opt_dest, &totalUncodedCost, &totalRdCost, psyScale, 0);
         }
     }
@@ -712,7 +713,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             ALIGN_VAR_32(int64_t, opt_dest[4 * MAX_TU_SIZE]);
             int64_t totalRdCost = 0;
             int64_t totalUncodedCost = 0;
-            printf("psyRdoQuant_1p[%dx%d]", 4 << value, 4 << value);
+            std::printf("psyRdoQuant_1p[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].psyRdoQuant_1p, ref.cu[value].psyRdoQuant_1p, short_test_buff[0], opt_dest, &totalUncodedCost, &totalRdCost, 0);
         }
     }
@@ -720,13 +721,13 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         if (opt.cu[value].count_nonzero)
         {
-            printf("count_nonzero[%dx%d]", 4 << value, 4 << value);
+            std::printf("count_nonzero[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].count_nonzero, ref.cu[value].count_nonzero, mbuf1);
         }
     }
     if (opt.denoiseDct)
     {
-        printf("denoiseDct\t");
+        std::printf("denoiseDct\t");
         REPORT_SPEEDUP(opt.denoiseDct, ref.denoiseDct, short_denoise_test_buff1[0], mubuf1, mushortbuf1, 32 * 32);
     }
 }
