@@ -468,28 +468,28 @@ namespace X265_NS {
                 std::memcpy(interDst->cuQPOff, interSrc->cuQPOff, sizeof(int8_t) * src->depthBytes);
             if (m_param->analysisSaveReuseLevel > 4)
             {
-                memcpy(interDst->partSize, interSrc->partSize, sizeof(uint8_t) * src->depthBytes);
-                memcpy(interDst->mergeFlag, interSrc->mergeFlag, sizeof(uint8_t) * src->depthBytes);
+                std::memcpy(interDst->partSize, interSrc->partSize, sizeof(uint8_t) * src->depthBytes);
+                std::memcpy(interDst->mergeFlag, interSrc->mergeFlag, sizeof(uint8_t) * src->depthBytes);
                 if (m_param->analysisSaveReuseLevel == 10)
                 {
-                    memcpy(interDst->interDir, interSrc->interDir, sizeof(uint8_t) * src->depthBytes);
+                    std::memcpy(interDst->interDir, interSrc->interDir, sizeof(uint8_t) * src->depthBytes);
                     for (int dir = 0; dir < numDir; dir++)
                     {
-                        memcpy(interDst->mvpIdx[dir], interSrc->mvpIdx[dir], sizeof(uint8_t) * src->depthBytes);
-                        memcpy(interDst->refIdx[dir], interSrc->refIdx[dir], sizeof(int8_t) * src->depthBytes);
-                        memcpy(interDst->mv[dir], interSrc->mv[dir], sizeof(MV) * src->depthBytes);
+                        std::memcpy(interDst->mvpIdx[dir], interSrc->mvpIdx[dir], sizeof(uint8_t) * src->depthBytes);
+                        std::memcpy(interDst->refIdx[dir], interSrc->refIdx[dir], sizeof(int8_t) * src->depthBytes);
+                        std::memcpy(interDst->mv[dir], interSrc->mv[dir], sizeof(MV) * src->depthBytes);
                     }
                     if (bIntraInInter)
                     {
                         x265_analysis_intra_data *intraDst = (x265_analysis_intra_data*)m_analysisInfo->intraData;
                         x265_analysis_intra_data *intraSrc = (x265_analysis_intra_data*)src->intraData;
-                        memcpy(intraDst->modes, intraSrc->modes, sizeof(uint8_t) * src->numPartitions * src->numCUsInFrame);
-                        memcpy(intraDst->chromaModes, intraSrc->chromaModes, sizeof(uint8_t) * src->depthBytes);
+                        std::memcpy(intraDst->modes, intraSrc->modes, sizeof(uint8_t) * src->numPartitions * src->numCUsInFrame);
+                        std::memcpy(intraDst->chromaModes, intraSrc->chromaModes, sizeof(uint8_t) * src->depthBytes);
                     }
                }
             }
             if (m_param->analysisSaveReuseLevel != 10)
-                memcpy(interDst->ref, interSrc->ref, sizeof(int32_t) * src->numCUsInFrame * X265_MAX_PRED_MODE_PER_CTU * numDir);
+                std::memcpy(interDst->ref, interSrc->ref, sizeof(int32_t) * src->numCUsInFrame * X265_MAX_PRED_MODE_PER_CTU * numDir);
         }
 
 ret:
