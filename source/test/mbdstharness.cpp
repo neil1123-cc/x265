@@ -27,6 +27,8 @@
 #include "common.h"
 #include "mbdstharness.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 struct DctConf
@@ -82,13 +84,13 @@ MBDstHarness::MBDstHarness()
     }
 
 #if _DEBUG
-    memset(mshortbuf2, 0, MAX_TU_SIZE * sizeof(int16_t));
-    memset(mshortbuf3, 0, MAX_TU_SIZE * sizeof(int16_t));
+    std::memset(mshortbuf2, 0, MAX_TU_SIZE * sizeof(int16_t));
+    std::memset(mshortbuf3, 0, MAX_TU_SIZE * sizeof(int16_t));
 
-    memset(mintbuf1, 0, MAX_TU_SIZE * sizeof(int));
-    memset(mintbuf2, 0, MAX_TU_SIZE * sizeof(int));
-    memset(mintbuf3, 0, MAX_TU_SIZE * sizeof(int));
-    memset(mintbuf4, 0, MAX_TU_SIZE * sizeof(int));
+    std::memset(mintbuf1, 0, MAX_TU_SIZE * sizeof(int));
+    std::memset(mintbuf2, 0, MAX_TU_SIZE * sizeof(int));
+    std::memset(mintbuf3, 0, MAX_TU_SIZE * sizeof(int));
+    std::memset(mintbuf4, 0, MAX_TU_SIZE * sizeof(int));
 #endif // if _DEBUG
 }
 
@@ -104,7 +106,7 @@ bool MBDstHarness::check_dct_primitive(dct_t ref, dct_t opt, intptr_t width)
         ref(short_test_buff[index] + j, mshortbuf2, width);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         reportfail();
@@ -126,7 +128,7 @@ bool MBDstHarness::check_idct_primitive(idct_t ref, idct_t opt, intptr_t width)
         ref(short_test_buff[index] + j, mshortbuf2, width);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         reportfail();
@@ -158,7 +160,7 @@ bool MBDstHarness::check_dequant_primitive(dequant_normal_t ref, dequant_normal_
         ref(short_test_buff[index] + j, mshortbuf2, width * height, scale, shift);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width * height, scale, shift);
 
-        if (memcmp(mshortbuf2, mshortbuf3, sizeof(int16_t) * height * width))
+        if (std::memcmp(mshortbuf2, mshortbuf3, sizeof(int16_t) * height * width))
             return false;
 
         reportfail();
@@ -175,8 +177,8 @@ bool MBDstHarness::check_dequant_primitive(dequant_scaling_t ref, dequant_scalin
     for (int i = 0; i < ITERS; i++)
     {
 
-        memset(mshortbuf2, 0, MAX_TU_SIZE * sizeof(int16_t));
-        memset(mshortbuf3, 0, MAX_TU_SIZE * sizeof(int16_t));
+        std::memset(mshortbuf2, 0, MAX_TU_SIZE * sizeof(int16_t));
+        std::memset(mshortbuf3, 0, MAX_TU_SIZE * sizeof(int16_t));
 
         int log2TrSize = (rand() % 4) + 2;
 
@@ -194,7 +196,7 @@ bool MBDstHarness::check_dequant_primitive(dequant_scaling_t ref, dequant_scalin
         ref(short_test_buff[index1] + j, int_test_buff[index1] + j, mshortbuf2, width * height, per, shift);
         checked(opt, short_test_buff[index1] + j, int_test_buff[index1] + j, mshortbuf3, width * height, per, shift);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         reportfail();
@@ -234,10 +236,10 @@ bool MBDstHarness::check_quant_primitive(quant_t ref, quant_t opt)
         refReturnValue = ref(short_test_buff[index1] + j, int_test_buff[index2] + j, mintbuf1, mshortbuf2, bits, valueToAdd, numCoeff);
         optReturnValue = (uint32_t)checked(opt, short_test_buff[index1] + j, int_test_buff[index2] + j, mintbuf3, mshortbuf3, bits, valueToAdd, numCoeff);
 
-        if (memcmp(mintbuf1, mintbuf3, cmp_size))
+        if (std::memcmp(mintbuf1, mintbuf3, cmp_size))
             return false;
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size1))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size1))
             return false;
 
         if (optReturnValue != refReturnValue)
@@ -277,7 +279,7 @@ bool MBDstHarness::check_nquant_primitive(nquant_t ref, nquant_t opt)
         refReturnValue = ref(short_test_buff[index1] + j, int_test_buff[index2] + j, mshortbuf2, bits, valueToAdd, numCoeff);
         optReturnValue = (uint32_t)checked(opt, short_test_buff[index1] + j, int_test_buff[index2] + j, mshortbuf3, bits, valueToAdd, numCoeff);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         if (optReturnValue != refReturnValue)
@@ -308,15 +310,15 @@ bool MBDstHarness::check_nonPsyRdoQuant_primitive(nonPsyRdoQuant_t ref, nonPsyRd
         uint32_t blkPos = trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
-        memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
-        memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
 
         int index1 = rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, ref_dest, &totalUncodedCostRef, &totalRdCostRef, blkPos);
         checked(opt, short_test_buff[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, blkPos);
 
-        if (memcmp(ref_dest, opt_dest, cmp_size))
+        if (std::memcmp(ref_dest, opt_dest, cmp_size))
             return false;
 
         if (totalUncodedCostRef != totalUncodedCostOpt)
@@ -352,8 +354,8 @@ bool MBDstHarness::check_psyRdoQuant_primitive(psyRdoQuant_t ref, psyRdoQuant_t 
         uint32_t blkPos = trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
-        memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
-        memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
 
         int index1 = rand() % TEST_CASES;
 
@@ -361,7 +363,7 @@ bool MBDstHarness::check_psyRdoQuant_primitive(psyRdoQuant_t ref, psyRdoQuant_t 
         checked(opt, short_test_buff[index1] + j, short_test_buff1[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, psyScale, blkPos);
 
         X265_FREE(psyScale);
-        if (memcmp(ref_dest, opt_dest, cmp_size))
+        if (std::memcmp(ref_dest, opt_dest, cmp_size))
             return false;
 
         if (totalUncodedCostRef != totalUncodedCostOpt)
@@ -395,8 +397,8 @@ bool MBDstHarness::check_psyRdoQuant_primitive_avx2(psyRdoQuant_t1 ref, psyRdoQu
         uint32_t blkPos =  trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
-        memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
-        memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
 
         int index1 = rand() % TEST_CASES;
 
@@ -404,7 +406,7 @@ bool MBDstHarness::check_psyRdoQuant_primitive_avx2(psyRdoQuant_t1 ref, psyRdoQu
         checked(opt, short_test_buff[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, blkPos);
 
         
-        if (memcmp(ref_dest, opt_dest, cmp_size))
+        if (std::memcmp(ref_dest, opt_dest, cmp_size))
             return false;
 
         if (totalUncodedCostRef != totalUncodedCostOpt)
@@ -448,9 +450,9 @@ bool MBDstHarness::check_denoise_dct_primitive(denoiseDct_t ref, denoiseDct_t op
 
         for (int i = 0; i < ITERS; i++)
         {
-            memset(mubuf1, 0, num * sizeof(uint32_t));
-            memset(mubuf2, 0, num * sizeof(uint32_t));
-            memset(mushortbuf1, 0,  num * sizeof(uint16_t));
+            std::memset(mubuf1, 0, num * sizeof(uint32_t));
+            std::memset(mubuf2, 0, num * sizeof(uint32_t));
+            std::memset(mushortbuf1, 0,  num * sizeof(uint16_t));
 
             for (int k = 0; k < num; k++)
                 mushortbuf1[k] = rand() % UNSIGNED_SHORT_MAX;
@@ -460,10 +462,10 @@ bool MBDstHarness::check_denoise_dct_primitive(denoiseDct_t ref, denoiseDct_t op
             ref(short_denoise_test_buff1[index] + j, mubuf1, mushortbuf1, num);
             checked(opt, short_denoise_test_buff2[index] + j, mubuf2, mushortbuf1, num);
 
-            if (memcmp(short_denoise_test_buff1[index] + j, short_denoise_test_buff2[index] + j, cmp_short))
+            if (std::memcmp(short_denoise_test_buff1[index] + j, short_denoise_test_buff2[index] + j, cmp_short))
                 return false;
 
-            if (memcmp(mubuf1, mubuf2, cmp_size))
+            if (std::memcmp(mubuf1, mubuf2, cmp_size))
                 return false;
 
             reportfail();
