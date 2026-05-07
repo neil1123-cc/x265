@@ -946,10 +946,10 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
         {
             int index = i+j;
             RateControlEntry *rcj = &m_rce2Pass[index];
-            weight *= 1 - pow(rcj->iCuCount / m_ncu, 2);
+            weight *= 1 - std::pow(rcj->iCuCount / m_ncu, 2);
             if (weight < 0.0001)
                 break;
-            gaussianWeight = weight * exp(-j * j / 200.0);
+            gaussianWeight = weight * std::exp(-j * j / 200.0);
             weightSum += gaussianWeight;
             cplxSum += gaussianWeight * (qScale2bits(rcj, 1) - rcj->miscBits) / clippedDuration;
         }
@@ -959,10 +959,10 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
         {
             int index = i-j;
             RateControlEntry *rcj = &m_rce2Pass[index];
-            gaussianWeight = weight * exp(-j * j / 200.0);
+            gaussianWeight = weight * std::exp(-j * j / 200.0);
             weightSum += gaussianWeight;
             cplxSum += gaussianWeight * (qScale2bits(rcj, 1) - rcj->miscBits) / clippedDuration;
-            weight *= 1 - pow(rcj->iCuCount / m_ncu, 2);
+            weight *= 1 - std::pow(rcj->iCuCount / m_ncu, 2);
             if (weight < .0001)
                 break;
         }
@@ -1031,7 +1031,7 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
                 {
                     int idx = i + j - filterSize / 2;
                     double d = idx - i;
-                    double coeff = qBlur == 0 ? 1.0 : exp(-d * d / (qBlur * qBlur));
+                    double coeff = qBlur == 0 ? 1.0 : std::exp(-d * d / (qBlur * qBlur));
                     if (idx < 0 || idx >= m_numEntries)
                         continue;
                     if (m_rce2Pass[i].sliceType != m_rce2Pass[idx].sliceType)
@@ -1721,7 +1721,7 @@ double RateControl::getDiffLimitedQScale(RateControlEntry *rce, double q)
     }
     if (rce->sliceType == P_SLICE)
     {
-        double mask = 1 - pow(rce->iCuCount / m_ncu, 2);
+        double mask = 1 - std::pow(rce->iCuCount / m_ncu, 2);
         m_accumPQp   = mask * (x265_qScale2qp(q) + m_accumPQp);
         m_accumPNorm = mask * (1 + m_accumPNorm);
     }
