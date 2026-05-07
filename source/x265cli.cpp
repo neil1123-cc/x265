@@ -846,10 +846,10 @@ namespace X265_NS {
                     return true;
                 }
 #define OPT(longname) \
-                                            else if (!strcmp(long_options[long_options_index].name, longname))
+                                            else if (!std::strcmp(long_options[long_options_index].name, longname))
 #define OPT2(name1, name2) \
-                                            else if (!strcmp(long_options[long_options_index].name, name1) || \
-             !strcmp(long_options[long_options_index].name, name2))
+                                            else if (!std::strcmp(long_options[long_options_index].name, name1) || \
+             !std::strcmp(long_options[long_options_index].name, name2))
 
                 if (0);
                 OPT("seek") this->seek = (uint32_t)x265_atoi(optarg, bError);
@@ -937,12 +937,12 @@ namespace X265_NS {
 
 #if !ENABLE_MULTIVIEW
             if (optind < argc && !(*inputfn[0]))
-                strncpy(inputfn[0], argv[optind++], 1024);
+                std::strncpy(inputfn[0], argv[optind++], 1024);
 #else
         if (!this->multiViewConfig)
         {
             if (optind < argc && !(*inputfn[0]))
-                strncpy(inputfn[0], argv[optind++], 1024);
+                std::strncpy(inputfn[0], argv[optind++], 1024);
         }
 #endif
         if (optind < argc && !outputfn)
