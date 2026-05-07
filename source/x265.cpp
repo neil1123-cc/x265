@@ -126,7 +126,7 @@ static bool checkAbrLadder(int argc, char **argv, FILE **abrConfig)
             x265_log(NULL, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
             return false;
         }
-        if (!strcmp(long_options[long_options_index].name, "abr-ladder"))
+        if (!std::strcmp(long_options[long_options_index].name, "abr-ladder"))
         {
             *abrConfig = x265_fopen(optarg, "rb");
             if (!abrConfig)
@@ -144,7 +144,7 @@ static uint8_t getNumAbrEncodes(FILE* abrConfig)
 
     while (fgets(line, sizeof(line), abrConfig))
     {
-        if (strcmp(line, "\n") == 0)
+        if (std::strcmp(line, "\n") == 0)
             continue;
         else if (!(*line == '#'))
             numEncodes++;
@@ -158,11 +158,11 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
     char line[1024];
     char* argLine;
 
-    char *strPool = (char*)malloc(256 * X265_MAX_STRING_SIZE * sizeof(char));
+    char *strPool = (char*)std::malloc(256 * X265_MAX_STRING_SIZE * sizeof(char));
     int strPoolSize = 256 * X265_MAX_STRING_SIZE;
     for (uint32_t i = 0; i < numEncodes; i++)
     {
-        char **argv = (char**)malloc(256 * sizeof(char *));
+        char **argv = (char**)std::malloc(256 * sizeof(char *));
         cliopt[i].stringPool = (i == 0 ? strPool : NULL);
         cliopt[i].argString = argv;
         cliopt[i].orgArgv = NULL;
@@ -170,7 +170,7 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
             fprintf(stderr, "Error reading line from configuration file.\n");
             return false;
         }
-        if (*line == '#' || (strcmp(line, "\r\n") == 0))
+        if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
             continue;
         int index = (int)strcspn(line, "\r\n");
         line[index] = '\0';
@@ -202,18 +202,18 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
         }
         else
         {
-            snprintf(cliopt[i].encName, X265_MAX_STRING_SIZE, "%s", head[0]);
+            std::snprintf(cliopt[i].encName, X265_MAX_STRING_SIZE, "%s", head[0]);
             cliopt[i].loadLevel = atoi(head[1]);
-            snprintf(cliopt[i].reuseName, X265_MAX_STRING_SIZE, "%s", head[2]);
+            std::snprintf(cliopt[i].reuseName, X265_MAX_STRING_SIZE, "%s", head[2]);
         }
 
         char* token = strtok(start, " ");
         while (token)
         {
             argv[argc] = strPool;
-            strPool += strlen(token) + 1;
-            strPoolSize = strPoolSize - (int)strlen(token) + 1;
-            strcpy(argv[argc], token);
+            strPool += std::strlen(token) + 1;
+            strPoolSize = strPoolSize - (int)std::strlen(token) + 1;
+            std::strcpy(argv[argc], token);
             token = strtok(NULL, " ");
             argc++;
         }
@@ -239,12 +239,12 @@ static bool setRefContext(CLIOptions cliopt[], uint32_t numEncodes)
     for (uint32_t curEnc = 0; curEnc < numEncodes; curEnc++)
     {
         isRefFound = false;
-        hasRef = !strcmp(cliopt[curEnc].reuseName, "nil") ? false : true;
+        hasRef = !std::strcmp(cliopt[curEnc].reuseName, "nil") ? false : true;
         if (hasRef)
         {
             for (uint32_t refEnc = 0; refEnc < numEncodes; refEnc++)
             {
-                if (!strcmp(cliopt[curEnc].reuseName, cliopt[refEnc].encName))
+                if (!std::strcmp(cliopt[curEnc].reuseName, cliopt[refEnc].encName))
                 {
                     cliopt[curEnc].refId = refEnc;
                     cliopt[refEnc].numRefs++;
