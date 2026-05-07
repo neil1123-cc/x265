@@ -717,6 +717,14 @@ def main():
         }])
         expect_pass(run_checker(windows_path_dir, '--required-file-substring=source/input/lavf.cpp', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'))
 
+        windows_mixed_file_path_dir = root / 'windows-mixed-file-path'
+        write_compile_commands_records(windows_mixed_file_path_dir, [{
+            'directory': str(windows_mixed_file_path_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/lavf.cpp',
+            'file': str(root / 'source\\input/lavf.cpp'),
+        }])
+        expect_pass(run_checker(windows_mixed_file_path_dir, '--required-file-substring=source/input/lavf.cpp', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'))
+
         windows_backslash_arg_dir = root / 'windows-backslash-arg-substrings'
         write_compile_commands_records(windows_backslash_arg_dir, [{
             'directory': str(windows_backslash_arg_dir),
@@ -725,6 +733,14 @@ def main():
         }])
         expect_pass(run_checker(windows_backslash_arg_dir, '--required-file-substring=source\\input\\lavf.cpp', '--required-file-flag=source\\input\\lavf.cpp=-DENABLE_LAVF', '--forbidden-file-flag=source\\input\\lavf.cpp=-DENABLE_MKV'))
 
+        windows_mixed_required_file_flag_dir = root / 'windows-mixed-required-file-flag'
+        write_compile_commands_records(windows_mixed_required_file_flag_dir, [{
+            'directory': str(windows_mixed_required_file_flag_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/lavf.cpp',
+            'file': str(root / 'source/input/lavf.cpp'),
+        }])
+        expect_pass(run_checker(windows_mixed_required_file_flag_dir, '--required-file-flag=source\\input/lavf.cpp=-DENABLE_LAVF'))
+
         windows_forbidden_backslash_arg_dir = root / 'windows-forbidden-backslash-arg-substring'
         write_compile_commands_records(windows_forbidden_backslash_arg_dir, [{
             'directory': str(windows_forbidden_backslash_arg_dir),
@@ -732,6 +748,14 @@ def main():
             'file': str(root / 'source/output/mp4.cpp'),
         }])
         expect_fail(run_checker(windows_forbidden_backslash_arg_dir, '--forbidden-file-substring=source\\output\\mp4.cpp'), 'forbidden compile command for file substring source/output/mp4.cpp')
+
+        windows_escaped_forbidden_file_substring_dir = root / 'windows-escaped-forbidden-file-substring'
+        write_compile_commands_records(windows_escaped_forbidden_file_substring_dir, [{
+            'directory': str(windows_escaped_forbidden_file_substring_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/output/mp4.cpp',
+            'file': str(root / 'source/output/mp4.cpp'),
+        }])
+        expect_fail(run_checker(windows_escaped_forbidden_file_substring_dir, '--forbidden-file-substring=source\\output\\mp4.cpp'), 'forbidden compile command for file substring source/output/mp4.cpp')
 
         mixed_fields_dir = root / 'mixed-command-arguments-std'
         write_compile_commands_records(mixed_fields_dir, [{
@@ -919,6 +943,10 @@ def main():
         write_compile_commands(root / 'file-flag-no-prefix-match', 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF_EXTRA -c source/input/lavf.cpp', 'source/input/lavf.cpp')
         expect_fail(run_checker(root / 'file-flag-no-prefix-match', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
 
+        forbidden_file_flag_no_prefix_match_dir = root / 'forbidden-file-flag-no-prefix-match'
+        write_compile_commands(forbidden_file_flag_no_prefix_match_dir, 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF_EXTRA -c source/common/common.cpp', 'source/common/common.cpp')
+        expect_pass(run_checker(forbidden_file_flag_no_prefix_match_dir, '--forbidden-file-flag=source/common/common.cpp=-DENABLE_LAVF'))
+
         file_flag_mixed_fields_dir = root / 'file-flag-mixed-fields'
         write_compile_commands_records(file_flag_mixed_fields_dir, [{
             'directory': str(file_flag_mixed_fields_dir),
@@ -975,6 +1003,13 @@ def main():
         }])
         expect_fail(run_checker(file_flag_response_missing_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
 
+        multi_match_file_flag_pass_dir = root / 'multi-match-file-flag-pass'
+        write_compile_commands_entries(multi_match_file_flag_pass_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/yuv.cpp', 'source/input/yuv.cpp'),
+        ])
+        expect_pass(run_checker(multi_match_file_flag_pass_dir, '--required-file-flag=source/input/=-DENABLE_LAVF'))
+
         multi_match_file_flag_dir = root / 'multi-match-file-flag'
         write_compile_commands_entries(multi_match_file_flag_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
@@ -988,6 +1023,13 @@ def main():
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_MKV -c source/output/mkv.cpp', 'source/output/mkv.cpp'),
         ])
         expect_fail(run_checker(multi_match_forbidden_file_flag_dir, '--forbidden-file-flag=source/output/=-DENABLE_MKV'), 'forbidden flag -DENABLE_MKV for file substring source/output/')
+
+        multi_match_forbidden_file_flag_pass_dir = root / 'multi-match-forbidden-file-flag-pass'
+        write_compile_commands_entries(multi_match_forbidden_file_flag_pass_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/output/output.cpp', 'source/output/output.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/output/raw.cpp', 'source/output/raw.cpp'),
+        ])
+        expect_pass(run_checker(multi_match_forbidden_file_flag_pass_dir, '--forbidden-file-flag=source/output/=-DENABLE_MKV'))
 
         write_compile_commands(root / 'missing-file-flag', 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/input/lavf.cpp', 'source/input/lavf.cpp')
         expect_fail(run_checker(root / 'missing-file-flag', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
@@ -1111,6 +1153,18 @@ def main():
         write_compile_commands(uppercase_response_dir, 'c++ @ARGS.RSP -c source/common/common.cpp')
         expect_pass(run_checker(uppercase_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
+        uppercase_long_response_dir = root / 'uppercase-long-response-file'
+        uppercase_long_response_dir.mkdir()
+        (uppercase_long_response_dir / 'ARGS.RESPONSE').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands(uppercase_long_response_dir, 'c++ @ARGS.RESPONSE -c source/common/common.cpp')
+        expect_pass(run_checker(uppercase_long_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        quoted_dot_response_dir = root / 'quoted-dot-response-file'
+        quoted_dot_response_dir.mkdir()
+        (quoted_dot_response_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands(quoted_dot_response_dir, 'c++ @"./args.rsp" -c source/common/common.cpp')
+        expect_pass(run_checker(quoted_dot_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
         response_split_std_dir = root / 'response-file-split-std'
         response_split_std_dir.mkdir()
         (response_split_std_dir / 'args.rsp').write_text('--std gnu++20 -Wdeprecated -Werror=deprecated')
@@ -1169,6 +1223,12 @@ def main():
         write_compile_commands(nested_missing_response_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_fail(run_checker(nested_missing_response_dir), 'missing response file')
 
+        nested_quoted_missing_response_dir = root / 'nested-quoted-missing-response-file'
+        nested_quoted_missing_response_dir.mkdir()
+        (nested_quoted_missing_response_dir / 'args.rsp').write_text('-std=gnu++20 @"missing nested.rsp"')
+        write_compile_commands(nested_quoted_missing_response_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(nested_quoted_missing_response_dir), 'missing response file')
+
         missing_arguments_response_dir = root / 'missing-response-file-arguments'
         missing_arguments_response_dir.mkdir()
         write_compile_commands_records(missing_arguments_response_dir, [{
@@ -1222,6 +1282,19 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_pass(run_checker(nested_parent_response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
+
+        nested_parent_response_backslash_dir = root / 'nested-parent-response-file-backslash'
+        nested_parent_response_backslash_dir.mkdir()
+        nested_parent_response_backslash_subdir = nested_parent_response_backslash_dir / 'sub'
+        nested_parent_response_backslash_subdir.mkdir()
+        (nested_parent_response_backslash_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (nested_parent_response_backslash_subdir / 'args.rsp').write_text('@../std.rsp -DX265_DEPTH=8')
+        write_compile_commands_records(nested_parent_response_backslash_dir, [{
+            'directory': str(nested_parent_response_backslash_subdir),
+            'command': 'c++ @args.rsp -c source/common/common.cpp',
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(nested_parent_response_backslash_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
         nested_parent_response_missing_dir = root / 'nested-parent-response-file-missing-flag'
         nested_parent_response_missing_dir.mkdir()
@@ -1286,6 +1359,18 @@ def main():
         }])
         expect_pass(run_checker(nested_arguments_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
+        response_both_fields_missing_required_dir = root / 'response-both-fields-missing-required'
+        response_both_fields_missing_required_dir.mkdir()
+        (response_both_fields_missing_required_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (response_both_fields_missing_required_dir / 'arguments.rsp').write_text('-std=gnu++20 -Wdeprecated')
+        write_compile_commands_records(response_both_fields_missing_required_dir, [{
+            'directory': str(response_both_fields_missing_required_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_both_fields_missing_required_dir, '--required-flag=-Werror=deprecated'), 'missing required flag -Werror=deprecated')
+
         response_mixed_fields_dir = root / 'response-file-mixed-fields'
         response_mixed_fields_dir.mkdir()
         (response_mixed_fields_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
@@ -1308,6 +1393,17 @@ def main():
         }])
         expect_pass(run_checker(response_dual_field_equivalent_std_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
+        response_dual_field_split_std_dir = root / 'response-dual-field-split-std'
+        response_dual_field_split_std_dir.mkdir()
+        (response_dual_field_split_std_dir / 'std.rsp').write_text('--std gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_split_std_dir, [{
+            'directory': str(response_dual_field_split_std_dir),
+            'command': 'c++ @std.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(response_dual_field_split_std_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
         response_dual_field_std_mismatch_dir = root / 'response-dual-field-std-mismatch'
         response_dual_field_std_mismatch_dir.mkdir()
         (response_dual_field_std_mismatch_dir / 'std.rsp').write_text('--std=gnu++20 -Wdeprecated -Werror=deprecated')
@@ -1318,6 +1414,17 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(response_dual_field_std_mismatch_dir), 'duplicate standard flags -std=c++20,--std=gnu++20')
+
+        response_dual_field_msvc_mismatch_dir = root / 'response-dual-field-msvc-std-mismatch'
+        response_dual_field_msvc_mismatch_dir.mkdir()
+        (response_dual_field_msvc_mismatch_dir / 'std.rsp').write_text('/std:c++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_msvc_mismatch_dir, [{
+            'directory': str(response_dual_field_msvc_mismatch_dir),
+            'command': 'clang-cl @std.rsp /c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_msvc_mismatch_dir), 'duplicate standard flags -std=gnu++20,/std:c++20')
 
         response_duplicate_std_dir = root / 'response-file-duplicate-std'
         response_duplicate_std_dir.mkdir()
@@ -1335,6 +1442,17 @@ def main():
             'file': str(root / 'source/common/common.cpp'),
         }])
         expect_fail(run_checker(response_command_missing_std_dir), 'missing GNU++20 dialect')
+
+        response_arguments_missing_std_dir = root / 'response-arguments-missing-std-dual-field'
+        response_arguments_missing_std_dir.mkdir()
+        (response_arguments_missing_std_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_arguments_missing_std_dir, [{
+            'directory': str(response_arguments_missing_std_dir),
+            'command': 'c++ @args.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_arguments_missing_std_dir), 'missing GNU++20 dialect')
 
         response_command_forbidden_flag_dir = root / 'response-command-forbidden-flag-dual-field'
         response_command_forbidden_flag_dir.mkdir()
@@ -1388,6 +1506,22 @@ def main():
         write_compile_commands(response_cycle_forbidden_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_fail(run_checker(response_cycle_forbidden_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
 
+        three_file_response_cycle_dir = root / 'three-file-response-cycle'
+        three_file_response_cycle_dir.mkdir()
+        (three_file_response_cycle_dir / 'a.rsp').write_text('-std=gnu++20 @b.rsp')
+        (three_file_response_cycle_dir / 'b.rsp').write_text('-Wdeprecated @c.rsp')
+        (three_file_response_cycle_dir / 'c.rsp').write_text('-Werror=deprecated @a.rsp')
+        write_compile_commands(three_file_response_cycle_dir, 'c++ @a.rsp -c source/common/common.cpp')
+        expect_pass(run_checker(three_file_response_cycle_dir, '--required-flag=-Werror=deprecated'))
+
+        three_file_response_cycle_forbidden_dir = root / 'three-file-response-cycle-forbidden-exact-flag'
+        three_file_response_cycle_forbidden_dir.mkdir()
+        (three_file_response_cycle_forbidden_dir / 'a.rsp').write_text('-std=gnu++20 @b.rsp')
+        (three_file_response_cycle_forbidden_dir / 'b.rsp').write_text('-Wdeprecated @c.rsp')
+        (three_file_response_cycle_forbidden_dir / 'c.rsp').write_text('-Werror=deprecated -DX265_DEPTH=12 @a.rsp')
+        write_compile_commands(three_file_response_cycle_forbidden_dir, 'c++ @a.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(three_file_response_cycle_forbidden_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         two_file_response_cycle_dir = root / 'two-file-response-cycle'
         two_file_response_cycle_dir.mkdir()
         (two_file_response_cycle_dir / 'a.rsp').write_text('-std=gnu++20 -Wdeprecated @b.rsp')
@@ -1421,12 +1555,26 @@ def main():
         ])
         expect_pass(run_checker(windows_depth_exclude_backslash_arg_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
 
+        windows_depth_exclude_no_trailing_dir = root / 'windows-depth-exclude-no-trailing-slash'
+        write_compile_commands_entries(windows_depth_exclude_no_trailing_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/dynamicHDR10/json11.cpp', 'source\\dynamicHDR10\\json11.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(windows_depth_exclude_no_trailing_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10'))
+
         windows_depth_exclude_forbidden_dir = root / 'windows-depth-exclude-forbidden-depth'
         write_compile_commands_entries(windows_depth_exclude_forbidden_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12 -c source/dynamicHDR10/json11.cpp', 'source\\dynamicHDR10\\json11.cpp'),
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
         ])
         expect_pass(run_checker(windows_depth_exclude_forbidden_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
+
+        windows_depth_exclude_both_depths_dir = root / 'windows-depth-exclude-both-depths'
+        write_compile_commands_entries(windows_depth_exclude_both_depths_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -DX265_DEPTH=12 -c source/dynamicHDR10/json11.cpp', 'source\\dynamicHDR10\\json11.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(windows_depth_exclude_both_depths_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
 
         duplicate_source_dir = root / 'duplicate-source-min-cpp-commands'
         write_compile_commands_entries(duplicate_source_dir, [
