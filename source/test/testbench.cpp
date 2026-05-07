@@ -119,24 +119,24 @@ struct test_arch_t
 
 void do_cpuid_list(int cpuid)
 {
-    printf("x265 detected --cpuid architectures:\n");
+    std::printf("x265 detected --cpuid architectures:\n");
     for (int i = 0; testArch[i].flag; i++)
     {
         if ((testArch[i].flag & cpuid) == testArch[i].flag)
-            printf("       %s\n", testArch[i].name);
+            std::printf("       %s\n", testArch[i].name);
     }
 }
 
 void do_help()
 {
-    printf("x265 optimized primitive testbench\n\n");
-    printf("usage: TestBench [--cpuid CPU] [--testbench BENCH] [--nobench] [--help]\n\n");
-    printf("       CPU is comma separated SIMD architecture list, for example: SSE4,AVX\n");
-    printf("       Use `--cpuid list` to print a list of detected SIMD architectures\n\n");
-    printf("       BENCH is one of (pixel,transforms,interp,intrapred)\n\n");
-    printf("       `--nobench` disables running benchmarks, only run correctness tests\n\n");
-    printf("By default, the test bench will test all benches on detected CPU architectures\n");
-    printf("Options and testbench name may be truncated.\n");
+    std::printf("x265 optimized primitive testbench\n\n");
+    std::printf("usage: TestBench [--cpuid CPU] [--testbench BENCH] [--nobench] [--help]\n\n");
+    std::printf("       CPU is comma separated SIMD architecture list, for example: SSE4,AVX\n");
+    std::printf("       Use `--cpuid list` to print a list of detected SIMD architectures\n\n");
+    std::printf("       BENCH is one of (pixel,transforms,interp,intrapred)\n\n");
+    std::printf("       `--nobench` disables running benchmarks, only run correctness tests\n\n");
+    std::printf("By default, the test bench will test all benches on detected CPU architectures\n");
+    std::printf("Options and testbench name may be truncated.\n");
 }
 
 PixelHarness  HPixel;
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
     {
         if (std::strncmp(argv[i], "--", 2))
         {
-            printf("** invalid long argument: %s\n\n", argv[i]);
+            std::printf("** invalid long argument: %s\n\n", argv[i]);
             do_help();
             return 1;
         }
@@ -178,12 +178,12 @@ int main(int argc, char *argv[])
             cpuid = parseCpuName(value, bError, enableavx512);
             if (bError)
             {
-                printf("Invalid CPU name: %s\n", value);
+                std::printf("Invalid CPU name: %s\n", value);
                 return 1;
             }
             else if ((cpuid & cpu_detect_cpuid) != cpuid)
             {
-                printf("Feature detection conflicts with provided --cpuid: %s\n", value);
+                std::printf("Feature detection conflicts with provided --cpuid: %s\n", value);
                 return 1;
             }
             i += 2;
@@ -191,18 +191,18 @@ int main(int argc, char *argv[])
         else if (!std::strncmp(name, "testbench", std::strlen(name)))
         {
             testname = value;
-            printf("Testing only harnesses that match name <%s>\n", testname);
+            std::printf("Testing only harnesses that match name <%s>\n", testname);
             i += 2;
         }
         else if (!std::strncmp(name, "nobench", std::strlen(name)))
         {
-            printf("Disabling performance benchmarking\n");
+            std::printf("Disabling performance benchmarking\n");
             run_benchmarks = false;
             i += 1;
         }
         else
         {
-            printf("** invalid long argument: %s\n\n", name);
+            std::printf("** invalid long argument: %s\n\n", name);
             do_help();
             return 1;
         }
@@ -231,7 +231,7 @@ int main(int argc, char *argv[])
         if ((testArch[i].flag & cpuid) != testArch[i].flag)
             continue;
 
-        printf("Testing primitives: %s\n", testArch[i].name);
+        std::printf("Testing primitives: %s\n", testArch[i].name);
         std::fflush(stdout);
 
 #if defined(X265_ARCH_X86) || defined(X265_ARCH_ARM64) || defined(X265_ARCH_RISCV64)
@@ -246,7 +246,7 @@ int main(int argc, char *argv[])
             if (!harness[h]->testCorrectness(cprim, vecprim))
             {
                 std::fflush(stdout);
-                fprintf(stderr, "\nx265: intrinsic primitive has failed. Go and fix that Right Now!\n");
+                std::fprintf(stderr, "\nx265: intrinsic primitive has failed. Go and fix that Right Now!\n");
                 return -1;
             }
         }
@@ -265,7 +265,7 @@ int main(int argc, char *argv[])
             if (!harness[h]->testCorrectness(cprim, asmprim))
             {
                 std::fflush(stdout);
-                fprintf(stderr, "\nx265: asm primitive has failed. Go and fix that Right Now!\n");
+                std::fprintf(stderr, "\nx265: asm primitive has failed. Go and fix that Right Now!\n");
                 return -1;
             }
         }
@@ -290,18 +290,18 @@ int main(int argc, char *argv[])
          * bit ugly, but I don't see a better solution */
         std::memcpy(&primitives, &optprim, sizeof(EncoderPrimitives));
 
-        printf("\nTest performance improvement with full optimizations\n");
+        std::printf("\nTest performance improvement with full optimizations\n");
         std::fflush(stdout);
 
         for (size_t h = 0; h < sizeof(harness) / sizeof(TestHarness*); h++)
         {
             if (testname && std::strncmp(testname, harness[h]->getName(), std::strlen(testname)))
                 continue;
-            printf("== %s primitives ==\n", harness[h]->getName());
+            std::printf("== %s primitives ==\n", harness[h]->getName());
             harness[h]->measureSpeed(cprim, optprim);
         }
 
-        printf("\n");
+        std::printf("\n");
     }
     return 0;
 }

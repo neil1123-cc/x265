@@ -1377,6 +1377,12 @@ def main():
         write_compile_commands(response_cycle_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_pass(run_checker(response_cycle_dir, '--required-flag=-Werror=deprecated'))
 
+        response_cycle_forbidden_dir = root / 'response-file-cycle-forbidden-exact-flag'
+        response_cycle_forbidden_dir.mkdir()
+        (response_cycle_forbidden_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12 @args.rsp')
+        write_compile_commands(response_cycle_forbidden_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(response_cycle_forbidden_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         two_file_response_cycle_dir = root / 'two-file-response-cycle'
         two_file_response_cycle_dir.mkdir()
         (two_file_response_cycle_dir / 'a.rsp').write_text('-std=gnu++20 -Wdeprecated @b.rsp')
