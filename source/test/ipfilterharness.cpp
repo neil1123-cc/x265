@@ -27,6 +27,8 @@
 #include "common.h"
 #include "ipfilterharness.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 IPFilterHarness::IPFilterHarness()
@@ -44,10 +46,10 @@ IPFilterHarness::IPFilterHarness()
         short_test_buff[2][i] = SMAX;
     }
 
-    memset(IPF_C_output_p, 0xCD, TEST_BUF_SIZE * sizeof(pixel));
-    memset(IPF_vec_output_p, 0xCD, TEST_BUF_SIZE * sizeof(pixel));
-    memset(IPF_C_output_s, 0xCD, TEST_BUF_SIZE * sizeof(int16_t));
-    memset(IPF_vec_output_s, 0xCD, TEST_BUF_SIZE * sizeof(int16_t));
+    std::memset(IPF_C_output_p, 0xCD, TEST_BUF_SIZE * sizeof(pixel));
+    std::memset(IPF_vec_output_p, 0xCD, TEST_BUF_SIZE * sizeof(pixel));
+    std::memset(IPF_C_output_s, 0xCD, TEST_BUF_SIZE * sizeof(int16_t));
+    std::memset(IPF_vec_output_s, 0xCD, TEST_BUF_SIZE * sizeof(int16_t));
 
     int pixelMax = (1 << X265_DEPTH) - 1;
     int shortMax = (1 << 15) - 1;
@@ -84,7 +86,7 @@ bool IPFilterHarness::check_IPFilterChroma_primitive(filter_pp_t ref, filter_pp_
                 rand_dstStride,
                 coeffIdx);
 
-            if (memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
+            if (std::memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
                 return false;
 
             reportfail();
@@ -119,7 +121,7 @@ bool IPFilterHarness::check_IPFilterChroma_ps_primitive(filter_ps_t ref, filter_
                     rand_dstStride,
                     coeffIdx);
 
-            if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+            if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
             {
             ref(pixel_test_buff[index] + 3 * rand_srcStride,
                 rand_srcStride,
@@ -166,7 +168,7 @@ bool IPFilterHarness::check_IPFilterChroma_hps_primitive(filter_hps_t ref, filte
                         coeffIdx,
                         isRowExt);
 
-                if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+                if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
                     return false;
 
                 reportfail();
@@ -202,7 +204,7 @@ bool IPFilterHarness::check_IPFilterChroma_sp_primitive(filter_sp_t ref, filter_
                     rand_dstStride,
                     coeffIdx);
 
-            if (memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
+            if (std::memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
                 return false;
 
             reportfail();
@@ -237,7 +239,7 @@ bool IPFilterHarness::check_IPFilterChroma_ss_primitive(filter_ss_t ref, filter_
                     rand_dstStride,
                     coeffIdx);
 
-            if (memcmp(IPF_C_output_s, IPF_vec_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+            if (std::memcmp(IPF_C_output_s, IPF_vec_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
                 return false;
 
             reportfail();
@@ -272,7 +274,7 @@ bool IPFilterHarness::check_IPFilterLuma_primitive(filter_pp_t ref, filter_pp_t 
                 rand_dstStride,
                 coeffIdx);
 
-            if (memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE))
+            if (std::memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE))
                 return false;
 
             reportfail();
@@ -307,7 +309,7 @@ bool IPFilterHarness::check_IPFilterLuma_ps_primitive(filter_ps_t ref, filter_ps
                     rand_dstStride,
                     coeffIdx);
 
-            if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+            if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
                 return false;
 
             reportfail();
@@ -347,7 +349,7 @@ bool IPFilterHarness::check_IPFilterLuma_hps_primitive(filter_hps_t ref, filter_
                         coeffIdx,
                         isRowExt);
 
-                if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+                if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
                     return false;
 
                 reportfail();
@@ -383,7 +385,7 @@ bool IPFilterHarness::check_IPFilterLuma_sp_primitive(filter_sp_t ref, filter_sp
                     rand_dstStride,
                     coeffIdx);
 
-            if (memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
+            if (std::memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
                 return false;
 
             reportfail();
@@ -418,7 +420,7 @@ bool IPFilterHarness::check_IPFilterLuma_ss_primitive(filter_ss_t ref, filter_ss
                     rand_dstStride,
                     coeffIdx);
 
-            if (memcmp(IPF_C_output_s, IPF_vec_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+            if (std::memcmp(IPF_C_output_s, IPF_vec_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
                 return false;
 
             reportfail();
@@ -457,7 +459,7 @@ bool IPFilterHarness::check_IPFilterLumaHV_primitive(filter_hv_pp_t ref, filter_
                         coeffIdxX,
                         coeffIdxY);
 
-                if (memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
+                if (std::memcmp(IPF_vec_output_p, IPF_C_output_p, TEST_BUF_SIZE * sizeof(pixel)))
                     return false;
 
                 reportfail();
@@ -480,7 +482,7 @@ bool IPFilterHarness::check_IPFilterLumaP2S_primitive(filter_p2s_t ref, filter_p
 
         checked(opt, pixel_test_buff[index] + i, rand_srcStride, IPF_vec_output_s, dstStride);
 
-        if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+        if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -500,7 +502,7 @@ bool IPFilterHarness::check_IPFilterLumaP2S_aligned_primitive(filter_p2s_t ref, 
         {
             ref(pixel_test_buff[index], rand_srcStride[p], IPF_C_output_s, dstStride[p]);
             checked(opt, pixel_test_buff[index] + (64 * i), rand_srcStride[p], IPF_vec_output_s, dstStride[p]);
-            if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+            if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
                 return false;
         }
         reportfail();
@@ -521,7 +523,7 @@ bool IPFilterHarness::check_IPFilterChromaP2S_primitive(filter_p2s_t ref, filter
 
         checked(opt, pixel_test_buff[index] + i, rand_srcStride, IPF_vec_output_s, dstStride);
 
-        if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+        if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
             return false;
 
         reportfail();
@@ -544,7 +546,7 @@ bool IPFilterHarness::check_IPFilterChromaP2S_aligned_primitive(filter_p2s_t ref
 
             checked(opt, pixel_test_buff[index], rand_srcStride[p], IPF_vec_output_s, dstStride[p]);
 
-            if (memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
+            if (std::memcmp(IPF_vec_output_s, IPF_C_output_s, TEST_BUF_SIZE * sizeof(int16_t)))
                 return false;
         }
         reportfail();

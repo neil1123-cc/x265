@@ -1257,6 +1257,19 @@ def main():
         }])
         expect_fail(run_checker(nested_parent_arguments_missing_dir, '--required-flag=-Werror=deprecated'), 'missing required flag -Werror=deprecated')
 
+        nested_parent_arguments_forbidden_dir = root / 'nested-parent-response-file-arguments-forbidden-exact-flag'
+        nested_parent_arguments_forbidden_dir.mkdir()
+        nested_parent_arguments_forbidden_subdir = nested_parent_arguments_forbidden_dir / 'sub'
+        nested_parent_arguments_forbidden_subdir.mkdir()
+        (nested_parent_arguments_forbidden_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        (nested_parent_arguments_forbidden_subdir / 'args.rsp').write_text('@../std.rsp')
+        write_compile_commands_records(nested_parent_arguments_forbidden_dir, [{
+            'directory': str(nested_parent_arguments_forbidden_subdir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(nested_parent_arguments_forbidden_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         nested_arguments_dir = root / 'nested-response-file-arguments'
         nested_arguments_dir.mkdir()
         (nested_arguments_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated')
