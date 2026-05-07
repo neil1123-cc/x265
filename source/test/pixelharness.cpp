@@ -27,6 +27,7 @@
 #include "entropy.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 using namespace X265_NS;
@@ -38,14 +39,14 @@ PixelHarness::PixelHarness()
      * [2] --- Maximum */
     for (int i = 0; i < BUFFSIZE; i++)
     {
-        pixel_test_buff[0][i]   = rand() % PIXEL_MAX;
-        short_test_buff[0][i]   = (rand() % (2 * SMAX + 1)) - SMAX - 1; // max(SHORT_MIN, min(rand(), SMAX));
-        short_test_buff1[0][i]  = rand() & PIXEL_MAX;                   // For block copy only
-        short_test_buff2[0][i]  = rand() % 16383;                       // for addAvg
-        int_test_buff[0][i]     = rand() % SHORT_MAX;
-        ushort_test_buff[0][i]  = rand() % ((1 << 16) - 1);
-        uchar_test_buff[0][i]   = rand() % ((1 << 8) - 1);
-        residual_test_buff[0][i] = (rand() % (2 * RMAX + 1)) - RMAX - 1;// For sse_ss only
+        pixel_test_buff[0][i]   = std::rand() % PIXEL_MAX;
+        short_test_buff[0][i]   = (std::rand() % (2 * SMAX + 1)) - SMAX - 1; // max(SHORT_MIN, min(std::rand(), SMAX));
+        short_test_buff1[0][i]  = std::rand() & PIXEL_MAX;                   // For block copy only
+        short_test_buff2[0][i]  = std::rand() % 16383;                       // for addAvg
+        int_test_buff[0][i]     = std::rand() % SHORT_MAX;
+        ushort_test_buff[0][i]  = std::rand() % ((1 << 16) - 1);
+        uchar_test_buff[0][i]   = std::rand() % ((1 << 8) - 1);
+        residual_test_buff[0][i] = (std::rand() % (2 * RMAX + 1)) - RMAX - 1;// For sse_ss only
         double_test_buff[0][i]  = (double)(short_test_buff[0][i]) / 256.0;
         pixel_test_buff[1][i]   = PIXEL_MIN;
         short_test_buff[1][i]   = (int16_t)SMIN;
@@ -67,18 +68,18 @@ PixelHarness::PixelHarness()
         residual_test_buff[2][i] = RMAX;
         double_test_buff[2][i] = (double)(short_test_buff[2][i]) / 256.0;
 
-        pbuf1[i] = rand() & PIXEL_MAX;
-        pbuf2[i] = rand() & PIXEL_MAX;
-        pbuf3[i] = rand() & PIXEL_MAX;
-        pbuf4[i] = rand() & PIXEL_MAX;
+        pbuf1[i] = std::rand() & PIXEL_MAX;
+        pbuf2[i] = std::rand() & PIXEL_MAX;
+        pbuf3[i] = std::rand() & PIXEL_MAX;
+        pbuf4[i] = std::rand() & PIXEL_MAX;
 
-        sbuf1[i] = (rand() % (2 * SMAX + 1)) - SMAX - 1; //max(SHORT_MIN, min(rand(), SMAX));
-        sbuf2[i] = (rand() % (2 * SMAX + 1)) - SMAX - 1; //max(SHORT_MIN, min(rand(), SMAX));
-        ibuf1[i] = (rand() % (2 * SMAX + 1)) - SMAX - 1;
-        psbuf1[i] = psbuf4[i] = (rand() % 65) - 32;                   // range is between -32 to 32
-        psbuf2[i] = psbuf5[i] = (rand() % 3) - 1;                     // possible values {-1,0,1}
-        psbuf3[i] = (rand() % 129) - 128;
-        sbuf3[i] = rand() % PIXEL_MAX; // for blockcopy only
+        sbuf1[i] = (std::rand() % (2 * SMAX + 1)) - SMAX - 1; //max(SHORT_MIN, min(std::rand(), SMAX));
+        sbuf2[i] = (std::rand() % (2 * SMAX + 1)) - SMAX - 1; //max(SHORT_MIN, min(std::rand(), SMAX));
+        ibuf1[i] = (std::rand() % (2 * SMAX + 1)) - SMAX - 1;
+        psbuf1[i] = psbuf4[i] = (std::rand() % 65) - 32;                   // range is between -32 to 32
+        psbuf2[i] = psbuf5[i] = (std::rand() % 3) - 1;                     // possible values {-1,0,1}
+        psbuf3[i] = (std::rand() % 129) - 128;
+        sbuf3[i] = std::rand() % PIXEL_MAX; // for blockcopy only
     }
 }
 
@@ -89,8 +90,8 @@ bool PixelHarness::check_pixelcmp(pixelcmp_t ref, pixelcmp_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         int vres = (int)checked(opt, pixel_test_buff[index1], stride, pixel_test_buff[index2] + j, stride);
         int cres = ref(pixel_test_buff[index1], stride, pixel_test_buff[index2] + j, stride);
         if (vres != cres)
@@ -110,8 +111,8 @@ bool PixelHarness::check_pixel_sse(pixel_sse_t ref, pixel_sse_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         sse_t vres = (sse_t)checked(opt, pixel_test_buff[index1], stride, pixel_test_buff[index2] + j, stride);
         sse_t cres = ref(pixel_test_buff[index1], stride, pixel_test_buff[index2] + j, stride);
         if (vres != cres)
@@ -131,8 +132,8 @@ bool PixelHarness::check_pixel_sse_ss(pixel_sse_ss_t ref, pixel_sse_ss_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         sse_t vres = (sse_t)checked(opt, residual_test_buff[index1], stride, residual_test_buff[index2] + j, stride);
         sse_t cres = ref(residual_test_buff[index1], stride, residual_test_buff[index2] + j, stride);
         if (vres != cres)
@@ -153,8 +154,8 @@ bool PixelHarness::check_pixelcmp_x3(pixelcmp_x3_t ref, pixelcmp_x3_t opt)
     intptr_t stride = FENC_STRIDE - 5;
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         checked(opt, pixel_test_buff[index1],
                 pixel_test_buff[index2] + j,
                 pixel_test_buff[index2] + j + 1,
@@ -181,8 +182,8 @@ bool PixelHarness::check_pixelcmp_x4(pixelcmp_x4_t ref, pixelcmp_x4_t opt)
     intptr_t stride = FENC_STRIDE - 5;
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         checked(opt, pixel_test_buff[index1],
                 pixel_test_buff[index2] + j,
                 pixel_test_buff[index2] + j + 1,
@@ -260,7 +261,7 @@ bool PixelHarness::check_ssd_s(pixel_ssd_s_t ref, pixel_ssd_s_t opt)
     for (int i = 0; i < ITERS; i++)
     {
         // NOTE: stride must be multiple of 16, because minimum block is 4x4
-        int stride = (STRIDE + (rand() % STRIDE)) & ~15;
+        int stride = (STRIDE + (std::rand() % STRIDE)) & ~15;
         sse_t cres = ref(sbuf1 + j, stride);
         sse_t vres = (sse_t)checked(opt, sbuf1 + j, (intptr_t)stride);
 
@@ -299,12 +300,12 @@ bool PixelHarness::check_weightp(weightp_sp_t ref, weightp_sp_t opt)
     std::memset(ref_dest, 0, 64 * 64 * sizeof(pixel));
     std::memset(opt_dest, 0, 64 * 64 * sizeof(pixel));
     int j = 0;
-    int width = 2 * (rand() % 32 + 1);
+    int width = 2 * (std::rand() % 32 + 1);
     int height = 8;
-    int w0 = rand() % 128;
-    int shift = rand() % 8; // maximum is 7, see setFromWeightAndOffset()
+    int w0 = std::rand() % 128;
+    int shift = std::rand() % 8; // maximum is 7, see setFromWeightAndOffset()
     int round = shift ? (1 << (shift - 1)) : 0;
-    int offset = (rand() % 256) - 128;
+    int offset = (std::rand() % 256) - 128;
     intptr_t stride = 64;
     const int correction = (IF_INTERNAL_PREC - X265_DEPTH);
 
@@ -336,16 +337,16 @@ bool PixelHarness::check_weightp(weightp_pp_t ref, weightp_pp_t opt)
     std::memset(opt_dest, 0, 64 * 64 * sizeof(pixel));
     int j = 0;
     bool enableavx512 = true;
-    int width = 16 * (rand() % 4 + 1);
+    int width = 16 * (std::rand() % 4 + 1);
     int cpuid = X265_NS::cpu_detect(enableavx512);
     if (cpuid & X265_CPU_AVX512)
-        width = 32 * (rand() % 2 + 1);
+        width = 32 * (std::rand() % 2 + 1);
     int height = 8;
-    int shift = (rand() % 6) + 1;
+    int shift = (std::rand() % 6) + 1;
     // Make CTZ(w0) >= shift; max of 126.
-    int w0 = (rand() % ((1 << (7 - shift)) - 1) + 1) << shift;
+    int w0 = (std::rand() % ((1 << (7 - shift)) - 1) + 1) << shift;
     int round = shift ? (1 << (shift - 1)) : 0;
-    int offset = (rand() % 256) - 128;
+    int offset = (std::rand() % 256) - 128;
     intptr_t stride = 64;
     const int correction = (IF_INTERNAL_PREC - X265_DEPTH);
 
@@ -454,7 +455,7 @@ bool PixelHarness::check_cpy2Dto1D_shl_t(cpy2Dto1D_shl_t ref, cpy2Dto1D_shl_t op
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int shift = (rand() % 7 + 1);
+        int shift = (std::rand() % 7 + 1);
 
         int index = i % TEST_CASES;
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
@@ -482,7 +483,7 @@ bool PixelHarness::check_cpy2Dto1D_shr_t(cpy2Dto1D_shr_t ref, cpy2Dto1D_shr_t op
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int shift = (rand() % 7 + 1);
+        int shift = (std::rand() % 7 + 1);
 
         int index = i % TEST_CASES;
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
@@ -534,7 +535,7 @@ bool PixelHarness::check_cpy1Dto2D_shl_t(cpy1Dto2D_shl_t ref, cpy1Dto2D_shl_t op
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int shift = (rand() % 7 + 1);
+        int shift = (std::rand() % 7 + 1);
 
         int index = i % TEST_CASES;
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
@@ -561,7 +562,7 @@ bool PixelHarness::check_cpy1Dto2D_shl_aligned_t(cpy1Dto2D_shl_t ref, cpy1Dto2D_
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int shift = (rand() % 7 + 1);
+        int shift = (std::rand() % 7 + 1);
 
         int index = i % TEST_CASES;
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
@@ -589,7 +590,7 @@ bool PixelHarness::check_cpy1Dto2D_shr_t(cpy1Dto2D_shr_t ref, cpy1Dto2D_shr_t op
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int shift = (rand() % 7 + 1);
+        int shift = (std::rand() % 7 + 1);
 
         int index = i % TEST_CASES;
         checked(opt, opt_dest, short_test_buff[index] + j, stride, shift);
@@ -615,8 +616,8 @@ bool PixelHarness::check_pixelavg_pp(pixelavg_pp_t ref, pixelavg_pp_t opt)
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         checked(ref, ref_dest, stride, pixel_test_buff[index1] + j,
                 stride, pixel_test_buff[index2] + j, stride, 32);
         opt(opt_dest, stride, pixel_test_buff[index1] + j,
@@ -644,8 +645,8 @@ bool PixelHarness::check_pixelavg_pp_aligned(pixelavg_pp_t ref, pixelavg_pp_t op
     intptr_t stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         checked(ref, ref_dest, stride, pixel_test_buff[index1] + j,
                 stride, pixel_test_buff[index2] + j, stride, 32);
         opt(opt_dest, stride, pixel_test_buff[index1] + j,
@@ -784,7 +785,7 @@ bool PixelHarness::check_blockfill_s(blockfill_s_t ref, blockfill_s_t opt)
     intptr_t stride = 64;
     for (int i = 0; i < ITERS; i++)
     {
-        int16_t value = (rand() % SHORT_MAX) + 1;
+        int16_t value = (std::rand() % SHORT_MAX) + 1;
 
         checked(opt, opt_dest, stride, value);
         ref(ref_dest, stride, value);
@@ -809,7 +810,7 @@ bool PixelHarness::check_blockfill_s_aligned(blockfill_s_t ref, blockfill_s_t op
     intptr_t stride = 64;
     for (int i = 0; i < ITERS; i++)
     {
-        int16_t value = (rand() % SHORT_MAX) + 1;
+        int16_t value = (std::rand() % SHORT_MAX) + 1;
 
         checked(opt, opt_dest, stride, value);
         ref(ref_dest, stride, value);
@@ -835,8 +836,8 @@ bool PixelHarness::check_pixel_sub_ps(pixel_sub_ps_t ref, pixel_sub_ps_t opt)
     intptr_t stride2 = 64, stride = STRIDE;
     for (int i = 0; i < 1; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         checked(opt, opt_dest, stride2, pixel_test_buff[index1] + j,
                 pixel_test_buff[index2] + j, stride, stride);
         ref(ref_dest, stride2, pixel_test_buff[index1] + j,
@@ -966,8 +967,8 @@ bool PixelHarness::check_pixel_add_ps(pixel_add_ps_t ref, pixel_add_ps_t opt)
     intptr_t stride2 = 64, stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         checked(opt, opt_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
         ref(ref_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
 
@@ -993,8 +994,8 @@ bool PixelHarness::check_pixel_add_ps_aligned(pixel_add_ps_t ref, pixel_add_ps_t
     intptr_t stride2 = 64, stride = STRIDE;
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         checked(opt, opt_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
         ref(ref_dest, stride2, pixel_test_buff[index1] + j, short_test_buff[index2] + j, stride, stride);
         if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
@@ -1031,9 +1032,9 @@ bool PixelHarness::check_ssim_4x4x2_core(ssim_4x4x2_core_t ref, ssim_4x4x2_core_
 
     for (int i = 0; i < ITERS; i++)
     {
-        intptr_t stride = rand() % 64;
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        intptr_t stride = std::rand() % 64;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         ref(pixel_test_buff[index1] + i, stride, pixel_test_buff[index2] + i, stride, sum0);
         checked(opt, pixel_test_buff[index1] + i, stride, pixel_test_buff[index2] + i, stride, sum1);
 
@@ -1057,12 +1058,12 @@ bool PixelHarness::check_ssim_end(ssim_end4_t ref, ssim_end4_t opt)
         {
             for (int k = 0; k < 4; k++)
             {
-                sum0[j][k] = rand() % (1 << 12);
-                sum1[j][k] = rand() % (1 << 12);
+                sum0[j][k] = std::rand() % (1 << 12);
+                sum1[j][k] = std::rand() % (1 << 12);
             }
         }
 
-        int width = (rand() % 4) + 1; // range[1-4]
+        int width = (std::rand() % 4) + 1; // range[1-4]
         float cres = ref(sum0, sum1, width);
         float vres = checked_float(opt, sum0, sum1, width);
         if (fabs(vres - cres) > 0.001)
@@ -1086,8 +1087,8 @@ bool PixelHarness::check_addAvg(addAvg_t ref, addAvg_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         ref(short_test_buff2[index1] + j, short_test_buff2[index2] + j, ref_dest, stride, stride, stride);
         checked(opt, short_test_buff2[index1] + j, short_test_buff2[index2] + j, opt_dest, stride, stride, stride);
         if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
@@ -1113,8 +1114,8 @@ bool PixelHarness::check_addAvg_aligned(addAvg_t ref, addAvg_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
         ref(short_test_buff2[index1] + j, short_test_buff2[index2] + j, ref_dest, stride, stride, stride);
         checked(opt, short_test_buff2[index1] + j, short_test_buff2[index2] + j, opt_dest, stride, stride, stride);
         if (std::memcmp(ref_dest, opt_dest, 64 * 64 * sizeof(pixel)))
@@ -1137,7 +1138,7 @@ bool PixelHarness::check_calSign(sign_t ref, sign_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int width = (rand() % 64) + 1;
+        int width = (std::rand() % 64) + 1;
 
         ref(ref_dest, pbuf2 + j, pbuf3 + j, width);
         checked(opt, opt_dest, pbuf2 + j, pbuf3 + j, width);
@@ -1158,13 +1159,13 @@ bool PixelHarness::check_saoCuOrgE0_t(saoCuOrgE0_t ref, saoCuOrgE0_t opt)
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
     for (int i = 0; i < 64 * 64; i++)
-        ref_dest[i] = opt_dest[i] = rand() % (PIXEL_MAX);
+        ref_dest[i] = opt_dest[i] = std::rand() % (PIXEL_MAX);
 
     int j = 0;
 
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 16 * (rand() % 4 + 1);
+        int width = 16 * (std::rand() % 4 + 1);
         int stride = width + 1;
 
         ref(ref_dest, psbuf1 + j, width, psbuf2 + j, stride);
@@ -1186,13 +1187,13 @@ bool PixelHarness::check_saoCuOrgE1_t(saoCuOrgE1_t ref, saoCuOrgE1_t opt)
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
     for (int i = 0; i < 64 * 64; i++)
-        ref_dest[i] = opt_dest[i] = rand() % (PIXEL_MAX);
+        ref_dest[i] = opt_dest[i] = std::rand() % (PIXEL_MAX);
 
     int j = 0;
 
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 16 * (rand() % 4 + 1);
+        int width = 16 * (std::rand() % 4 + 1);
         int stride = width + 1;
 
         ref(ref_dest, psbuf2 + j, psbuf1 + j, stride, width);
@@ -1214,7 +1215,7 @@ bool PixelHarness::check_saoCuOrgE2_t(saoCuOrgE2_t ref[2], saoCuOrgE2_t opt[2])
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
     for (int i = 0; i < 64 * 64; i++)
-        ref_dest[i] = opt_dest[i] = rand() % (PIXEL_MAX);
+        ref_dest[i] = opt_dest[i] = std::rand() % (PIXEL_MAX);
 
     for (int id = 0; id < 2; id++)
     {
@@ -1223,7 +1224,7 @@ bool PixelHarness::check_saoCuOrgE2_t(saoCuOrgE2_t ref[2], saoCuOrgE2_t opt[2])
         {
             for (int i = 0; i < ITERS; i++)
             {
-                int width = 16 * (1 << (id * (rand() % 2 + 1))) - (rand() % 2);
+                int width = 16 * (1 << (id * (std::rand() % 2 + 1))) - (std::rand() % 2);
                 int stride = width + 1;
 
                 ref[width > 16](ref_dest, psbuf1 + j, psbuf2 + j, psbuf3 + j, width, stride);
@@ -1250,15 +1251,15 @@ bool PixelHarness::check_saoCuOrgE3_t(saoCuOrgE3_t ref, saoCuOrgE3_t opt)
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
     for (int i = 0; i < 64 * 64; i++)
-        ref_dest[i] = opt_dest[i] = rand() % (PIXEL_MAX);
+        ref_dest[i] = opt_dest[i] = std::rand() % (PIXEL_MAX);
 
     int j = 0;
 
     for (int i = 0; i < ITERS; i++)
     {
-        int stride = 16 * (rand() % 4 + 1);
-        int start = rand() % 2;
-        int end = 16 - rand() % 2;
+        int stride = 16 * (std::rand() % 4 + 1);
+        int start = std::rand() % 2;
+        int end = 16 - std::rand() % 2;
 
         ref(ref_dest, psbuf2 + j, psbuf1 + j, stride, start, end);
         checked(opt, opt_dest, psbuf5 + j, psbuf1 + j, stride, start, end);
@@ -1288,13 +1289,13 @@ bool PixelHarness::check_saoCuStatsBO_t(saoCuStatsBO_t ref, saoCuStatsBO_t opt)
         // initialize input data to random, the dynamic range wrong but good to verify our asm code
         for (int x = 0; x < NUM_EDGETYPE; x++)
         {
-            stats_ref[x] = stats_vec[x] = rand();
-            count_ref[x] = count_vec[x] = rand();
+            stats_ref[x] = stats_vec[x] = std::rand();
+            count_ref[x] = count_vec[x] = std::rand();
         }
 
-        intptr_t stride = 16 * (rand() % 4 + 1);
-        int endX = MAX_CU_SIZE - (rand() % 5);
-        int endY = MAX_CU_SIZE - (rand() % 4) - 1;
+        intptr_t stride = 16 * (std::rand() % 4 + 1);
+        int endX = MAX_CU_SIZE - (std::rand() % 5);
+        int endY = MAX_CU_SIZE - (std::rand() % 4) - 1;
 
         ref(sbuf2 + j + 1, pbuf3 + 1, stride, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + j + 1, pbuf3 + 1, stride, endX, endY, stats_vec, count_vec);
@@ -1324,13 +1325,13 @@ bool PixelHarness::check_saoCuStatsE0_t(saoCuStatsE0_t ref, saoCuStatsE0_t opt)
         // initialize input data to random, the dynamic range wrong but good to verify our asm code
         for (int x = 0; x < NUM_EDGETYPE; x++)
         {
-            stats_ref[x] = stats_vec[x] = rand();
-            count_ref[x] = count_vec[x] = rand();
+            stats_ref[x] = stats_vec[x] = std::rand();
+            count_ref[x] = count_vec[x] = std::rand();
         }
 
-        intptr_t stride = 16 * (rand() % 4 + 1);
-        int endX = MAX_CU_SIZE - (rand() % 5) - 1;
-        int endY = MAX_CU_SIZE - (rand() % 4) - 1;
+        intptr_t stride = 16 * (std::rand() % 4 + 1);
+        int endX = MAX_CU_SIZE - (std::rand() % 5) - 1;
+        int endY = MAX_CU_SIZE - (std::rand() % 4) - 1;
 
         ref(sbuf2 + j + 1, pbuf3 + j + 1, stride, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + j + 1, pbuf3 + j + 1, stride, endX, endY, stats_vec, count_vec);
@@ -1362,17 +1363,17 @@ bool PixelHarness::check_saoCuStatsE1_t(saoCuStatsE1_t ref, saoCuStatsE1_t opt)
         // initialize input data to random, the dynamic range wrong but good to verify our asm code
         for (int x = 0; x < NUM_EDGETYPE; x++)
         {
-            stats_ref[x] = stats_vec[x] = rand();
-            count_ref[x] = count_vec[x] = rand();
+            stats_ref[x] = stats_vec[x] = std::rand();
+            count_ref[x] = count_vec[x] = std::rand();
         }
 
         // initial sign
         for (int x = 0; x < MAX_CU_SIZE + 2; x++)
-            _upBuff1_ref[x] = _upBuff1_vec[x] = (rand() % 3) - 1;
+            _upBuff1_ref[x] = _upBuff1_vec[x] = (std::rand() % 3) - 1;
 
-        intptr_t stride = 16 * (rand() % 4 + 1);
-        int endX = MAX_CU_SIZE - (rand() % 5);
-        int endY = MAX_CU_SIZE - (rand() % 4) - 1;
+        intptr_t stride = 16 * (std::rand() % 4 + 1);
+        int endX = MAX_CU_SIZE - (std::rand() % 5);
+        int endY = MAX_CU_SIZE - (std::rand() % 4) - 1;
 
         ref(sbuf2 + 1, pbuf3 + 1, stride, upBuff1_ref, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + 1, pbuf3 + 1, stride, upBuff1_vec, endX, endY, stats_vec, count_vec);
@@ -1408,20 +1409,20 @@ bool PixelHarness::check_saoCuStatsE2_t(saoCuStatsE2_t ref, saoCuStatsE2_t opt)
         // initialize input data to random, the dynamic range wrong but good to verify our asm code
         for (int x = 0; x < NUM_EDGETYPE; x++)
         {
-            stats_ref[x] = stats_vec[x] = rand();
-            count_ref[x] = count_vec[x] = rand();
+            stats_ref[x] = stats_vec[x] = std::rand();
+            count_ref[x] = count_vec[x] = std::rand();
         }
 
         // initial sign
         for (int x = 0; x < MAX_CU_SIZE + 2; x++)
         {
-            _upBuff1_ref[x] = _upBuff1_vec[x] = (rand() % 3) - 1;
-            _upBufft_ref[x] = _upBufft_vec[x] = (rand() % 3) - 1;
+            _upBuff1_ref[x] = _upBuff1_vec[x] = (std::rand() % 3) - 1;
+            _upBufft_ref[x] = _upBufft_vec[x] = (std::rand() % 3) - 1;
         }
 
-        intptr_t stride = 16 * (rand() % 4 + 1);
-        int endX = MAX_CU_SIZE - (rand() % 5) - 1;
-        int endY = MAX_CU_SIZE - (rand() % 4) - 1;
+        intptr_t stride = 16 * (std::rand() % 4 + 1);
+        int endX = MAX_CU_SIZE - (std::rand() % 5) - 1;
+        int endY = MAX_CU_SIZE - (std::rand() % 4) - 1;
 
         ref(sbuf2 + 1, pbuf3 + 1, stride, upBuff1_ref, upBufft_ref, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2 + 1, pbuf3 + 1, stride, upBuff1_vec, upBufft_vec, endX, endY, stats_vec, count_vec);
@@ -1454,19 +1455,19 @@ bool PixelHarness::check_saoCuStatsE3_t(saoCuStatsE3_t ref, saoCuStatsE3_t opt)
         // initialize input data to random, the dynamic range wrong but good to verify our asm code
         for (int x = 0; x < NUM_EDGETYPE; x++)
         {
-            stats_ref[x] = stats_vec[x] = rand();
-            count_ref[x] = count_vec[x] = rand();
+            stats_ref[x] = stats_vec[x] = std::rand();
+            count_ref[x] = count_vec[x] = std::rand();
         }
 
         // initial sign
         for (int x = 0; x < (int)sizeof(_upBuff1_ref); x++)
         {
-            _upBuff1_ref[x] = _upBuff1_vec[x] = (rand() % 3) - 1;
+            _upBuff1_ref[x] = _upBuff1_vec[x] = (std::rand() % 3) - 1;
         }
 
-        intptr_t stride = 16 * (rand() % 4 + 1);
-        int endX = MAX_CU_SIZE - (rand() % 5) - 1;
-        int endY = MAX_CU_SIZE - (rand() % 4) - 1;
+        intptr_t stride = 16 * (std::rand() % 4 + 1);
+        int endX = MAX_CU_SIZE - (std::rand() % 5) - 1;
+        int endY = MAX_CU_SIZE - (std::rand() % 4) - 1;
 
         ref(sbuf2, pbuf3, stride, upBuff1_ref, endX, endY, stats_ref, count_ref);
         checked(opt, sbuf2, pbuf3, stride, upBuff1_vec, endX, endY, stats_vec, count_vec);
@@ -1487,15 +1488,15 @@ bool PixelHarness::check_saoCuOrgE3_32_t(saoCuOrgE3_t ref, saoCuOrgE3_t opt)
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
     for (int i = 0; i < 64 * 64; i++)
-        ref_dest[i] = opt_dest[i] = rand() % (PIXEL_MAX);
+        ref_dest[i] = opt_dest[i] = std::rand() % (PIXEL_MAX);
 
     int j = 0;
 
     for (int i = 0; i < ITERS; i++)
     {
-        int stride = 32 * (rand() % 2 + 1);
-        int start = rand() % 2;
-        int end = (32 * (rand() % 2 + 1)) - rand() % 2;
+        int stride = 32 * (std::rand() % 2 + 1);
+        int start = std::rand() % 2;
+        int end = (32 * (std::rand() % 2 + 1)) - std::rand() % 2;
 
         ref(ref_dest, psbuf2 + j, psbuf1 + j, stride, start, end);
         checked(opt, opt_dest, psbuf5 + j, psbuf1 + j, stride, start, end);
@@ -1517,8 +1518,8 @@ bool PixelHarness::check_planecopy_sp(planecopy_sp_t ref, planecopy_sp_t opt)
 
     std::memset(ref_dest, 0xCD, sizeof(ref_dest));
     std::memset(opt_dest, 0xCD, sizeof(opt_dest));
-    int width = 32 + (rand() % 32);
-    int height = 32 + (rand() % 32);
+    int width = 32 + (std::rand() % 32);
+    int height = 32 + (std::rand() % 32);
     intptr_t srcStride = 64;
     intptr_t dstStride = width;
     int j = 0;
@@ -1559,8 +1560,8 @@ bool PixelHarness::check_planecopy_pp_shr(planecopy_pp_t ref, planecopy_pp_t opt
     std::memset(ref_dest, 0xCD, sizeof(ref_dest));
     std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
-    int width = 16 + rand() % 48;
-    int height = 16 + rand() % 48;
+    int width = 16 + std::rand() % 48;
+    int height = 16 + std::rand() % 48;
     intptr_t srcStride = 64;
     intptr_t dstStride = width;
     int shift = X265_DEPTH - 8;
@@ -1597,8 +1598,8 @@ bool PixelHarness::check_planecopy_cp(planecopy_cp_t ref, planecopy_cp_t opt)
     std::memset(ref_dest, 0xCD, sizeof(ref_dest));
     std::memset(opt_dest, 0xCD, sizeof(opt_dest));
 
-    int width = 16 + rand() % 48;
-    int height = 16 + rand() % 48;
+    int width = 16 + std::rand() % 48;
+    int height = 16 + std::rand() % 48;
     intptr_t srcStride = 64;
     intptr_t dstStride = width;
     int shift = X265_DEPTH - 8;
@@ -1640,7 +1641,7 @@ bool PixelHarness::check_cutree_propagate_cost(cutree_propagate_cost ref, cutree
 
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 16 + rand() % 64;
+        int width = 16 + std::rand() % 64;
         int index = i % TEST_CASES;
         checked(opt, opt_dest, ushort_test_buff[index] + j, int_test_buff[index] + j, ushort_test_buff[index] + j, int_test_buff[index] + j, &fps, width);
         ref(ref_dest, ushort_test_buff[index] + j, int_test_buff[index] + j, ushort_test_buff[index] + j, int_test_buff[index] + j, &fps, width);
@@ -1716,8 +1717,8 @@ bool PixelHarness::check_psyCost_pp(pixelcmp_t ref, pixelcmp_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        index1 = rand() % TEST_CASES;
-        index2 = rand() % TEST_CASES;
+        index1 = std::rand() % TEST_CASES;
+        index2 = std::rand() % TEST_CASES;
         optres = (int)checked(opt, pixel_test_buff[index1], stride, pixel_test_buff[index2] + j, stride);
         refres = ref(pixel_test_buff[index1], stride, pixel_test_buff[index2] + j, stride);
 
@@ -1737,14 +1738,14 @@ bool PixelHarness::check_saoCuOrgB0_t(saoCuOrgB0_t ref, saoCuOrgB0_t opt)
     ALIGN_VAR_16(pixel, opt_dest[64 * 64]);
 
     for (int i = 0; i < 64 * 64; i++)
-        ref_dest[i] = opt_dest[i] = rand() % (PIXEL_MAX);
+        ref_dest[i] = opt_dest[i] = std::rand() % (PIXEL_MAX);
 
     int j = 0;
 
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 16 * (rand() % 4 + 1);
-        int height = rand() % 63 + 2;
+        int width = 16 * (std::rand() % 4 + 1);
+        int height = std::rand() % 63 + 2;
         int stride = width;
 
         ref(ref_dest, psbuf1 + j, width, height, stride);
@@ -1769,14 +1770,14 @@ bool PixelHarness::check_scanPosLast(scanPosLast_t ref, scanPosLast_t opt)
 
     for (int i = 0; i < 32 * 32; i++)
     {
-        ref_src[i] = rand() & SHORT_MAX;
+        ref_src[i] = std::rand() & SHORT_MAX;
 
         // more zero coeff
         if (ref_src[i] < SHORT_MAX * 2 / 3)
             ref_src[i] = 0;
 
         // more negtive
-        if ((rand() % 10) < 8)
+        if ((std::rand() % 10) < 8)
             ref_src[i] *= -1;
     }
 
@@ -1796,8 +1797,8 @@ bool PixelHarness::check_scanPosLast(scanPosLast_t ref, scanPosLast_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int rand_scan_type = rand() % NUM_SCAN_TYPE;
-        int rand_scan_size = rand() % NUM_SCAN_SIZE;
+        int rand_scan_type = std::rand() % NUM_SCAN_TYPE;
+        int rand_scan_size = std::rand() % NUM_SCAN_SIZE;
         int rand_numCoeff = 0;
 
         for (int j = 0; j < 1 << (2 * (rand_scan_size + 2)); j++)
@@ -1851,15 +1852,15 @@ bool PixelHarness::check_findPosFirstLast(findPosFirstLast_t ref, findPosFirstLa
     // minus ITERS for keep probability to generate all zeros block
     for (int i = 0; i < 4 * 32 - ITERS; i++)
     {
-        ref_src[i] = rand() & SHORT_MAX;
+        ref_src[i] = std::rand() & SHORT_MAX;
     }
 
     // extra test area all of Zeros
 
     for (int i = 0; i < ITERS; i++)
     {
-        int rand_scan_type = rand() % NUM_SCAN_TYPE;
-        int rand_scan_size = (rand() % NUM_SCAN_SIZE) + 2;
+        int rand_scan_type = std::rand() % NUM_SCAN_TYPE;
+        int rand_scan_size = (std::rand() % NUM_SCAN_SIZE) + 2;
         const int trSize = (1 << rand_scan_size);
         coeff_t *rand_src = ref_src + i;
 
@@ -1903,14 +1904,14 @@ bool PixelHarness::check_costCoeffNxN(costCoeffNxN_t ref, costCoeffNxN_t opt)
 
     for (int i = 0; i < 32 * 32; i++)
     {
-        ref_src[i] = rand() & SHORT_MAX;
+        ref_src[i] = std::rand() & SHORT_MAX;
 
         // more zero coeff
         if (ref_src[i] < SHORT_MAX * 2 / 3)
             ref_src[i] = 0;
 
         // more negtive
-        if ((rand() % 10) < 8)
+        if ((std::rand() % 10) < 8)
             ref_src[i] *= -1;
     }
 
@@ -1931,7 +1932,7 @@ bool PixelHarness::check_costCoeffNxN(costCoeffNxN_t ref, costCoeffNxN_t opt)
     uint8_t m_contextState_opt[OFF_SIG_FLAG_CTX + NUM_SIG_FLAG_CTX_LUMA];
     for (int k = 0; k < (OFF_SIG_FLAG_CTX + NUM_SIG_FLAG_CTX_LUMA); k++)
     {
-        m_contextState_ref[k] = (rand() % (125 - 2)) + 2;
+        m_contextState_ref[k] = (std::rand() % (125 - 2)) + 2;
         m_contextState_opt[k] = m_contextState_ref[k];
     }
     uint8_t *const ref_baseCtx = m_contextState_ref;
@@ -1939,10 +1940,10 @@ bool PixelHarness::check_costCoeffNxN(costCoeffNxN_t ref, costCoeffNxN_t opt)
 
     for (int i = 0; i < ITERS * 2; i++)
     {
-        int rand_scan_type = rand() % NUM_SCAN_TYPE;
-        int rand_scanPosSigOff = rand() % 16; //rand_scanPosSigOff range is [1,15]
-        int rand_patternSigCtx = rand() % 4; //range [0,3]
-        int rand_scan_size = rand() % NUM_SCAN_SIZE;
+        int rand_scan_type = std::rand() % NUM_SCAN_TYPE;
+        int rand_scanPosSigOff = std::rand() % 16; //rand_scanPosSigOff range is [1,15]
+        int rand_patternSigCtx = std::rand() % 4; //range [0,3]
+        int rand_scan_size = std::rand() % NUM_SCAN_SIZE;
         int offset; // the value have a exact range, details in CoeffNxN()
         if (rand_scan_size == 2)
             offset = 0;
@@ -1994,7 +1995,7 @@ bool PixelHarness::check_costCoeffNxN(costCoeffNxN_t ref, costCoeffNxN_t opt)
         const uint16_t* const scanTbl = g_scanOrder[rand_scan_type][rand_scan_size];
         const uint16_t* const scanTblCG4x4 = g_scan4x4[rand_scan_size <= (MDCS_LOG2_MAX_SIZE - 2) ? rand_scan_type : SCAN_DIAG];
 
-        int rand_scanPosCG = rand() % (trSize * trSize / MLS_CG_BLK_SIZE);
+        int rand_scanPosCG = std::rand() % (trSize * trSize / MLS_CG_BLK_SIZE);
         int subPosBase = rand_scanPosCG * MLS_CG_BLK_SIZE;
         int rand_numCoeff = 0;
         uint32_t scanFlagMask = 0;
@@ -2045,7 +2046,7 @@ bool PixelHarness::check_costCoeffRemain(costCoeffRemain_t ref, costCoeffRemain_
 
     for (int i = 0; i < (1 << MLS_CG_SIZE) + ITERS; i++)
     {
-        absCoeff[i] = rand() & SHORT_MAX;
+        absCoeff[i] = std::rand() & SHORT_MAX;
         // more coeff with value one
         if (absCoeff[i] < SHORT_MAX * 2 / 3)
             absCoeff[i] = 1;
@@ -2054,7 +2055,7 @@ bool PixelHarness::check_costCoeffRemain(costCoeffRemain_t ref, costCoeffRemain_
     {
         uint32_t firstC2Idx = 0;
         int k = 0;
-        int numNonZero = rand() % 17; //can be random, range[1, 16]
+        int numNonZero = std::rand() % 17; //can be random, range[1, 16]
         for (k = 0; k < C1FLAG_NUMBER; k++)
         {
             if (absCoeff[i + k] >= 2)
@@ -2081,18 +2082,18 @@ bool PixelHarness::check_costC1C2Flag(costC1C2Flag_t ref, costC1C2Flag_t opt)
     for (int k = 0; k < 8; k++)
     {
         ref_baseCtx[k] =
-        opt_baseCtx[k] = (rand() % (125 - 2)) + 2;
+        opt_baseCtx[k] = (std::rand() % (125 - 2)) + 2;
     }
 
     for (int i = 0; i < ITERS; i++)
     {
-        int rand_offset = rand() % 4;
+        int rand_offset = std::rand() % 4;
         int numNonZero = 0;
 
         // generate test data, all are Absolute value and Aligned
         for (int k = 0; k < C1FLAG_NUMBER; k++)
         {
-            int value = rand() & SHORT_MAX;
+            int value = std::rand() & SHORT_MAX;
             // more coeff with value [0,2]
             if (value < SHORT_MAX * 1 / 3)
                 value = 0;
@@ -2137,13 +2138,13 @@ bool PixelHarness::check_pelFilterLumaStrong_H(pelFilterLumaStrong_t ref, pelFil
 
     for (int i = 0; i < ITERS; i++)
     {
-        tc      = rand() % PIXEL_MAX;
-        maskP   = (rand() % PIXEL_MAX) - 1;
-        maskQ   = (rand() % PIXEL_MAX) - 1;
+        tc      = std::rand() % PIXEL_MAX;
+        maskP   = (std::rand() % PIXEL_MAX) - 1;
+        maskQ   = (std::rand() % PIXEL_MAX) - 1;
         tcP     = (tc & maskP);
         tcQ     = (tc & maskQ);
 
-        int index = rand() % 3;
+        int index = std::rand() % 3;
 
         ref(pixel_test_buff[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
         checked(opt, pixel_test_buff1[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
@@ -2170,13 +2171,13 @@ bool PixelHarness::check_pelFilterLumaStrong_V(pelFilterLumaStrong_t ref, pelFil
 
     for (int i = 0; i < ITERS; i++)
     {
-        tc      = rand() % PIXEL_MAX;
-        maskP   = (rand() % PIXEL_MAX) - 1;
-        maskQ   = (rand() % PIXEL_MAX) - 1;
+        tc      = std::rand() % PIXEL_MAX;
+        maskP   = (std::rand() % PIXEL_MAX) - 1;
+        maskQ   = (std::rand() % PIXEL_MAX) - 1;
         tcP     = (tc & maskP);
         tcQ     = (tc & maskQ);
 
-        int index = rand() % 3;
+        int index = std::rand() % 3;
 
         ref(pixel_test_buff[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
         checked(opt, pixel_test_buff1[index] + 4 * offset + j, srcStep, offset, tcP, tcQ);
@@ -2209,8 +2210,8 @@ bool PixelHarness::check_pelFilterChroma_H(pelFilterChroma_t ref, pelFilterChrom
         int32_t maskQ = masks[i][1];
         for (int k = 0; k < ITERS; k++)
         {
-            int32_t tc = rand() % PIXEL_MAX;
-            int index = rand() % 3;
+            int32_t tc = std::rand() % PIXEL_MAX;
+            int index = std::rand() % 3;
 
             ref(pixel_test_buff[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
             checked(opt, pixel_test_buff1[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
@@ -2244,8 +2245,8 @@ bool PixelHarness::check_pelFilterChroma_V(pelFilterChroma_t ref, pelFilterChrom
         int32_t maskQ = masks[i][1];
         for (int k = 0; k < ITERS; k++)
         {
-            int32_t tc = rand() % PIXEL_MAX;
-            int index = rand() % 3;
+            int32_t tc = std::rand() % PIXEL_MAX;
+            int index = std::rand() % 3;
 
             ref(pixel_test_buff[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
             checked(opt, pixel_test_buff1[index] + 2 * offset + j, srcStep, offset, tc, maskP, maskQ);
@@ -2339,7 +2340,7 @@ bool PixelHarness::check_ssimDist(ssimDistortion_t ref, ssimDistortion_t opt)
     {
         int index = i % TEST_CASES;
         int index2 = (i + 10) % TEST_CASES;
-        int k1 = rand() % 5, k2 = rand() % 5;
+        int k1 = std::rand() % 5, k2 = std::rand() % 5;
         ref(pixel_test_buff[index] + j, srcStride[k1], pixel_test_buff[index2] + j, dstStride[k2], &ref_dest1, shift, &ref_dest2);
         opt(pixel_test_buff[index] + j, srcStride[k1], pixel_test_buff[index2] + j, dstStride[k2], &opt_dest1, shift, &opt_dest2);
 
@@ -2384,7 +2385,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_pixelcmp(ref.pu[part].satd, opt.pu[part].satd))
         {
-            printf("satd[%s]: failed!\n", lumaPartStr[part]);
+            std::printf("satd[%s]: failed!\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2393,7 +2394,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_pixelcmp(ref.pu[part].sad, opt.pu[part].sad))
         {
-            printf("sad[%s]: failed!\n", lumaPartStr[part]);
+            std::printf("sad[%s]: failed!\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2402,7 +2403,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_pixelcmp_x3(ref.pu[part].sad_x3, opt.pu[part].sad_x3))
         {
-            printf("sad_x3[%s]: failed!\n", lumaPartStr[part]);
+            std::printf("sad_x3[%s]: failed!\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2411,7 +2412,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_pixelcmp_x4(ref.pu[part].sad_x4, opt.pu[part].sad_x4))
         {
-            printf("sad_x4[%s]: failed!\n", lumaPartStr[part]);
+            std::printf("sad_x4[%s]: failed!\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2419,7 +2420,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_pixelavg_pp(ref.pu[part].pixelavg_pp[NONALIGNED], opt.pu[part].pixelavg_pp[NONALIGNED]))
         {
-            printf("pixelavg_pp[%s]: failed!\n", lumaPartStr[part]);
+            std::printf("pixelavg_pp[%s]: failed!\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2427,7 +2428,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_pixelavg_pp_aligned(ref.pu[part].pixelavg_pp[ALIGNED], opt.pu[part].pixelavg_pp[ALIGNED]))
         {
-            printf("pixelavg_pp_aligned[%s]: failed!\n", lumaPartStr[part]);
+            std::printf("pixelavg_pp_aligned[%s]: failed!\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2436,7 +2437,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_copy_pp(ref.pu[part].copy_pp, opt.pu[part].copy_pp))
         {
-            printf("copy_pp[%s] failed\n", lumaPartStr[part]);
+            std::printf("copy_pp[%s] failed\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2445,7 +2446,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_addAvg(ref.pu[part].addAvg[NONALIGNED], opt.pu[part].addAvg[NONALIGNED]))
         {
-            printf("addAvg[%s] failed\n", lumaPartStr[part]);
+            std::printf("addAvg[%s] failed\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2454,7 +2455,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
     {
         if (!check_addAvg_aligned(ref.pu[part].addAvg[ALIGNED], opt.pu[part].addAvg[ALIGNED]))
         {
-            printf("addAvg_aligned[%s] failed\n", lumaPartStr[part]);
+            std::printf("addAvg_aligned[%s] failed\n", lumaPartStr[part]);
             return false;
         }
     }
@@ -2465,7 +2466,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_pixel_sse(ref.cu[part].sse_pp, opt.cu[part].sse_pp))
             {
-                printf("sse_pp[%s]: failed!\n", lumaPartStr[part]);
+                std::printf("sse_pp[%s]: failed!\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2474,7 +2475,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_pixel_sse_ss(ref.cu[part].sse_ss, opt.cu[part].sse_ss))
             {
-                printf("sse_ss[%s]: failed!\n", lumaPartStr[part]);
+                std::printf("sse_ss[%s]: failed!\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2483,7 +2484,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_pixel_sub_ps(ref.cu[part].sub_ps, opt.cu[part].sub_ps))
             {
-                printf("sub_ps[%s] failed\n", lumaPartStr[part]);
+                std::printf("sub_ps[%s] failed\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2492,7 +2493,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_pixel_add_ps(ref.cu[part].add_ps[NONALIGNED], opt.cu[part].add_ps[NONALIGNED]))
             {
-                printf("add_ps[%s] failed\n", lumaPartStr[part]);
+                std::printf("add_ps[%s] failed\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2501,7 +2502,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_pixel_add_ps_aligned(ref.cu[part].add_ps[ALIGNED], opt.cu[part].add_ps[ALIGNED]))
             {
-                printf("add_ps_aligned[%s] failed\n", lumaPartStr[part]);
+                std::printf("add_ps_aligned[%s] failed\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2510,7 +2511,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_copy_ss(ref.cu[part].copy_ss, opt.cu[part].copy_ss))
             {
-                printf("copy_ss[%s] failed\n", lumaPartStr[part]);
+                std::printf("copy_ss[%s] failed\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2519,7 +2520,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_copy_sp(ref.cu[part].copy_sp, opt.cu[part].copy_sp))
             {
-                printf("copy_sp[%s] failed\n", lumaPartStr[part]);
+                std::printf("copy_sp[%s] failed\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2528,7 +2529,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_copy_ps(ref.cu[part].copy_ps, opt.cu[part].copy_ps))
             {
-                printf("copy_ps[%s] failed\n", lumaPartStr[part]);
+                std::printf("copy_ps[%s] failed\n", lumaPartStr[part]);
                 return false;
             }
         }
@@ -2540,7 +2541,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_copy_pp(ref.chroma[i].pu[part].copy_pp, opt.chroma[i].pu[part].copy_pp))
             {
-                printf("chroma_copy_pp[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                std::printf("chroma_copy_pp[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                 return false;
             }
         }
@@ -2548,7 +2549,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_addAvg(ref.chroma[i].pu[part].addAvg[NONALIGNED], opt.chroma[i].pu[part].addAvg[NONALIGNED]))
             {
-                printf("chroma_addAvg[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                std::printf("chroma_addAvg[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                 return false;
             }
         }
@@ -2556,7 +2557,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_addAvg_aligned(ref.chroma[i].pu[part].addAvg[ALIGNED], opt.chroma[i].pu[part].addAvg[ALIGNED]))
             {
-                printf("chroma_addAvg_aligned[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                std::printf("chroma_addAvg_aligned[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                 return false;
             }
         }
@@ -2564,7 +2565,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
         {
             if (!check_pixelcmp(ref.chroma[i].pu[part].satd, opt.chroma[i].pu[part].satd))
             {
-                printf("chroma_satd[%s][%s] failed!\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                std::printf("chroma_satd[%s][%s] failed!\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                 return false;
             }
         }
@@ -2574,7 +2575,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_pixel_sse(ref.chroma[i].cu[part].sse_pp, opt.chroma[i].cu[part].sse_pp))
                 {
-                    printf("chroma_sse_pp[%s][%s]: failed!\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_sse_pp[%s][%s]: failed!\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2582,7 +2583,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_pixel_sub_ps(ref.chroma[i].cu[part].sub_ps, opt.chroma[i].cu[part].sub_ps))
                 {
-                    printf("chroma_sub_ps[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_sub_ps[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2590,7 +2591,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_pixel_add_ps(ref.chroma[i].cu[part].add_ps[NONALIGNED], opt.chroma[i].cu[part].add_ps[NONALIGNED]))
                 {
-                    printf("chroma_add_ps[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_add_ps[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2598,7 +2599,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_pixel_add_ps_aligned(ref.chroma[i].cu[part].add_ps[ALIGNED], opt.chroma[i].cu[part].add_ps[ALIGNED]))
                 {
-                    printf("chroma_add_ps_aligned[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_add_ps_aligned[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2606,7 +2607,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_copy_sp(ref.chroma[i].cu[part].copy_sp, opt.chroma[i].cu[part].copy_sp))
                 {
-                    printf("chroma_copy_sp[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_copy_sp[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2614,7 +2615,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_copy_ps(ref.chroma[i].cu[part].copy_ps, opt.chroma[i].cu[part].copy_ps))
                 {
-                    printf("chroma_copy_ps[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_copy_ps[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2622,7 +2623,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_copy_ss(ref.chroma[i].cu[part].copy_ss, opt.chroma[i].cu[part].copy_ss))
                 {
-                    printf("chroma_copy_ss[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_copy_ss[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2630,7 +2631,7 @@ bool PixelHarness::testPU(int part, const EncoderPrimitives& ref, const EncoderP
             {
                 if (!check_pixelcmp(ref.chroma[i].cu[part].sa8d, opt.chroma[i].cu[part].sa8d))
                 {
-                    printf("chroma_sa8d[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
+                    std::printf("chroma_sa8d[%s][%s] failed\n", x265_source_csp_names[i], chromaPartStr[i][part]);
                     return false;
                 }
             }
@@ -2675,7 +2676,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_pixelcmp(ref.cu[i].sa8d, opt.cu[i].sa8d))
             {
-                printf("sa8d[%dx%d]: failed!\n", 4 << i, 4 << i);
+                std::printf("sa8d[%dx%d]: failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2684,7 +2685,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_blockfill_s(ref.cu[i].blockfill_s[NONALIGNED], opt.cu[i].blockfill_s[NONALIGNED]))
             {
-                printf("blockfill_s[%dx%d]: failed!\n", 4 << i, 4 << i);
+                std::printf("blockfill_s[%dx%d]: failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2693,7 +2694,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_blockfill_s_aligned(ref.cu[i].blockfill_s[ALIGNED], opt.cu[i].blockfill_s[ALIGNED]))
             {
-                printf("blockfill_s_aligned[%dx%d]: failed!\n", 4 << i, 4 << i);
+                std::printf("blockfill_s_aligned[%dx%d]: failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2701,7 +2702,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_pixel_var(ref.cu[i].var, opt.cu[i].var))
             {
-                printf("var[%dx%d] failed\n", 4 << i, 4 << i);
+                std::printf("var[%dx%d] failed\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2710,7 +2711,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_psyCost_pp(ref.cu[i].psy_cost_pp, opt.cu[i].psy_cost_pp))
             {
-                printf("\npsy_cost_pp[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("\npsy_cost_pp[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2719,7 +2720,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_ssimDist(ref.cu[i].ssimDist, opt.cu[i].ssimDist))
             {
-                printf("\nssimDist[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("\nssimDist[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2730,7 +2731,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_calresidual(ref.cu[i].calcresidual[NONALIGNED], opt.cu[i].calcresidual[NONALIGNED]))
             {
-                printf("calcresidual width: %d failed!\n", 4 << i);
+                std::printf("calcresidual width: %d failed!\n", 4 << i);
                 return false;
             }
         }
@@ -2739,7 +2740,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_calresidual_aligned(ref.cu[i].calcresidual[ALIGNED], opt.cu[i].calcresidual[ALIGNED]))
             {
-                printf("calcresidual_aligned width: %d failed!\n", 4 << i);
+                std::printf("calcresidual_aligned width: %d failed!\n", 4 << i);
                 return false;
             }
         }
@@ -2748,7 +2749,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_transpose(ref.cu[i].transpose, opt.cu[i].transpose))
             {
-                printf("transpose[%dx%d] failed\n", 4 << i, 4 << i);
+                std::printf("transpose[%dx%d] failed\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2756,7 +2757,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_ssd_s(ref.cu[i].ssd_s[NONALIGNED], opt.cu[i].ssd_s[NONALIGNED]))
             {
-                printf("ssd_s[%dx%d]: failed!\n", 4 << i, 4 << i);
+                std::printf("ssd_s[%dx%d]: failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2764,7 +2765,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_ssd_s_aligned(ref.cu[i].ssd_s[ALIGNED], opt.cu[i].ssd_s[ALIGNED]))
             {
-                printf("ssd_s_aligned[%dx%d]: failed!\n", 4 << i, 4 << i);
+                std::printf("ssd_s_aligned[%dx%d]: failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2772,7 +2773,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_copy_cnt_t(ref.cu[i].copy_cnt, opt.cu[i].copy_cnt))
             {
-                printf("copy_cnt[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("copy_cnt[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2781,7 +2782,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_cpy2Dto1D_shl_t(ref.cu[i].cpy2Dto1D_shl, opt.cu[i].cpy2Dto1D_shl))
             {
-                printf("cpy2Dto1D_shl[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("cpy2Dto1D_shl[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2790,7 +2791,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_cpy2Dto1D_shr_t(ref.cu[i].cpy2Dto1D_shr, opt.cu[i].cpy2Dto1D_shr))
             {
-                printf("cpy2Dto1D_shr failed!\n");
+                std::printf("cpy2Dto1D_shr failed!\n");
                 return false;
             }
         }
@@ -2798,7 +2799,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_cpy1Dto2D_shl_t(ref.cu[i].cpy1Dto2D_shl[NONALIGNED], opt.cu[i].cpy1Dto2D_shl[NONALIGNED]))
             {
-                printf("cpy1Dto2D_shl[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("cpy1Dto2D_shl[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2806,7 +2807,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_cpy1Dto2D_shl_aligned_t(ref.cu[i].cpy1Dto2D_shl[ALIGNED], opt.cu[i].cpy1Dto2D_shl[ALIGNED]))
             {
-                printf("cpy1Dto2D_shl_aligned[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("cpy1Dto2D_shl_aligned[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2815,7 +2816,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_cpy1Dto2D_shr_t(ref.cu[i].cpy1Dto2D_shr, opt.cu[i].cpy1Dto2D_shr))
             {
-                printf("cpy1Dto2D_shr[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("cpy1Dto2D_shr[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -2825,7 +2826,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_weightp(ref.weight_pp, opt.weight_pp))
         {
-            printf("Weighted Prediction (pixel) failed!\n");
+            std::printf("Weighted Prediction (pixel) failed!\n");
             return false;
         }
     }
@@ -2834,7 +2835,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_weightp(ref.weight_sp, opt.weight_sp))
         {
-            printf("Weighted Prediction (short) failed!\n");
+            std::printf("Weighted Prediction (short) failed!\n");
             return false;
         }
     }
@@ -2843,7 +2844,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_downscale_t(ref.frameInitLowres, opt.frameInitLowres))
         {
-            printf("downscale failed!\n");
+            std::printf("downscale failed!\n");
             return false;
         }
     }
@@ -2852,7 +2853,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_downscaleluma_t(ref.frameSubSampleLuma, opt.frameSubSampleLuma))
         {
-            printf("SubSample Luma failed!\n");
+            std::printf("SubSample Luma failed!\n");
             return false;
         }
     }
@@ -2861,7 +2862,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_scale1D_pp(ref.scale1D_128to64[NONALIGNED], opt.scale1D_128to64[NONALIGNED]))
         {
-            printf("scale1D_128to64 failed!\n");
+            std::printf("scale1D_128to64 failed!\n");
             return false;
         }
     }
@@ -2870,7 +2871,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_scale1D_pp_aligned(ref.scale1D_128to64[ALIGNED], opt.scale1D_128to64[ALIGNED]))
         {
-            printf("scale1D_128to64_aligned failed!\n");
+            std::printf("scale1D_128to64_aligned failed!\n");
             return false;
         }
     }
@@ -2879,7 +2880,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_scale2D_pp(ref.scale2D_64to32, opt.scale2D_64to32))
         {
-            printf("scale2D_64to32 failed!\n");
+            std::printf("scale2D_64to32 failed!\n");
             return false;
         }
     }
@@ -2888,7 +2889,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_ssim_4x4x2_core(ref.ssim_4x4x2_core, opt.ssim_4x4x2_core))
         {
-            printf("ssim_4x4x2_core failed!\n");
+            std::printf("ssim_4x4x2_core failed!\n");
             return false;
         }
     }
@@ -2897,7 +2898,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_ssim_end(ref.ssim_end_4, opt.ssim_end_4))
         {
-            printf("ssim_end_4 failed!\n");
+            std::printf("ssim_end_4 failed!\n");
             return false;
         }
     }
@@ -2906,7 +2907,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_calSign(ref.sign, opt.sign))
         {
-            printf("calSign failed\n");
+            std::printf("calSign failed\n");
             return false;
         }
     }
@@ -2915,7 +2916,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuOrgE0_t(ref.saoCuOrgE0, opt.saoCuOrgE0))
         {
-            printf("SAO_EO_0 failed\n");
+            std::printf("SAO_EO_0 failed\n");
             return false;
         }
     }
@@ -2924,7 +2925,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuOrgE1_t(ref.saoCuOrgE1, opt.saoCuOrgE1))
         {
-            printf("SAO_EO_1 failed\n");
+            std::printf("SAO_EO_1 failed\n");
             return false;
         }
     }
@@ -2933,7 +2934,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuOrgE1_t(ref.saoCuOrgE1_2Rows, opt.saoCuOrgE1_2Rows))
         {
-            printf("SAO_EO_1_2Rows failed\n");
+            std::printf("SAO_EO_1_2Rows failed\n");
             return false;
         }
     }
@@ -2945,7 +2946,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
 
         if (!check_saoCuOrgE2_t(ref1, opt1))
         {
-            printf("SAO_EO_2[0] && SAO_EO_2[1] failed\n");
+            std::printf("SAO_EO_2[0] && SAO_EO_2[1] failed\n");
             return false;
         }
     }
@@ -2954,7 +2955,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuOrgE3_t(ref.saoCuOrgE3[0], opt.saoCuOrgE3[0]))
         {
-            printf("SAO_EO_3[0] failed\n");
+            std::printf("SAO_EO_3[0] failed\n");
             return false;
         }
     }
@@ -2963,7 +2964,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuOrgE3_32_t(ref.saoCuOrgE3[1], opt.saoCuOrgE3[1]))
         {
-            printf("SAO_EO_3[1] failed\n");
+            std::printf("SAO_EO_3[1] failed\n");
             return false;
         }
     }
@@ -2972,7 +2973,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuOrgB0_t(ref.saoCuOrgB0, opt.saoCuOrgB0))
         {
-            printf("SAO_BO_0 failed\n");
+            std::printf("SAO_BO_0 failed\n");
             return false;
         }
     }
@@ -2981,7 +2982,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuStatsBO_t(ref.saoCuStatsBO, opt.saoCuStatsBO))
         {
-            printf("saoCuStatsBO failed\n");
+            std::printf("saoCuStatsBO failed\n");
             return false;
         }
     }
@@ -2990,7 +2991,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuStatsE0_t(ref.saoCuStatsE0, opt.saoCuStatsE0))
         {
-            printf("saoCuStatsE0 failed\n");
+            std::printf("saoCuStatsE0 failed\n");
             return false;
         }
     }
@@ -2999,7 +3000,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuStatsE1_t(ref.saoCuStatsE1, opt.saoCuStatsE1))
         {
-            printf("saoCuStatsE1 failed\n");
+            std::printf("saoCuStatsE1 failed\n");
             return false;
         }
     }
@@ -3008,7 +3009,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuStatsE2_t(ref.saoCuStatsE2, opt.saoCuStatsE2))
         {
-            printf("saoCuStatsE2 failed\n");
+            std::printf("saoCuStatsE2 failed\n");
             return false;
         }
     }
@@ -3017,7 +3018,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_saoCuStatsE3_t(ref.saoCuStatsE3, opt.saoCuStatsE3))
         {
-            printf("saoCuStatsE3 failed\n");
+            std::printf("saoCuStatsE3 failed\n");
             return false;
         }
     }
@@ -3026,7 +3027,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_planecopy_sp(ref.planecopy_sp, opt.planecopy_sp))
         {
-            printf("planecopy_sp failed\n");
+            std::printf("planecopy_sp failed\n");
             return false;
         }
     }
@@ -3035,7 +3036,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_planecopy_sp(ref.planecopy_sp_shl, opt.planecopy_sp_shl))
         {
-            printf("planecopy_sp_shl failed\n");
+            std::printf("planecopy_sp_shl failed\n");
             return false;
         }
     }
@@ -3044,7 +3045,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_planecopy_cp(ref.planecopy_cp, opt.planecopy_cp))
         {
-            printf("planecopy_cp failed\n");
+            std::printf("planecopy_cp failed\n");
             return false;
         }
     }
@@ -3053,7 +3054,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_planecopy_pp_shr(ref.planecopy_pp_shr, opt.planecopy_pp_shr))
         {
-            printf("planecopy_pp_shr failed\n");
+            std::printf("planecopy_pp_shr failed\n");
             return false;
         }
     }
@@ -3062,7 +3063,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_cutree_propagate_cost(ref.propagateCost, opt.propagateCost))
         {
-            printf("propagateCost failed\n");
+            std::printf("propagateCost failed\n");
             return false;
         }
     }
@@ -3071,7 +3072,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_cutree_fix8_pack(ref.fix8Pack, opt.fix8Pack))
         {
-            printf("cuTreeFix8Pack failed\n");
+            std::printf("cuTreeFix8Pack failed\n");
             return false;
         }
     }
@@ -3080,7 +3081,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_cutree_fix8_unpack(ref.fix8Unpack, opt.fix8Unpack))
         {
-            printf("cuTreeFix8Unpack failed\n");
+            std::printf("cuTreeFix8Unpack failed\n");
             return false;
         }
     }
@@ -3089,7 +3090,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_scanPosLast(ref.scanPosLast, opt.scanPosLast))
         {
-            printf("scanPosLast failed!\n");
+            std::printf("scanPosLast failed!\n");
             return false;
         }
     }
@@ -3098,7 +3099,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_findPosFirstLast(ref.findPosFirstLast, opt.findPosFirstLast))
         {
-            printf("findPosFirstLast failed!\n");
+            std::printf("findPosFirstLast failed!\n");
             return false;
         }
     }
@@ -3107,7 +3108,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_costCoeffNxN(ref.costCoeffNxN, opt.costCoeffNxN))
         {
-            printf("costCoeffNxN failed!\n");
+            std::printf("costCoeffNxN failed!\n");
             return false;
         }
     }
@@ -3116,7 +3117,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_costCoeffRemain(ref.costCoeffRemain, opt.costCoeffRemain))
         {
-            printf("costCoeffRemain failed!\n");
+            std::printf("costCoeffRemain failed!\n");
             return false;
         }
     }
@@ -3125,7 +3126,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_costC1C2Flag(ref.costC1C2Flag, opt.costC1C2Flag))
         {
-            printf("costC1C2Flag failed!\n");
+            std::printf("costC1C2Flag failed!\n");
             return false;
         }
     }
@@ -3134,7 +3135,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_pelFilterLumaStrong_V(ref.pelFilterLumaStrong[0], opt.pelFilterLumaStrong[0]))
         {
-            printf("pelFilterLumaStrong Vertical failed!\n");
+            std::printf("pelFilterLumaStrong Vertical failed!\n");
             return false;
         }
     }
@@ -3143,7 +3144,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_pelFilterLumaStrong_H(ref.pelFilterLumaStrong[1], opt.pelFilterLumaStrong[1]))
         {
-            printf("pelFilterLumaStrong Horizontal failed!\n");
+            std::printf("pelFilterLumaStrong Horizontal failed!\n");
             return false;
         }
     }
@@ -3152,7 +3153,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_pelFilterChroma_V(ref.pelFilterChroma[0], opt.pelFilterChroma[0]))
         {
-            printf("pelFilterChroma Vertical failed!\n");
+            std::printf("pelFilterChroma Vertical failed!\n");
             return false;
         }
     }
@@ -3161,7 +3162,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_pelFilterChroma_H(ref.pelFilterChroma[1], opt.pelFilterChroma[1]))
         {
-            printf("pelFilterChroma Horizontal failed!\n");
+            std::printf("pelFilterChroma Horizontal failed!\n");
             return false;
         }
     }
@@ -3173,22 +3174,22 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
             switch (k)
             {
             case 0:
-                printf("Integral4v failed!\n");
+                std::printf("Integral4v failed!\n");
                 break;
             case 1:
-                printf("Integral8v failed!\n");
+                std::printf("Integral8v failed!\n");
                 break;
             case 2:
-                printf("Integral12v failed!\n");
+                std::printf("Integral12v failed!\n");
                 break;
             case 3:
-                printf("Integral16v failed!\n");
+                std::printf("Integral16v failed!\n");
                 break;
             case 4:
-                printf("Integral24v failed!\n");
+                std::printf("Integral24v failed!\n");
                 break;
             case 5:
-                printf("Integral32v failed!\n");
+                std::printf("Integral32v failed!\n");
                 break;
             }
             return false;
@@ -3202,22 +3203,22 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
             switch (k)
             {
                 case 0:
-                    printf("Integral4h failed!\n");
+                    std::printf("Integral4h failed!\n");
                     break;
                 case 1:
-                    printf("Integral8h failed!\n");
+                    std::printf("Integral8h failed!\n");
                     break;
                 case 2:
-                    printf("Integral12h failed!\n");
+                    std::printf("Integral12h failed!\n");
                     break;
                 case 3:
-                    printf("Integral16h failed!\n");
+                    std::printf("Integral16h failed!\n");
                     break;
                 case 4:
-                    printf("Integral24h failed!\n");
+                    std::printf("Integral24h failed!\n");
                     break;
                 case 5:
-                    printf("Integral32h failed!\n");
+                    std::printf("Integral32h failed!\n");
                     break;
             }
             return false;
@@ -3230,7 +3231,7 @@ bool PixelHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_normFact(ref.cu[i].normFact, opt.cu[i].normFact, i))
             {
-                printf("\nnormFact[%dx%d] failed!\n", 4 << i, 4 << i);
+                std::printf("\nnormFact[%dx%d] failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -3244,7 +3245,7 @@ void PixelHarness::measurePartition(int part, const EncoderPrimitives& ref, cons
     ALIGN_VAR_16(int, cres[16]);
     pixel *fref = pbuf2 + 2 * INCR;
     char header[128];
-#define HEADER(str, ...) std::snprintf(header, sizeof(header), str, __VA_ARGS__); printf("%22s", header);
+#define HEADER(str, ...) std::snprintf(header, sizeof(header), str, __VA_ARGS__); std::printf("%22s", header);
 
     if (opt.pu[part].satd)
     {
@@ -3416,8 +3417,8 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
 {
     char header[128];
 
-#define HEADER(str, ...) std::snprintf(header, sizeof(header), str, __VA_ARGS__); printf("%22s", header);
-#define HEADER0(str) printf("%22s", str);
+#define HEADER(str, ...) std::snprintf(header, sizeof(header), str, __VA_ARGS__); std::printf("%22s", header);
+#define HEADER0(str) std::printf("%22s", str);
 
     for (int size = 4; size <= 64; size *= 2)
     {
@@ -3540,7 +3541,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
         {
             uint64_t dst1 = 0, dst2 = 0;
             int shift = X265_DEPTH - 8;
-            printf("ssimDist[%dx%d]", 4 << i, 4 << i);
+            std::printf("ssimDist[%dx%d]", 4 << i, 4 << i);
             REPORT_SPEEDUP(opt.cu[i].ssimDist, ref.cu[i].ssimDist, pixel_test_buff[0], 32, pixel_test_buff[2], 64, &dst1, shift, &dst2);
         }
     }
@@ -3818,8 +3819,8 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
 
     if (opt.pelFilterLumaStrong[0])
     {
-        int32_t tcP = (rand() % PIXEL_MAX) - 1;
-        int32_t tcQ = (rand() % PIXEL_MAX) - 1;
+        int32_t tcP = (std::rand() % PIXEL_MAX) - 1;
+        int32_t tcQ = (std::rand() % PIXEL_MAX) - 1;
         HEADER0("pelFilterLumaStrong_Vertical");
         REPORT_SPEEDUP(opt.pelFilterLumaStrong[0], ref.pelFilterLumaStrong[0], pbuf1 + 4,
                        STRIDE, 1, tcP, tcQ);
@@ -3827,8 +3828,8 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
 
     if (opt.pelFilterLumaStrong[1])
     {
-        int32_t tcP = (rand() % PIXEL_MAX) - 1;
-        int32_t tcQ = (rand() % PIXEL_MAX) - 1;
+        int32_t tcP = (std::rand() % PIXEL_MAX) - 1;
+        int32_t tcQ = (std::rand() % PIXEL_MAX) - 1;
         HEADER0("pelFilterLumaStrong_Horizontal");
         REPORT_SPEEDUP(opt.pelFilterLumaStrong[1], ref.pelFilterLumaStrong[1], pbuf1 + 4 * STRIDE,
                        1, STRIDE, tcP, tcQ);
@@ -3838,7 +3839,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         const int NUM_MASKS = 3;
         int32_t masks[NUM_MASKS][2] = {{-1, -1}, {-1, 0}, {0, -1}};
-        int32_t tc = (rand() % PIXEL_MAX);
+        int32_t tc = (std::rand() % PIXEL_MAX);
         for (int i = 0; i < NUM_MASKS; i++)
         {
             int32_t maskP = masks[i][0];
@@ -3853,7 +3854,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         const int NUM_MASKS = 3;
         int32_t masks[NUM_MASKS][2] = {{-1, -1}, {-1, 0}, {0, -1}};
-        int32_t tc = (rand() % PIXEL_MAX);
+        int32_t tc = (std::rand() % PIXEL_MAX);
         for (int i = 0; i < NUM_MASKS; i++)
         {
             int32_t maskP = masks[i][0];
@@ -3934,7 +3935,7 @@ void PixelHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             uint64_t dst = 0;
             int blockSize = 4 << i;
             int shift = X265_DEPTH - 8;
-            printf("normFact[%dx%d]", blockSize, blockSize);
+            std::printf("normFact[%dx%d]", blockSize, blockSize);
             REPORT_SPEEDUP(opt.cu[i].normFact, ref.cu[i].normFact, pixel_test_buff[0], blockSize, shift, &dst);
         }
     }
