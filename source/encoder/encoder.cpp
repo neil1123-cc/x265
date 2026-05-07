@@ -3871,7 +3871,7 @@ void Encoder::configureVideoSignalTypePreset(x265_param* p)
 {
     char systemId[20] = {};
     char colorVolume[20] = {};
-    sscanf(p->videoSignalTypePreset, "%[^:]:%s", systemId, colorVolume);
+    std::sscanf(p->videoSignalTypePreset, "%[^:]:%s", systemId, colorVolume);
     uint32_t sysId = 0;
     while (std::strcmp(vstPresets[sysId].systemId, systemId))
     {
@@ -6258,16 +6258,16 @@ void Encoder::printReconfigureParams()
 void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
 {
     char line[1024];
-    while (fgets(line, sizeof(line), m_naluFile))
+    while (std::fgets(line, sizeof(line), m_naluFile))
     {
-        int poc = atoi(strtok(line, " "));
-        char *prefix = strtok(NULL, " ");
-        int nalType = atoi(strtok(NULL, "/"));
-        int payloadType = atoi(strtok(NULL, " "));
-        char *base64Encode = strtok(NULL, "\n");
+        int poc = std::atoi(std::strtok(line, " "));
+        char *prefix = std::strtok(NULL, " ");
+        int nalType = std::atoi(std::strtok(NULL, "/"));
+        int payloadType = std::atoi(std::strtok(NULL, " "));
+        char *base64Encode = std::strtok(NULL, "\n");
         int base64EncodeLength = (int)std::strlen(base64Encode);
         char* decodedString;
-        decodedString = (char*)malloc(sizeof(char) * (base64EncodeLength));
+        decodedString = (char*)std::malloc(sizeof(char) * (base64EncodeLength));
         char *base64Decode = SEI::base64Decode(base64Encode, base64EncodeLength, decodedString);
         if (nalType == NAL_UNIT_PREFIX_SEI && (!std::strcmp(prefix, "PREFIX")))
         {
@@ -6291,7 +6291,7 @@ void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
                     break;
                 }
                 std::memcpy(seiMsg.payload, base64Decode, seiMsg.payloadSize);
-                free(decodedString);
+                std::free(decodedString);
                 break;
             }
         }
@@ -6301,7 +6301,7 @@ void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
             break;
         }
         if (base64Decode)
-            free(base64Decode);
+            std::free(base64Decode);
     }
 }
 

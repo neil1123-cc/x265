@@ -26,7 +26,6 @@
 #include "y4m.h"
 
 using namespace X265_NS;
-using namespace std;
 
 Y4MOutput::Y4MOutput(const char* filename, int w, int h, uint32_t bitdepth, uint32_t fpsNum, uint32_t fpsDenom, int csp, int inputdepth)
     : width(w)
@@ -36,7 +35,7 @@ Y4MOutput::Y4MOutput(const char* filename, int w, int h, uint32_t bitdepth, uint
     , frameSize(0)
     , inputDepth(inputdepth)
 {
-    ofs.open(filename, ios::binary | ios::out);
+    ofs.open(filename, std::ios::binary | std::ios::out);
     buf = new char[width];
 
     const char *cf = (csp >= X265_CSP_I444) ? "444" : (csp >= X265_CSP_I422) ? "422" : "420";

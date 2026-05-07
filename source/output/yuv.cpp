@@ -26,7 +26,6 @@
 #include "yuv.h"
 
 using namespace X265_NS;
-using namespace std;
 
 YUVOutput::YUVOutput(const char *filename, int w, int h, uint32_t d, int csp, int inputdepth)
     : width(w)
@@ -36,7 +35,7 @@ YUVOutput::YUVOutput(const char *filename, int w, int h, uint32_t d, int csp, in
     , frameSize(0)
     , inputDepth(inputdepth)
 {
-    ofs.open(filename, ios::binary | ios::out);
+    ofs.open(filename, std::ios::binary | std::ios::out);
     buf = new char[width];
 
     for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)

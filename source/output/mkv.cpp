@@ -28,7 +28,6 @@
 #include <vector>
 
 using namespace X265_NS;
-using namespace std;
 
 #if defined(_LP64) || defined(_WIN64)
 #define X265_OUTPUT_BITS "64bit"
