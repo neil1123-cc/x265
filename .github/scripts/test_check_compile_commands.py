@@ -1093,6 +1093,12 @@ def main():
         write_compile_commands(response_dir, 'c++ @args.rsp -c source/common/common.cpp')
         expect_pass(run_checker(response_dir, '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8'))
 
+        response_forbidden_flag_dir = root / 'response-file-forbidden-exact-flag'
+        response_forbidden_flag_dir.mkdir()
+        (response_forbidden_flag_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        write_compile_commands(response_forbidden_flag_dir, 'c++ @args.rsp -c source/common/common.cpp')
+        expect_fail(run_checker(response_forbidden_flag_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         response_long_suffix_dir = root / 'response-file-long-suffix'
         response_long_suffix_dir.mkdir()
         (response_long_suffix_dir / 'args.response').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')

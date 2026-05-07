@@ -34,6 +34,11 @@
 #include "param.h"
 #include "cpu.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+
 using namespace X265_NS;
 
 const char* lumaPartStr[NUM_PU_SIZES] =
@@ -148,7 +153,7 @@ int main(int argc, char *argv[])
 
     for (int i = 1; i < argc; )
     {
-        if (strncmp(argv[i], "--", 2))
+        if (std::strncmp(argv[i], "--", 2))
         {
             printf("** invalid long argument: %s\n\n", argv[i]);
             do_help();
@@ -156,14 +161,14 @@ int main(int argc, char *argv[])
         }
         const char *name = argv[i] + 2;
         const char *value = i + 1 < argc ? argv[i + 1] : "";
-        if (!strncmp(name, "help", strlen(name)))
+        if (!std::strncmp(name, "help", std::strlen(name)))
         {
           do_help();
           return 0;
         }
-        else if (!strncmp(name, "cpuid", strlen(name)))
+        else if (!std::strncmp(name, "cpuid", std::strlen(name)))
         {
-            if (!strncmp(value, "list", 5))
+            if (!std::strncmp(value, "list", 5))
             {
                 do_cpuid_list(cpuid);
                 return 0;
@@ -183,13 +188,13 @@ int main(int argc, char *argv[])
             }
             i += 2;
         }
-        else if (!strncmp(name, "testbench", strlen(name)))
+        else if (!std::strncmp(name, "testbench", std::strlen(name)))
         {
             testname = value;
             printf("Testing only harnesses that match name <%s>\n", testname);
             i += 2;
         }
-        else if (!strncmp(name, "nobench", strlen(name)))
+        else if (!std::strncmp(name, "nobench", std::strlen(name)))
         {
             printf("Disabling performance benchmarking\n");
             run_benchmarks = false;
@@ -203,9 +208,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    int seed = (int)time(nullptr);
-    printf("Using random seed %X %dbit\n", seed, X265_DEPTH);
-    srand(seed);
+    int seed = (int)std::time(nullptr);
+    std::printf("Using random seed %X %dbit\n", seed, X265_DEPTH);
+    std::srand(seed);
 
     // To disable classes of tests, simply comment them out in this list
     TestHarness *harness[] =
@@ -217,7 +222,7 @@ int main(int argc, char *argv[])
     };
 
     EncoderPrimitives cprim;
-    memset(&cprim, 0, sizeof(EncoderPrimitives));
+    std::memset(&cprim, 0, sizeof(EncoderPrimitives));
     setupCPrimitives(cprim);
     setupAliasPrimitives(cprim);
 
@@ -227,20 +232,20 @@ int main(int argc, char *argv[])
             continue;
 
         printf("Testing primitives: %s\n", testArch[i].name);
-        fflush(stdout);
+        std::fflush(stdout);
 
 #if defined(X265_ARCH_X86) || defined(X265_ARCH_ARM64) || defined(X265_ARCH_RISCV64)
         EncoderPrimitives vecprim;
-        memset(&vecprim, 0, sizeof(vecprim));
+        std::memset(&vecprim, 0, sizeof(vecprim));
         setupIntrinsicPrimitives(vecprim, testArch[i].flag);
         setupAliasPrimitives(vecprim);
         for (size_t h = 0; h < sizeof(harness) / sizeof(TestHarness*); h++)
         {
-            if (testname && strncmp(testname, harness[h]->getName(), strlen(testname)))
+            if (testname && std::strncmp(testname, harness[h]->getName(), std::strlen(testname)))
                 continue;
             if (!harness[h]->testCorrectness(cprim, vecprim))
             {
-                fflush(stdout);
+                std::fflush(stdout);
                 fprintf(stderr, "\nx265: intrinsic primitive has failed. Go and fix that Right Now!\n");
                 return -1;
             }
@@ -248,18 +253,18 @@ int main(int argc, char *argv[])
 #endif
 
         EncoderPrimitives asmprim;
-        memset(&asmprim, 0, sizeof(asmprim));
+        std::memset(&asmprim, 0, sizeof(asmprim));
 
         setupAssemblyPrimitives(asmprim, testArch[i].flag);
         setupAliasPrimitives(asmprim);
-        memcpy(&primitives, &asmprim, sizeof(EncoderPrimitives));
+        std::memcpy(&primitives, &asmprim, sizeof(EncoderPrimitives));
         for (size_t h = 0; h < sizeof(harness) / sizeof(TestHarness*); h++)
         {
-            if (testname && strncmp(testname, harness[h]->getName(), strlen(testname)))
+            if (testname && std::strncmp(testname, harness[h]->getName(), std::strlen(testname)))
                 continue;
             if (!harness[h]->testCorrectness(cprim, asmprim))
             {
-                fflush(stdout);
+                std::fflush(stdout);
                 fprintf(stderr, "\nx265: asm primitive has failed. Go and fix that Right Now!\n");
                 return -1;
             }
@@ -270,7 +275,7 @@ int main(int argc, char *argv[])
     if (run_benchmarks)
     {
         EncoderPrimitives optprim;
-        memset(&optprim, 0, sizeof(optprim));
+        std::memset(&optprim, 0, sizeof(optprim));
 #if defined(X265_ARCH_X86) || defined(X265_ARCH_ARM64) || defined(X265_ARCH_RISCV64)
         setupIntrinsicPrimitives(optprim, cpuid);
 #endif
@@ -283,14 +288,14 @@ int main(int argc, char *argv[])
         /* some hybrid primitives may rely on other primitives in the
          * global primitive table, so set up those pointers. This is a
          * bit ugly, but I don't see a better solution */
-        memcpy(&primitives, &optprim, sizeof(EncoderPrimitives));
+        std::memcpy(&primitives, &optprim, sizeof(EncoderPrimitives));
 
         printf("\nTest performance improvement with full optimizations\n");
-        fflush(stdout);
+        std::fflush(stdout);
 
         for (size_t h = 0; h < sizeof(harness) / sizeof(TestHarness*); h++)
         {
-            if (testname && strncmp(testname, harness[h]->getName(), strlen(testname)))
+            if (testname && std::strncmp(testname, harness[h]->getName(), std::strlen(testname)))
                 continue;
             printf("== %s primitives ==\n", harness[h]->getName());
             harness[h]->measureSpeed(cprim, optprim);
