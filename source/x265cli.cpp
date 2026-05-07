@@ -1460,12 +1460,12 @@ namespace X265_NS {
         rewind(multiViewConfig);
         int linenum = 0;
         int numInput = 0;
-        char** args = (char**)malloc(256 * sizeof(char*));
+        char** args = (char**)std::malloc(256 * sizeof(char*));
         while (fgets(line, sizeof(line), multiViewConfig))
         {
-            if (*line == '#' || (strcmp(line, "\r\n") == 0))
+            if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
                 continue;
-            int index = (int)strcspn(line, "\r\n");
+            int index = (int)std::strcspn(line, "\r\n");
             line[index] = '\0';
             argLine = line;
             while (isspace((unsigned char)*argLine)) argLine++;
@@ -1529,11 +1529,11 @@ namespace X265_NS {
                     if (name[0] == '-' && name[1] == '-')
                         name += 2;
                     // s/_/-/g
-                    if (strlen(name) + 1 < sizeof(nameBuf) && strchr(name, '_'))
+                    if (std::strlen(name) + 1 < sizeof(nameBuf) && std::strchr(name, '_'))
                     {
                         char* ch;
-                        strcpy(nameBuf, name);
-                        while ((ch = strchr(nameBuf, '_')) != 0)
+                        std::strcpy(nameBuf, name);
+                        while ((ch = std::strchr(nameBuf, '_')) != 0)
                             *ch = '-';
                         name = nameBuf;
                     }
@@ -1541,7 +1541,7 @@ namespace X265_NS {
                         optarg = flag;
                     else if (optarg[0] == '=')
                         optarg++;
-#define OPT(STR) else if (!strcmp(name, STR))
+#define OPT(STR) else if (!std::strcmp(name, STR))
                     if (0);
                     OPT("num-views") param->numViews = x265_atoi(optarg, bError);
                     OPT("format") param->format = x265_atoi(optarg, bError);
@@ -1550,7 +1550,7 @@ namespace X265_NS {
                         if (0);
                         OPT("input")
                         {
-                            strncpy(fn[numInput++], optarg, 1024);
+                            std::strncpy(fn[numInput++], optarg, 1024);
                         }
 
                     }
