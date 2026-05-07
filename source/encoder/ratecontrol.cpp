@@ -3461,21 +3461,21 @@ void RateControl::splitdeltaPOC(char deltapoc[], RateControlEntry *rce)
     int idx = 0, length = 0;
     char tmpStr[128];
     char* src = deltapoc;
-    char* buf = strstr(src, "~");
+    char* buf = std::strstr(src, "~");
     while (buf)
     {
-        memset(tmpStr, 0, sizeof(tmpStr));
+        std::memset(tmpStr, 0, sizeof(tmpStr));
         length = (int)(buf - src);
         if (length != 0)
         {
-            strncpy(tmpStr, src, length);
-            rce->rpsData.deltaPOC[idx] = atoi(tmpStr);
+            std::strncpy(tmpStr, src, length);
+            rce->rpsData.deltaPOC[idx] = std::atoi(tmpStr);
             idx++;
             if (idx == rce->rpsData.numberOfPictures)
                 break;
         }
         src += (length + 1);
-        buf = strstr(src, "~");
+        buf = std::strstr(src, "~");
     }
 }
 
@@ -3484,21 +3484,21 @@ void RateControl::splitbUsed(char bused[], RateControlEntry *rce)
     int idx = 0, length = 0;
     char tmpStr[128];
     char* src = bused;
-    char* buf = strstr(src, "~");
+    char* buf = std::strstr(src, "~");
     while (buf)
     {
-        memset(tmpStr, 0, sizeof(tmpStr));
+        std::memset(tmpStr, 0, sizeof(tmpStr));
         length = (int)(buf - src);
         if (length != 0)
         {
-            strncpy(tmpStr, src, length);
-            rce->rpsData.bUsed[idx] = atoi(tmpStr) > 0;
+            std::strncpy(tmpStr, src, length);
+            rce->rpsData.bUsed[idx] = std::atoi(tmpStr) > 0;
             idx++;
             if (idx == rce->rpsData.numberOfPictures)
                 break;
         }
         src += (length + 1);
-        buf = strstr(src, "~");
+        buf = std::strstr(src, "~");
     }
 }
 

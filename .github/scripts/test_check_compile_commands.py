@@ -674,6 +674,26 @@ def main():
         write_compile_commands(msvc_required_depth_missing_dir, 'clang-cl /std:c++20 /c source/common/common.cpp')
         expect_fail(run_checker(msvc_required_depth_missing_dir, '--required-depth-define=-DX265_DEPTH=8', '--min-cpp-commands=1'), 'missing -DX265_DEPTH=8')
 
+        msvc_response_required_depth_missing_dir = root / 'msvc-response-required-depth-missing'
+        msvc_response_required_depth_missing_dir.mkdir()
+        (msvc_response_required_depth_missing_dir / 'lang.rsp').write_text('/TP /std:c++20')
+        write_compile_commands_records(msvc_response_required_depth_missing_dir, [{
+            'directory': str(msvc_response_required_depth_missing_dir),
+            'command': 'clang-cl @lang.rsp /c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_response_required_depth_missing_dir, '--required-depth-define=-DX265_DEPTH=8', '--min-cpp-commands=1'), 'missing -DX265_DEPTH=8')
+
+        msvc_response_msvc_define_depth_missing_dir = root / 'msvc-response-msvc-define-depth-missing'
+        msvc_response_msvc_define_depth_missing_dir.mkdir()
+        (msvc_response_msvc_define_depth_missing_dir / 'lang.rsp').write_text('/TP /std:c++20 /DX265_DEPTH=8')
+        write_compile_commands_records(msvc_response_msvc_define_depth_missing_dir, [{
+            'directory': str(msvc_response_msvc_define_depth_missing_dir),
+            'command': 'clang-cl @lang.rsp /c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_response_msvc_define_depth_missing_dir, '--required-depth-define=-DX265_DEPTH=8', '--min-cpp-commands=1'), 'missing -DX265_DEPTH=8')
+
         both_fields_dir = root / 'pass-command-arguments-same-std'
         write_compile_commands_records(both_fields_dir, [{
             'directory': str(both_fields_dir),
@@ -1401,6 +1421,28 @@ def main():
         missing_response_required_prefix_dir.mkdir()
         write_compile_commands(missing_response_required_prefix_dir, 'c++ @missing.rsp -c source/common/common.cpp')
         expect_fail(run_checker(missing_response_required_prefix_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing response file')
+
+        missing_response_command_dual_field_dir = root / 'missing-response-file-command-dual-field'
+        missing_response_command_dual_field_dir.mkdir()
+        (missing_response_command_dual_field_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands_records(missing_response_command_dual_field_dir, [{
+            'directory': str(missing_response_command_dual_field_dir),
+            'command': 'c++ @missing.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@args.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(missing_response_command_dual_field_dir), 'missing response file')
+
+        missing_response_arguments_dual_field_dir = root / 'missing-response-file-arguments-dual-field'
+        missing_response_arguments_dual_field_dir.mkdir()
+        (missing_response_arguments_dual_field_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')
+        write_compile_commands_records(missing_response_arguments_dual_field_dir, [{
+            'directory': str(missing_response_arguments_dual_field_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@missing.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(missing_response_arguments_dual_field_dir), 'missing response file')
 
         modmap_reference_dir = root / 'modmap-reference-not-response-file'
         modmap_reference_dir.mkdir()
@@ -2165,6 +2207,62 @@ def main():
         }])
         expect_pass(run_checker(msvc_fused_tp_quoted_response_command_dir, '--min-cpp-commands=1'))
 
+        response_objective_cxx_language_dir = root / 'response-x-objective-cxx-language'
+        response_objective_cxx_language_dir.mkdir()
+        (response_objective_cxx_language_dir / 'lang.rsp').write_text('-x objective-c++ -std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_objective_cxx_language_dir, [{
+            'directory': str(response_objective_cxx_language_dir),
+            'command': 'cc @lang.rsp -c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(response_objective_cxx_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        response_cxx_header_language_dir = root / 'response-x-cxx-header-language'
+        response_cxx_header_language_dir.mkdir()
+        (response_cxx_header_language_dir / 'lang.rsp').write_text('-x c++-header -std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_cxx_header_language_dir, [{
+            'directory': str(response_cxx_header_language_dir),
+            'arguments': ['cc', '@lang.rsp', '-c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(response_cxx_header_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        response_fused_objective_cxx_language_dir = root / 'response-fused-xobjective-cxx-language'
+        response_fused_objective_cxx_language_dir.mkdir()
+        (response_fused_objective_cxx_language_dir / 'lang.rsp').write_text('-xobjective-c++ -std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_fused_objective_cxx_language_dir, [{
+            'directory': str(response_fused_objective_cxx_language_dir),
+            'command': 'cc @lang.rsp -c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(response_fused_objective_cxx_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        response_fused_cxx_header_language_dir = root / 'response-fused-xcxx-header-language'
+        response_fused_cxx_header_language_dir.mkdir()
+        (response_fused_cxx_header_language_dir / 'lang.rsp').write_text('-xc++-header -std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_fused_cxx_header_language_dir, [{
+            'directory': str(response_fused_cxx_header_language_dir),
+            'arguments': ['cc', '@lang.rsp', '-c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(response_fused_cxx_header_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        response_language_min_cpp_dir = root / 'response-language-flags-min-cpp-commands'
+        response_language_min_cpp_dir.mkdir()
+        (response_language_min_cpp_dir / 'objective.rsp').write_text('-x objective-c++ -std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (response_language_min_cpp_dir / 'header.rsp').write_text('-xc++-header -std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_language_min_cpp_dir, [{
+            'directory': str(response_language_min_cpp_dir),
+            'command': 'cc @objective.rsp -c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }, {
+            'directory': str(response_language_min_cpp_dir),
+            'arguments': ['cc', '@header.rsp', '-c', 'source/encoder/analysis.cpp'],
+            'file': str(root / 'source/encoder/analysis.cpp'),
+        }])
+        expect_pass(run_checker(response_language_min_cpp_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=2'))
+        expect_fail(run_checker(response_language_min_cpp_dir, '--min-cpp-commands=3'), 'expected at least 3 unique C++ compile commands')
+
         duplicate_source_required_flag_dir = root / 'duplicate-source-required-flag'
         write_compile_commands_entries(duplicate_source_required_flag_dir, [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
@@ -2172,6 +2270,52 @@ def main():
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/encoder/encoder.cpp', 'source/encoder/encoder.cpp'),
         ])
         expect_fail(run_checker(duplicate_source_required_flag_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=2'), 'missing required flag -Werror=deprecated')
+
+        duplicate_source_dual_field_command_missing_flag_dir = root / 'duplicate-source-dual-field-command-missing-flag'
+        write_compile_commands_records(duplicate_source_dual_field_command_missing_flag_dir, [
+            {
+                'directory': str(duplicate_source_dual_field_command_missing_flag_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_command_missing_flag_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_command_missing_flag_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/encoder/encoder.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/encoder/encoder.cpp'],
+                'file': str(root / 'source/encoder/encoder.cpp'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_dual_field_command_missing_flag_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=2'), 'missing required flag -Werror=deprecated')
+
+        duplicate_source_dual_field_arguments_missing_flag_dir = root / 'duplicate-source-dual-field-arguments-missing-flag'
+        write_compile_commands_records(duplicate_source_dual_field_arguments_missing_flag_dir, [
+            {
+                'directory': str(duplicate_source_dual_field_arguments_missing_flag_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_arguments_missing_flag_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_arguments_missing_flag_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/encoder/encoder.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/encoder/encoder.cpp'],
+                'file': str(root / 'source/encoder/encoder.cpp'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_dual_field_arguments_missing_flag_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=2'), 'missing required flag -Werror=deprecated')
 
         windows_duplicate_source_min_cpp_dir = root / 'windows-duplicate-source-min-cpp-commands'
         write_compile_commands_records(windows_duplicate_source_min_cpp_dir, [
