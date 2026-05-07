@@ -1233,7 +1233,7 @@ namespace X265_NS {
 
         while (fgets(line, sizeof(line), zoneFile))
         {
-            if (!((*line == '#') || (strcmp(line, "\r\n") == 0)))
+            if (!((*line == '#') || (std::strcmp(line, "\r\n") == 0)))
                 param->rc.zonefileCount++;
         }
 
@@ -1245,9 +1245,9 @@ namespace X265_NS {
             param->rc.zones[i].startFrame = -1;
             while (fgets(line, sizeof(line), zoneFile))
             {
-                if (*line == '#' || (strcmp(line, "\r\n") == 0))
+                if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
                     continue;
-                int index = (int)strcspn(line, "\r\n");
+                int index = (int)std::strcspn(line, "\r\n");
                 line[index] = '\0';
                 argLine = line;
                 while (isspace((unsigned char)*argLine)) argLine++;
@@ -1337,15 +1337,15 @@ namespace X265_NS {
         rewind(scenecutAwareQpConfig);
         while (fgets(line, sizeof(line), scenecutAwareQpConfig))
         {
-            if (*line == '#' || (strcmp(line, "\r\n") == 0))
+            if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
                 continue;
-            int index = (int)strcspn(line, "\r\n");
+            int index = (int)std::strcspn(line, "\r\n");
             line[index] = '\0';
             argLine = line;
             while (isspace((unsigned char)*argLine)) argLine++;
             char* start = strchr(argLine, '-');
             int argCount = 0;
-            char **args = (char**)malloc(256 * sizeof(char *));
+            char **args = (char**)std::malloc(256 * sizeof(char *));
             //Adding a dummy string to avoid file parsing error
             args[argCount++] = (char *)"x265";
             char* token = strtok(start, " ");
