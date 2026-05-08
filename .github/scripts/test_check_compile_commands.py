@@ -1486,6 +1486,32 @@ def main():
         }])
         expect_pass(run_checker(uppercase_suffix_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
+        windows_min_cpp_duplicate_source_dir = root / 'windows-min-cpp-duplicate-source-normalized'
+        write_compile_commands_records(windows_min_cpp_duplicate_source_dir, [{
+            'directory': str(windows_min_cpp_duplicate_source_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+            'file': str(root / 'source\\common\\common.cpp'),
+        }, {
+            'directory': str(windows_min_cpp_duplicate_source_dir),
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/COMMON.CPP'],
+            'file': str(root / 'source/common/COMMON.CPP'),
+        }])
+        expect_fail(run_checker(windows_min_cpp_duplicate_source_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands, found 1')
+
+        windows_response_min_cpp_duplicate_source_dir = root / 'windows-response-min-cpp-duplicate-source-normalized'
+        windows_response_min_cpp_duplicate_source_dir.mkdir()
+        (windows_response_min_cpp_duplicate_source_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(windows_response_min_cpp_duplicate_source_dir, [{
+            'directory': str(windows_response_min_cpp_duplicate_source_dir),
+            'command': 'c++ @args.rsp -c source/common/common.cpp',
+            'file': str(root / 'source\\common\\common.cpp'),
+        }, {
+            'directory': str(windows_response_min_cpp_duplicate_source_dir),
+            'arguments': ['c++', '@args.rsp', '-c', 'source/common/COMMON.CPP'],
+            'file': str(root / 'source/common/COMMON.CPP'),
+        }])
+        expect_fail(run_checker(windows_response_min_cpp_duplicate_source_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=2'), 'expected at least 2 unique C++ compile commands, found 1')
+
         nested_response_dir = root / 'nested-response-file'
         nested_response_dir.mkdir()
         (nested_response_dir / 'std.rsp').write_text('-std=gnu++20 -Wdeprecated')

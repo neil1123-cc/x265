@@ -698,6 +698,42 @@ def main():
         ''')
         expect_fail(run_checker(macro_argv_forward_source), 'manual C++ standard flag in CMake')
 
+        neutral_function_argn_warning_flag_source = write_source(root / 'neutral-function-argn-warning-flag-pass')
+        neutral_function_argn_warning_flag_nested = neutral_function_argn_warning_flag_source / 'cmake'
+        neutral_function_argn_warning_flag_nested.mkdir()
+        (neutral_function_argn_warning_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        function(forward_args)
+          target_compile_options(cli PRIVATE ${ARGN})
+        endfunction()
+        forward_args(${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(neutral_function_argn_warning_flag_source))
+
+        neutral_function_argv_warning_flag_source = write_source(root / 'neutral-function-argv-warning-flag-pass')
+        neutral_function_argv_warning_flag_nested = neutral_function_argv_warning_flag_source / 'cmake'
+        neutral_function_argv_warning_flag_nested.mkdir()
+        (neutral_function_argv_warning_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        function(forward_args first second)
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${ARGV1})
+        endfunction()
+        forward_args(-Wall ${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(neutral_function_argv_warning_flag_source))
+
+        neutral_macro_argv_warning_flag_source = write_source(root / 'neutral-macro-argv-warning-flag-pass')
+        neutral_macro_argv_warning_flag_nested = neutral_macro_argv_warning_flag_source / 'cmake'
+        neutral_macro_argv_warning_flag_nested.mkdir()
+        (neutral_macro_argv_warning_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        macro(forward_args first second)
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${ARGV1})
+        endmacro()
+        forward_args(-Wall ${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(neutral_macro_argv_warning_flag_source))
+
         neutral_macro_argn_warning_flag_source = write_source(root / 'neutral-macro-argn-warning-flag-pass')
         neutral_macro_argn_warning_flag_nested = neutral_macro_argn_warning_flag_source / 'cmake'
         neutral_macro_argn_warning_flag_nested.mkdir()
