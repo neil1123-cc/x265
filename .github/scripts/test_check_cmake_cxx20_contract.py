@@ -730,6 +730,54 @@ def main():
         ''')
         expect_pass(run_checker(nested_neutral_wrapper_warning_flag_source))
 
+        function_source_property_forward_source = write_source(root / 'function-source-property-forward-standard-flag')
+        function_source_property_forward_nested = function_source_property_forward_source / 'cmake'
+        function_source_property_forward_nested.mkdir()
+        (function_source_property_forward_nested / 'properties.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        function(add_source_flag flag)
+          set_property(SOURCE probe.cpp APPEND PROPERTY COMPILE_OPTIONS ${flag})
+        endfunction()
+        add_source_flag(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(function_source_property_forward_source), 'manual C++ standard flag in CMake')
+
+        macro_directory_property_forward_source = write_source(root / 'macro-directory-property-forward-standard-flag')
+        macro_directory_property_forward_nested = macro_directory_property_forward_source / 'cmake'
+        macro_directory_property_forward_nested.mkdir()
+        (macro_directory_property_forward_nested / 'properties.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        macro(add_directory_flag flag)
+          set_property(DIRECTORY APPEND PROPERTY COMPILE_OPTIONS ${flag})
+        endmacro()
+        add_directory_flag(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(macro_directory_property_forward_source), 'manual C++ standard flag in CMake')
+
+        neutral_source_property_forward_source = write_source(root / 'neutral-source-property-forward-warning-pass')
+        neutral_source_property_forward_nested = neutral_source_property_forward_source / 'cmake'
+        neutral_source_property_forward_nested.mkdir()
+        (neutral_source_property_forward_nested / 'properties.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        function(add_source_flag flag)
+          set_property(SOURCE probe.cpp APPEND PROPERTY COMPILE_OPTIONS ${flag})
+        endfunction()
+        add_source_flag(${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(neutral_source_property_forward_source))
+
+        neutral_directory_property_forward_source = write_source(root / 'neutral-directory-property-forward-warning-pass')
+        neutral_directory_property_forward_nested = neutral_directory_property_forward_source / 'cmake'
+        neutral_directory_property_forward_nested.mkdir()
+        (neutral_directory_property_forward_nested / 'properties.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        macro(add_directory_flag flag)
+          set_directory_properties(PROPERTIES COMPILE_OPTIONS ${flag})
+        endmacro()
+        add_directory_flag(${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(neutral_directory_property_forward_source))
+
         foreach_variable_forward_source = write_source(root / 'foreach-variable-forward-standard-flag')
         foreach_variable_forward_nested = foreach_variable_forward_source / 'cmake'
         foreach_variable_forward_nested.mkdir()

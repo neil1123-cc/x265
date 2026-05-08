@@ -1925,10 +1925,19 @@ def main():
         ])
         expect_pass(run_checker(root / 'depth-exclude', '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=dynamicHDR10/'))
 
+        depth_exclude_min_cpp_dir = root / 'depth-exclude-min-cpp-commands'
+        write_compile_commands_entries(depth_exclude_min_cpp_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/dynamicHDR10/json11.cpp', 'source/dynamicHDR10/json11.cpp'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(depth_exclude_min_cpp_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source/dynamicHDR10/', '--min-cpp-commands=2'))
+        expect_fail(run_checker(depth_exclude_min_cpp_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source/dynamicHDR10/', '--min-cpp-commands=3'), 'expected at least 3 unique C++ compile commands')
+
         write_compile_commands_entries(root / 'windows-depth-exclude', [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/dynamicHDR10/json11.cpp', 'source\\dynamicHDR10\\json11.cpp'),
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
         ])
+
         expect_pass(run_checker(root / 'windows-depth-exclude', '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source/dynamicHDR10/'))
 
         windows_depth_exclude_backslash_arg_dir = root / 'windows-depth-exclude-backslash-arg'
