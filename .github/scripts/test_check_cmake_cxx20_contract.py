@@ -637,6 +637,42 @@ def main():
         ''')
         expect_fail(run_checker(function_argv_forward_source), 'manual C++ standard flag in CMake')
 
+        macro_argn_forward_source = write_source(root / 'macro-argn-forward-standard-flag')
+        macro_argn_forward_nested = macro_argn_forward_source / 'cmake'
+        macro_argn_forward_nested.mkdir()
+        (macro_argn_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        macro(add_cli_flags)
+          target_compile_options(cli PRIVATE ${ARGN})
+        endmacro()
+        add_cli_flags(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(macro_argn_forward_source), 'manual C++ standard flag in CMake')
+
+        macro_argv_forward_source = write_source(root / 'macro-argv-forward-standard-flag')
+        macro_argv_forward_nested = macro_argv_forward_source / 'cmake'
+        macro_argv_forward_nested.mkdir()
+        (macro_argv_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        macro(add_cli_flags first second)
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${ARGV1})
+        endmacro()
+        add_cli_flags(-Wextra ${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(macro_argv_forward_source), 'manual C++ standard flag in CMake')
+
+        neutral_macro_argn_warning_flag_source = write_source(root / 'neutral-macro-argn-warning-flag-pass')
+        neutral_macro_argn_warning_flag_nested = neutral_macro_argn_warning_flag_source / 'cmake'
+        neutral_macro_argn_warning_flag_nested.mkdir()
+        (neutral_macro_argn_warning_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        macro(forward_args)
+          target_compile_options(cli PRIVATE ${ARGN})
+        endmacro()
+        forward_args(${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(neutral_macro_argn_warning_flag_source))
+
         neutral_wrapper_warning_flag_source = write_source(root / 'neutral-wrapper-warning-flag-pass')
         neutral_wrapper_warning_flag_nested = neutral_wrapper_warning_flag_source / 'cmake'
         neutral_wrapper_warning_flag_nested.mkdir()
