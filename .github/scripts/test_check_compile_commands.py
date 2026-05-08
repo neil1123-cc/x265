@@ -2022,6 +2022,16 @@ def main():
         }])
         expect_pass(run_checker(msvc_tp_response_required_file_flag_dir, '--required-file-flag=source/common/template.inc=/DCPP_TEMPLATE=1', '--min-cpp-commands=1'))
 
+        msvc_tp_response_forbidden_file_flag_dir = root / 'msvc-tp-response-forbidden-file-flag'
+        msvc_tp_response_forbidden_file_flag_dir.mkdir()
+        (msvc_tp_response_forbidden_file_flag_dir / 'lang.rsp').write_text('/TP /std:c++20 /DCPP_TEMPLATE=1')
+        write_compile_commands_records(msvc_tp_response_forbidden_file_flag_dir, [{
+            'directory': str(msvc_tp_response_forbidden_file_flag_dir),
+            'command': 'clang-cl @lang.rsp /c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(msvc_tp_response_forbidden_file_flag_dir, '--forbidden-file-flag=source/common/template.inc=/DCPP_TEMPLATE=1', '--min-cpp-commands=1'), 'forbidden flag /DCPP_TEMPLATE=1 for file substring source/common/template.inc')
+
         msvc_tp_response_forbidden_min_cpp_mixed_language_dir = root / 'msvc-tp-response-forbidden-min-cpp-mixed-language'
         msvc_tp_response_forbidden_min_cpp_mixed_language_dir.mkdir()
         (msvc_tp_response_forbidden_min_cpp_mixed_language_dir / 'tp.rsp').write_text('/TP /std:c++20')

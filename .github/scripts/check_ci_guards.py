@@ -770,6 +770,17 @@ def require_active_line_contains(active_lines, required, path, message):
         fail(message, path)
 
 
+def require_active_command_prefix(active_lines, expected_tokens, path, message):
+    for line in active_lines:
+        try:
+            tokens = shlex.split(line)
+        except ValueError:
+            continue
+        if tuple(tokens[:len(expected_tokens)]) == expected_tokens:
+            return
+    fail(message, path)
+
+
 def option_value(args, option, expected, build, context):
     try:
         actual = args[args.index(option) + 1]
@@ -1510,11 +1521,31 @@ def validate_gnu20_diagnostic_steps(repo_root):
             ),
         ),
     )
+    exact_command_requirements = (
+        (
+            'cxx20-warning-scan',
+            'Run C++20 CLI and dependency warning scans',
+            (
+                (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan'), 'C++20 warning scan must actively configure base warning-scan target'),
+                (('check_cxx20_commands_clang', 'build/cxx20-warning-scan'), 'C++20 warning scan must actively check base warning-scan compile commands target'),
+                (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan-12bit'), 'C++20 warning scan must actively configure 12-bit warning-scan target'),
+                (('check_cxx20_commands_clang', 'build/cxx20-warning-scan-12bit'), 'C++20 warning scan must actively check 12-bit warning-scan compile commands target'),
+                (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan-shared-deps'), 'C++20 warning scan must actively configure shared-deps warning-scan target'),
+                (('check_cxx20_commands_clang', 'build/cxx20-warning-scan-shared-deps'), 'C++20 warning scan must actively check shared-deps warning-scan compile commands target'),
+                (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan-shared-deps-asm'), 'C++20 warning scan must actively configure shared-deps-asm warning-scan target'),
+            ),
+        ),
+    )
     for job_name, step_name, required_items in requirements:
         step = named_step(workflow_steps(parsed, build, job_name), step_name, build, job_name=job_name)
         active_lines = shell_active_logical_lines(required_run(step, build, step_name))
         for required, message in required_items:
             require_active_line_contains(active_lines, required, build, message)
+    for job_name, step_name, required_commands in exact_command_requirements:
+        step = named_step(workflow_steps(parsed, build, job_name), step_name, build, job_name=job_name)
+        active_lines = shell_active_logical_lines(required_run(step, build, step_name))
+        for expected_tokens, message in required_commands:
+            require_active_command_prefix(active_lines, expected_tokens, build, message)
     print('GNU++20 diagnostic step active commands validated')
 
 

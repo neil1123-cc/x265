@@ -772,6 +772,14 @@ def replace_text(path, old, new):
     path.write_text(text.replace(old, new, 1))
 
 
+def replace_generated_text(path, old, new):
+    text = path.read_text()
+    generated = text.replace('\\\n            ', '            ')
+    if old not in generated:
+        raise AssertionError(f'missing generated text {old!r}')
+    path.write_text(generated.replace(old, new, 1))
+
+
 def main():
     if not shutil.which('bash'):
         print('bash is unavailable; skipping CI guard tests')
@@ -971,8 +979,26 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '-DENABLE_ZIMG=ON', '# -DENABLE_ZIMG=ON')
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively enable ZIMG')
+        replace_generated_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan             -DENABLE_ZIMG=ON', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit             -DENABLE_ZIMG=ON')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure base warning-scan target')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_generated_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_clang build/cxx20-warning-scan             --required-file-substring=source/filters/zimgfilter.cpp', 'check_cxx20_commands_clang build/cxx20-warning-scan-12bit             --required-file-substring=source/filters/zimgfilter.cpp')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively check base warning-scan compile commands target')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_generated_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_clang build/cxx20-warning-scan-shared-deps             --required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF', 'check_cxx20_commands_clang build/cxx20-warning-scan-12bit             --required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively check shared-deps warning-scan compile commands target')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_generated_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-deps-asm             -DENABLE_ASSEMBLY=ON', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-deps             -DENABLE_ASSEMBLY=ON')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure shared deps asm build')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

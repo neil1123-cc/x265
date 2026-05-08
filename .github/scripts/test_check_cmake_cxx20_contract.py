@@ -89,11 +89,30 @@ def main():
         inline_cache_source = write_source(root / 'inline-cache-contract', inline_cache_top_text)
         expect_pass(run_checker(inline_cache_source))
 
+        cache_internal_docs_source = write_source(root / 'cache-internal-docs-pass')
+        cache_internal_docs_nested = cache_internal_docs_source / 'cmake'
+        cache_internal_docs_nested.mkdir()
+        (cache_internal_docs_nested / 'docs.cmake').write_text('set(MY_CXX_FLAGS_DOC "-std=gnu++17 docs only" CACHE INTERNAL "" FORCE)\n')
+        expect_pass(run_checker(cache_internal_docs_source))
+
         readonly_source = write_source(root / 'readonly-property')
         readonly_nested = readonly_source / 'cmake'
         readonly_nested.mkdir()
         (readonly_nested / 'query.cmake').write_text('get_property(current TARGET cli PROPERTY CXX_STANDARD)\n')
         expect_pass(run_checker(readonly_source))
+
+        imported_alias_readonly_source = write_source(root / 'imported-alias-readonly-properties-pass')
+        imported_alias_readonly_nested = imported_alias_readonly_source / 'cmake'
+        imported_alias_readonly_nested.mkdir()
+        (imported_alias_readonly_nested / 'query.cmake').write_text('''
+        add_library(cli_import UNKNOWN IMPORTED)
+        add_library(cli_alias ALIAS cli_import)
+        get_target_property(alias_target cli_alias ALIASED_TARGET)
+        get_property(imported_global TARGET cli_import PROPERTY IMPORTED_GLOBAL)
+        get_property(source_compile_options SOURCE probe.cpp PROPERTY COMPILE_OPTIONS)
+        get_property(directory_compile_options DIRECTORY PROPERTY COMPILE_OPTIONS)
+        ''')
+        expect_pass(run_checker(imported_alias_readonly_source))
 
         comment_whitespace_source = write_source(root / 'comment-whitespace')
         comment_whitespace_nested = comment_whitespace_source / 'cmake'
@@ -161,6 +180,16 @@ def main():
         string(APPEND MY_CXX_FLAGS_DOC [=[ -std=gnu++17 appears in docs ]=])
         ''')
         expect_pass(run_checker(bracket_argument_source))
+
+        block_string_replace_docs_source = write_source(root / 'block-string-replace-docs-pass')
+        block_string_replace_docs_nested = block_string_replace_docs_source / 'cmake'
+        block_string_replace_docs_nested.mkdir()
+        (block_string_replace_docs_nested / 'docs.cmake').write_text('''
+        block()
+          string(REPLACE "-std=gnu++17" "gnu++17" MY_CXX_FLAGS_DOC "-std=gnu++17 docs only")
+        endblock()
+        ''')
+        expect_pass(run_checker(block_string_replace_docs_source))
 
         legal_feature_source = write_source(root / 'legal-target-features')
         legal_feature_nested = legal_feature_source / 'cmake'
@@ -653,6 +682,16 @@ def main():
         ''')
         expect_fail(run_checker(foreach_in_items_wrapper_source), 'manual C++ standard flag in CMake')
 
+        foreach_in_items_wrapper_warning_source = write_source(root / 'foreach-in-items-wrapper-warning-pass')
+        foreach_in_items_wrapper_warning_nested = foreach_in_items_wrapper_warning_source / 'cmake'
+        foreach_in_items_wrapper_warning_nested.mkdir()
+        (foreach_in_items_wrapper_warning_nested / 'flags.cmake').write_text('''
+        foreach(flag IN ITEMS -Wextra)
+          x265_add_option(${flag})
+        endforeach()
+        ''')
+        expect_pass(run_checker(foreach_in_items_wrapper_warning_source))
+
         list_transform_compile_flags_source = write_source(root / 'list-transform-compile-flags-pass')
         list_transform_compile_flags_nested = list_transform_compile_flags_source / 'cmake'
         list_transform_compile_flags_nested.mkdir()
@@ -661,6 +700,15 @@ def main():
         list(TRANSFORM CMAKE_CXX_FLAGS PREPEND /clang:)
         ''')
         expect_pass(run_checker(list_transform_compile_flags_source))
+
+        list_transform_docs_replace_source = write_source(root / 'list-transform-docs-replace-pass')
+        list_transform_docs_replace_nested = list_transform_docs_replace_source / 'cmake'
+        list_transform_docs_replace_nested.mkdir()
+        (list_transform_docs_replace_nested / 'docs.cmake').write_text('''
+        set(MY_CXX_FLAGS_DOC "-std=gnu++17 docs only")
+        list(TRANSFORM MY_CXX_FLAGS_DOC REPLACE "-std=gnu++17" "gnu++17")
+        ''')
+        expect_pass(run_checker(list_transform_docs_replace_source))
 
         source_append_string_property_manual_source = write_source(root / 'source-append-string-property-manual-standard')
         source_append_string_property_manual_nested = source_append_string_property_manual_source / 'cmake'
