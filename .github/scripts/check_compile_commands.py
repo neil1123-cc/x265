@@ -85,6 +85,15 @@ def should_expand_response_file(path):
     return path.suffix.lower() in ('.rsp', '.response')
 
 
+def response_file_candidates(path):
+    candidates = [path]
+    if not path.is_absolute():
+        normalized = Path(normalize_path_fragment(path))
+        if normalized != path:
+            candidates.append(normalized)
+    return candidates
+
+
 def expand_response_files(tokens, directory=None, seen=None):
     if seen is None:
         seen = set()
@@ -97,8 +106,10 @@ def expand_response_files(tokens, directory=None, seen=None):
             if not should_expand_response_file(response_path):
                 expanded.append(normalized)
                 continue
-            if not response_path.is_absolute() and directory is not None:
-                response_path = Path(directory) / response_path
+            response_candidates = response_file_candidates(response_path)
+            if directory is not None:
+                response_candidates = [path if path.is_absolute() else Path(directory) / path for path in response_candidates]
+            response_path = next((path for path in response_candidates if path.is_file()), response_candidates[0])
             if not response_path.is_file():
                 fail(f'missing response file: {response_path}')
             resolved = response_path.resolve()
