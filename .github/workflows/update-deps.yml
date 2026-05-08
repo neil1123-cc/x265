@@ -2,7 +2,7 @@ name: Update Dependencies
 
 on:
   schedule:
-    - cron: '0 0 1-7,15-21 * 0'
+    - cron: '0 0 * * 0'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -21,6 +21,18 @@ jobs:
   update-deps:
     runs-on: ubuntu-latest
     steps:
+      - name: Run only on first and third Sundays
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          day=$(date -u +%d)
+          if { [ "$day" -ge 1 ] && [ "$day" -le 7 ]; } || { [ "$day" -ge 15 ] && [ "$day" -le 21 ]; }; then
+            echo "Running scheduled dependency update for day ${day}."
+            exit 0
+          fi
+          echo "Skipping scheduled dependency update on day ${day}; not the first or third Sunday."
+          exit 78
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
