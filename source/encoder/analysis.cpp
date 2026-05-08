@@ -36,6 +36,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 
 using namespace X265_NS;
 
@@ -397,8 +398,8 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
     ProfileCUScope(ctu, totalCTUTime, totalCTUs);
 
 #if  ENABLE_SCC_EXT
-    memset(m_ibc.m_BVs, 0, sizeof(m_ibc.m_BVs));
-    memset(m_ibc.m_lastIntraBCMv, 0, sizeof(m_ibc.m_lastIntraBCMv));
+    std::memset(m_ibc.m_BVs, 0, sizeof(m_ibc.m_BVs));
+    std::memset(m_ibc.m_lastIntraBCMv, 0, sizeof(m_ibc.m_lastIntraBCMv));
     m_ibc.m_numBV16s = 0; m_ibc.m_numBVs = 0;
 #endif
     if (m_slice->m_sliceType == I_SLICE || (m_param->bEnableSCC && (m_slice->m_numRefIdx[0] == 1) && m_slice->m_refPOCList[0][0] == m_slice->m_poc))

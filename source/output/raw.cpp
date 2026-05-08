@@ -34,7 +34,6 @@
 #endif
 
 using namespace X265_NS;
-using namespace std;
 RAWOutput::RAWOutput(const char* fname, InputFileInfo&)
 {
     b_fail = false;
