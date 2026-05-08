@@ -1375,6 +1375,7 @@ def validate_linux_gcc_smoke(repo_root):
         option_value(args, option, expected, build, 'Linux GCC smoke')
 
     active_required = {
+        'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log': 'Linux GCC smoke must require non-empty smoke log',
         'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc': 'Linux GCC smoke must require non-empty HEVC output',
         "grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log": 'Linux GCC smoke must require encoded-frame log',
     }
@@ -1457,6 +1458,7 @@ def validate_gnu20_diagnostic_steps(repo_root):
             'Run GCC C++20 compile command diagnostics',
             (
                 ('check_cxx20_commands_gcc build/cxx20-gcc-compile-commands ', 'Windows GCC diagnostics must actively check base compile commands'),
+                ('ninja -C build/cxx20-gcc-compile-commands cli', 'Windows GCC diagnostics must actively build base CLI'),
                 ('check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'Windows GCC diagnostics must actively check 12-bit compile commands'),
                 ('ninja -C build/cxx20-gcc-compile-commands-12bit x265-static', 'Windows GCC diagnostics must actively build 12-bit static target'),
                 ('check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib', 'Windows GCC diagnostics must actively check 8-bit lib compile commands'),
@@ -1511,6 +1513,10 @@ def validate_gnu20_diagnostic_steps(repo_root):
             'cxx20-warning-scan',
             'Run C++20 shared and all-bit-depth warning scans',
             (
+                ('check_cxx20_commands_clang build/cxx20-warning-scan-shared-library', 'C++20 warning scan must actively check shared-library compile commands'),
+                ('ninja -C build/cxx20-warning-scan-shared-library cli x265-shared', 'C++20 warning scan must actively build shared-library CLI and DLL'),
+                ('check_cxx20_commands_clang build/cxx20-warning-scan-all-8b-lib', 'C++20 warning scan must actively check all 8-bit lib compile commands'),
+                ('ninja -C build/cxx20-warning-scan-all-8b-lib x265-static', 'C++20 warning scan must actively build all 8-bit static target'),
                 ('configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'C++20 warning scan must actively configure all 12-bit lib'),
                 ('ninja -C build/cxx20-warning-scan-all-12b-lib x265-static', 'C++20 warning scan must actively build all 12-bit static target'),
                 ('--required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1', 'C++20 warning scan must actively require linked 8-bit version macro'),

@@ -376,7 +376,8 @@ def referenced_wrapper_sink_parameters(command, parameters, wrapper_sink_paramet
     if name in wrapper_sink_parameters:
         references = set()
         for wrapper_parameters, sink_parameters in wrapper_sink_parameters[name]:
-            references.update(variable_references(wrapper_sink_argument_parts(parts, parameters, sink_parameters)))
+            argument_parts = wrapper_sink_argument_parts(parts, wrapper_parameters, sink_parameters)
+            references.update(wrapper_parameter_references(argument_parts, parameters))
         return references
     if name not in WRAPPED_FLAG_COMMAND_ALLOWLIST and any(marker in name for marker in WRAPPED_FLAG_COMMAND_MARKERS):
         return wrapper_parameter_references(parts, parameters)

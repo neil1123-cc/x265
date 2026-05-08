@@ -673,6 +673,36 @@ def main():
         ''')
         expect_pass(run_checker(neutral_macro_argn_warning_flag_source))
 
+        nested_function_parameter_forward_source = write_source(root / 'nested-function-parameter-forward-standard-flag')
+        nested_function_parameter_forward_nested = nested_function_parameter_forward_source / 'cmake'
+        nested_function_parameter_forward_nested.mkdir()
+        (nested_function_parameter_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        function(add_cli_flags forwarded)
+          target_compile_options(cli PRIVATE ${forwarded})
+        endfunction()
+        function(forward_to_cli flag)
+          add_cli_flags(${flag})
+        endfunction()
+        forward_to_cli(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(nested_function_parameter_forward_source), 'manual C++ standard flag in CMake')
+
+        nested_macro_parameter_forward_source = write_source(root / 'nested-macro-parameter-forward-standard-flag')
+        nested_macro_parameter_forward_nested = nested_macro_parameter_forward_source / 'cmake'
+        nested_macro_parameter_forward_nested.mkdir()
+        (nested_macro_parameter_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        macro(add_cli_flags forwarded)
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${forwarded})
+        endmacro()
+        macro(forward_to_cli flag)
+          add_cli_flags(${flag})
+        endmacro()
+        forward_to_cli(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(nested_macro_parameter_forward_source), 'manual C++ standard flag in CMake')
+
         neutral_wrapper_warning_flag_source = write_source(root / 'neutral-wrapper-warning-flag-pass')
         neutral_wrapper_warning_flag_nested = neutral_wrapper_warning_flag_source / 'cmake'
         neutral_wrapper_warning_flag_nested.mkdir()
@@ -684,6 +714,21 @@ def main():
         forward_args(${LOCAL_WARNING_FLAG})
         ''')
         expect_pass(run_checker(neutral_wrapper_warning_flag_source))
+
+        nested_neutral_wrapper_warning_flag_source = write_source(root / 'nested-neutral-wrapper-warning-flag-pass')
+        nested_neutral_wrapper_warning_flag_nested = nested_neutral_wrapper_warning_flag_source / 'cmake'
+        nested_neutral_wrapper_warning_flag_nested.mkdir()
+        (nested_neutral_wrapper_warning_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        function(add_cli_flags forwarded)
+          target_compile_options(cli PRIVATE ${forwarded})
+        endfunction()
+        function(forward_to_cli flag)
+          add_cli_flags(${flag})
+        endfunction()
+        forward_to_cli(${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(nested_neutral_wrapper_warning_flag_source))
 
         foreach_variable_forward_source = write_source(root / 'foreach-variable-forward-standard-flag')
         foreach_variable_forward_nested = foreach_variable_forward_source / 'cmake'

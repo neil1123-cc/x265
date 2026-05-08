@@ -102,6 +102,10 @@ jobs:
       - name: Run C++20 shared and all-bit-depth warning scans
         shell: bash
         run: |
+          check_cxx20_commands_clang build/cxx20-warning-scan-shared-library
+          ninja -C build/cxx20-warning-scan-shared-library cli x265-shared
+          check_cxx20_commands_clang build/cxx20-warning-scan-all-8b-lib
+          ninja -C build/cxx20-warning-scan-all-8b-lib x265-static
           configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib
           ninja -C build/cxx20-warning-scan-all-12b-lib x265-static
           check_cxx20_commands_clang build/cxx20-warning-scan-all \
@@ -979,14 +983,26 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc', '# test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc')
-        expect_fail(run_checker(repo), 'Linux GCC smoke must require non-empty HEVC output')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'ninja -C build/cxx20-gcc-compile-commands cli', 'echo skip-windows-gcc-base-cli\n          # ninja -C build/cxx20-gcc-compile-commands cli')
+        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively build base CLI')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape\n          # configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure all 12-bit lib')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_clang build/cxx20-warning-scan-shared-library', 'echo skip-clang-shared-library-shape\n          # check_cxx20_commands_clang build/cxx20-warning-scan-shared-library')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively check shared-library compile commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_clang build/cxx20-warning-scan-all-8b-lib', 'echo skip-clang-all-8b-lib-shape\n          # check_cxx20_commands_clang build/cxx20-warning-scan-all-8b-lib')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively check all 8-bit lib compile commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log', '# test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log')
+        expect_fail(run_checker(repo), 'Linux GCC smoke must require non-empty smoke log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

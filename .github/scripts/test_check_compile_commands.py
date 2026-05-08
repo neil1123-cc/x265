@@ -1354,6 +1354,30 @@ def main():
         }])
         expect_pass(run_checker(quoted_windows_path_source_substring_response_dir, '--required-file-substring=source\\input\\lavf.cpp', '--required-file-flag=source\\input\\lavf.cpp=-DENABLE_LAVF', '--required-flag-prefix=-FI='))
 
+        dual_field_windows_prefix_response_dir = root / 'dual-field-windows-prefix-response-file'
+        dual_field_windows_prefix_response_dir.mkdir()
+        (dual_field_windows_prefix_response_dir / 'command.rsp').write_text('-std=gnu++20 -DENABLE_LAVF "-FI=C:/Program Files/x265/config.h"')
+        (dual_field_windows_prefix_response_dir / 'arguments.rsp').write_text('-std=gnu++20 -DENABLE_LAVF "-FI=C:/Program Files/x265/config.h"')
+        write_compile_commands_records(dual_field_windows_prefix_response_dir, [{
+            'directory': str(dual_field_windows_prefix_response_dir),
+            'command': 'c++ @command.rsp -c source\\input\\lavf.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/input/lavf.cpp'],
+            'file': str(root / 'source\\input\\lavf.cpp'),
+        }])
+        expect_pass(run_checker(dual_field_windows_prefix_response_dir, '--required-file-substring=source/input/lavf.cpp', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF', '--required-flag-prefix=-FI='))
+
+        dual_field_windows_prefix_missing_arguments_dir = root / 'dual-field-windows-prefix-response-file-missing-arguments-prefix'
+        dual_field_windows_prefix_missing_arguments_dir.mkdir()
+        (dual_field_windows_prefix_missing_arguments_dir / 'command.rsp').write_text('-std=gnu++20 -DENABLE_LAVF "-FI=C:/Program Files/x265/config.h"')
+        (dual_field_windows_prefix_missing_arguments_dir / 'arguments.rsp').write_text('-std=gnu++20 -DENABLE_LAVF')
+        write_compile_commands_records(dual_field_windows_prefix_missing_arguments_dir, [{
+            'directory': str(dual_field_windows_prefix_missing_arguments_dir),
+            'command': 'c++ @command.rsp -c source\\input\\lavf.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/input/lavf.cpp'],
+            'file': str(root / 'source\\input\\lavf.cpp'),
+        }])
+        expect_fail(run_checker(dual_field_windows_prefix_missing_arguments_dir, '--required-file-substring=source/input/lavf.cpp', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF', '--required-flag-prefix=-FI='), 'missing required flag prefix -FI=')
+
         quoted_response_missing_flag_dir = root / 'quoted-response-file-arguments-missing-flag'
         quoted_response_missing_flag_dir.mkdir()
         (quoted_response_missing_flag_dir / 'args file.rsp').write_text('"-std=gnu++20" "-Wdeprecated" "-DX265_DEPTH=8"')
