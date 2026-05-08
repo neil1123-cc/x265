@@ -28,7 +28,6 @@
 #include <cstring>
 
 using namespace X265_NS;
-using namespace std;
 
 #if _WIN32
 #define strcasecmp _stricmp

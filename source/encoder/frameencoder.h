@@ -42,6 +42,7 @@
 #include "nal.h"
 #include "temporalfilter.h"
 #include "threadedme.h"
+#include <cstring>
 #include <atomic>
 #include <queue>
 #include <vector>

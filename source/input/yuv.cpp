@@ -40,7 +40,6 @@
 #endif
 
 using namespace X265_NS;
-using namespace std;
 
 YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
 {
