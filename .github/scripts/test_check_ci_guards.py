@@ -913,7 +913,13 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'echo skip-gcc-12bit-lib-shape')
+        replace_generated_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_clang build/cxx20-warning-scan-all             --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1', 'check_cxx20_commands_clang build/cxx20-warning-scan-12bit             --required-file-flag=source/common/version.cpp=-DLINKED_8BIT=1')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively check all-bit-depth warning-scan compile commands target')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands')
         expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check 12-bit compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -943,8 +949,14 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all', 'echo skip-gcc-all-bit-depth-shape')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
         expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check all-bit-depth compile commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands-12bit', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands')
+        expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively check 12-bit compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

@@ -1644,6 +1644,42 @@ def main():
         }])
         expect_fail(run_checker(response_dual_field_required_prefix_missing_dir, '--required-flag-prefix=-fprofile-instr-use='), 'missing required flag prefix -fprofile-instr-use=')
 
+        response_dual_field_missing_required_flag_command_dir = root / 'response-dual-field-missing-required-flag-command'
+        response_dual_field_missing_required_flag_command_dir.mkdir()
+        (response_dual_field_missing_required_flag_command_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated')
+        (response_dual_field_missing_required_flag_command_dir / 'arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_missing_required_flag_command_dir, [{
+            'directory': str(response_dual_field_missing_required_flag_command_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_missing_required_flag_command_dir, '--required-flag=-Werror=deprecated'), 'missing required flag -Werror=deprecated')
+
+        response_dual_field_forbidden_exact_flag_command_dir = root / 'response-dual-field-forbidden-exact-flag-command'
+        response_dual_field_forbidden_exact_flag_command_dir.mkdir()
+        (response_dual_field_forbidden_exact_flag_command_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        (response_dual_field_forbidden_exact_flag_command_dir / 'arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        write_compile_commands_records(response_dual_field_forbidden_exact_flag_command_dir, [{
+            'directory': str(response_dual_field_forbidden_exact_flag_command_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_forbidden_exact_flag_command_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
+        response_dual_field_forbidden_exact_flag_arguments_dir = root / 'response-dual-field-forbidden-exact-flag-arguments'
+        response_dual_field_forbidden_exact_flag_arguments_dir.mkdir()
+        (response_dual_field_forbidden_exact_flag_arguments_dir / 'command.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated')
+        (response_dual_field_forbidden_exact_flag_arguments_dir / 'arguments.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=12')
+        write_compile_commands_records(response_dual_field_forbidden_exact_flag_arguments_dir, [{
+            'directory': str(response_dual_field_forbidden_exact_flag_arguments_dir),
+            'command': 'c++ @command.rsp -c source/common/common.cpp',
+            'arguments': ['c++', '@arguments.rsp', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_fail(run_checker(response_dual_field_forbidden_exact_flag_arguments_dir, '--forbidden-flag=-DX265_DEPTH=12'), 'forbidden flag -DX265_DEPTH=12')
+
         response_dual_field_equivalent_std_dir = root / 'response-dual-field-equivalent-std'
         response_dual_field_equivalent_std_dir.mkdir()
         (response_dual_field_equivalent_std_dir / 'std.rsp').write_text('--std=gnu++20 -Wdeprecated -Werror=deprecated')

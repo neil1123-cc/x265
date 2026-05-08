@@ -672,6 +672,30 @@ def main():
         ''')
         expect_fail(run_checker(foreach_in_lists_forward_source), 'manual C++ standard flag in CMake')
 
+        block_target_property_append_source = write_source(root / 'block-target-property-append-standard-flag')
+        block_target_property_append_nested = block_target_property_append_source / 'cmake'
+        block_target_property_append_nested.mkdir()
+        (block_target_property_append_nested / 'properties.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        block()
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${LOCAL_STD_FLAG})
+        endblock()
+        ''')
+        expect_fail(run_checker(block_target_property_append_source), 'manual C++ standard flag in CMake')
+
+        foreach_in_lists_doc_label_source = write_source(root / 'foreach-in-lists-doc-label-pass')
+        foreach_in_lists_doc_label_nested = foreach_in_lists_doc_label_source / 'cmake'
+        foreach_in_lists_doc_label_nested.mkdir()
+        (foreach_in_lists_doc_label_nested / 'flags.cmake').write_text('''
+        set(STD_FLAG_DOCS "-std=gnu++17 appears in docs")
+        block()
+          foreach(doc IN LISTS STD_FLAG_DOCS)
+            set_property(TARGET cli PROPERTY LABELS ${doc})
+          endforeach()
+        endblock()
+        ''')
+        expect_pass(run_checker(foreach_in_lists_doc_label_source))
+
         foreach_in_items_wrapper_source = write_source(root / 'foreach-in-items-wrapper-standard-flag')
         foreach_in_items_wrapper_nested = foreach_in_items_wrapper_source / 'cmake'
         foreach_in_items_wrapper_nested.mkdir()
@@ -853,6 +877,12 @@ def main():
         target_property_append_string_generator_standard_nested.mkdir()
         (target_property_append_string_generator_standard_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS " $<$<CONFIG:Debug>:-std=gnu++17>")\n')
         expect_fail(run_checker(target_property_append_string_generator_standard_source), 'manual C++ standard flag in CMake')
+
+        nested_generator_target_property_source = write_source(root / 'nested-generator-target-property-standard-flag')
+        nested_generator_target_property_nested = nested_generator_target_property_source / 'cmake'
+        nested_generator_target_property_nested.mkdir()
+        (nested_generator_target_property_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS " $<$<AND:$<CONFIG:Debug>,$<BOOL:1>>:-std=gnu++17>")\n')
+        expect_fail(run_checker(nested_generator_target_property_source), 'manual C++ standard flag in CMake')
 
         target_property_append_string_bracket_standard_source = write_source(root / 'target-property-append-string-bracket-standard-flag')
         target_property_append_string_bracket_standard_nested = target_property_append_string_bracket_standard_source / 'cmake'

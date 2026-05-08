@@ -1535,6 +1535,29 @@ def validate_gnu20_diagnostic_steps(repo_root):
                 (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan-shared-deps-asm'), 'C++20 warning scan must actively configure shared-deps-asm warning-scan target'),
             ),
         ),
+        (
+            'cxx20-warning-scan',
+            'Run C++20 shared and all-bit-depth warning scans',
+            (
+                (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan-all-12b-lib'), 'C++20 warning scan must actively configure all 12-bit lib'),
+                (('check_cxx20_commands_clang', 'build/cxx20-warning-scan-all'), 'C++20 warning scan must actively check all-bit-depth warning-scan compile commands target'),
+            ),
+        ),
+        (
+            'cxx20-gcc-compile-commands',
+            'Run GCC C++20 compile command diagnostics',
+            (
+                (('check_cxx20_commands_gcc', 'build/cxx20-gcc-compile-commands-12bit'), 'Windows GCC diagnostics must actively check 12-bit compile commands'),
+                (('check_cxx20_commands_gcc', 'build/cxx20-gcc-compile-commands-all'), 'Windows GCC diagnostics must actively check all-bit-depth compile commands'),
+            ),
+        ),
+        (
+            'cxx20-linux-gcc-compile-commands',
+            'Run Linux GCC C++20 compile command diagnostics',
+            (
+                (('check_cxx20_commands_gcc', 'build/cxx20-linux-gcc-compile-commands-12bit'), 'Linux GCC diagnostics must actively check 12-bit compile commands'),
+            ),
+        ),
     )
     for job_name, step_name, required_items in requirements:
         step = named_step(workflow_steps(parsed, build, job_name), step_name, build, job_name=job_name)
