@@ -474,6 +474,25 @@ def main():
         (list_compile_options_nested / 'flags.cmake').write_text('list(APPEND X265_COMPILE_OPTIONS -std=gnu++17)\n')
         expect_fail(run_checker(list_compile_options_source), 'manual C++ standard flag in CMake')
 
+        list_append_indirect_compile_options_source = write_source(root / 'list-append-indirect-compile-options')
+        list_append_indirect_compile_options_nested = list_append_indirect_compile_options_source / 'cmake'
+        list_append_indirect_compile_options_nested.mkdir()
+        (list_append_indirect_compile_options_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        list(APPEND PROJECT_CXX_FLAGS ${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(list_append_indirect_compile_options_source), 'manual C++ standard flag in CMake')
+
+        list_filter_compile_flags_source = write_source(root / 'list-filter-compile-flags-pass')
+        list_filter_compile_flags_nested = list_filter_compile_flags_source / 'cmake'
+        list_filter_compile_flags_nested.mkdir()
+        (list_filter_compile_flags_nested / 'flags.cmake').write_text('''
+        set(PROJECT_CXX_FLAGS -Wextra -Wshadow)
+        list(FILTER PROJECT_CXX_FLAGS INCLUDE REGEX "^-W")
+        list(FILTER PROJECT_CXX_FLAGS EXCLUDE REGEX "-std=gnu\\+\\+17")
+        ''')
+        expect_pass(run_checker(list_filter_compile_flags_source))
+
         set_compile_options_source = write_source(root / 'set-compile-options')
         set_compile_options_nested = set_compile_options_source / 'cmake'
         set_compile_options_nested.mkdir()
@@ -511,6 +530,24 @@ def main():
         string_concat_compile_flags_nested.mkdir()
         (string_concat_compile_flags_nested / 'flags.cmake').write_text('string(CONCAT CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} " -std=gnu++17")\n')
         expect_fail(run_checker(string_concat_compile_flags_source), 'manual C++ standard flag in CMake')
+
+        string_append_indirect_compile_options_source = write_source(root / 'string-append-indirect-compile-options')
+        string_append_indirect_compile_options_nested = string_append_indirect_compile_options_source / 'cmake'
+        string_append_indirect_compile_options_nested.mkdir()
+        (string_append_indirect_compile_options_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        string(APPEND PROJECT_CXX_FLAGS " ${LOCAL_STD_FLAG}")
+        ''')
+        expect_fail(run_checker(string_append_indirect_compile_options_source), 'manual C++ standard flag in CMake')
+
+        string_replace_compile_flags_source = write_source(root / 'string-replace-compile-flags-pass')
+        string_replace_compile_flags_nested = string_replace_compile_flags_source / 'cmake'
+        string_replace_compile_flags_nested.mkdir()
+        (string_replace_compile_flags_nested / 'flags.cmake').write_text('''
+        set(PROJECT_CXX_FLAGS -Wextra)
+        string(REPLACE "-std=gnu++17" "-Wextra" PROJECT_CXX_FLAGS "${PROJECT_CXX_FLAGS}")
+        ''')
+        expect_pass(run_checker(string_replace_compile_flags_source))
 
         list_insert_indirect_compile_options_source = write_source(root / 'list-insert-indirect-compile-options')
         list_insert_indirect_compile_options_nested = list_insert_indirect_compile_options_source / 'cmake'
