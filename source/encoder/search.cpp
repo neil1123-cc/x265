@@ -36,6 +36,7 @@
 #include "encoder.h"
 
 #include <cstdlib>
+#include <cstring>
 
 using namespace X265_NS;
 
@@ -51,7 +52,7 @@ ALIGN_VAR_32(const int16_t, Search::zeroShort[MAX_CU_SIZE]) = { 0 };
 
 Search::Search()
 {
-    memset(m_rqt, 0, sizeof(m_rqt));
+    std::memset(m_rqt, 0, sizeof(m_rqt));
 
     for (int i = 0; i < 3; i++)
     {
@@ -334,7 +335,7 @@ void Search::puMotionEstimation(const Slice* slice, const CUGeom& cuGeom, CUData
 
                 m_me.setMVP(mvp);
 
-                if (!strlen(m_param->analysisSave) && !strlen(m_param->analysisLoad))
+                if (!std::strlen(m_param->analysisSave) && !std::strlen(m_param->analysisLoad))
                 {
                     uint32_t blockX = cu.m_cuPelX + g_zscanToPelX[pu.puAbsPartIdx] + (pu.width  >> 1);
                     uint32_t blockY = cu.m_cuPelY + g_zscanToPelY[pu.puAbsPartIdx] + (pu.height >> 1);
@@ -2471,7 +2472,7 @@ void Search::singleMotionEstimation(Search& master, Mode& interMode, const Predi
     bool bLowresMVP = false;
     MV mvmin, mvmax, outmv, mvp = amvp[mvpIdx], mvp_lowres;
 
-    if (!strlen(m_param->analysisSave) && !strlen(m_param->analysisLoad)) /* Prevents load/save outputs from diverging if lowresMV is not available */
+    if (!std::strlen(m_param->analysisSave) && !std::strlen(m_param->analysisLoad)) /* Prevents load/save outputs from diverging if lowresMV is not available */
     {
         MV lmv = getLowresMV(interMode.cu, pu, list, ref);
         int layer = m_param->numViews > 1 ? m_frame->m_viewId : (m_param->numScalableLayers > 1) ? m_frame->m_sLayerId : 0;
@@ -2576,7 +2577,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
     MV       mvzero(0, 0);
     Yuv&     tmpPredYuv = m_rqt[cuGeom.depth].tmpPredYuv;
     MergeData merge;
-    memset(&merge, 0, sizeof(merge));
+    std::memset(&merge, 0, sizeof(merge));
     bool useAsMVP = false;
     for (int puIdx = 0; puIdx < numPart; puIdx++)
     {
@@ -2863,7 +2864,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                     MV mvmin, mvmax, outmv, mvp = amvp[mvpIdx], mvp_lowres;
                     bool bLowresMVP = false;
 
-                    if (!strlen(m_param->analysisSave) && !strlen(m_param->analysisLoad)) /* Prevents load/save outputs from diverging when lowresMV is not available */
+                    if (!std::strlen(m_param->analysisSave) && !std::strlen(m_param->analysisLoad)) /* Prevents load/save outputs from diverging when lowresMV is not available */
                     {
                         MV lmv = getLowresMV(cu, pu, list, ref);
                         int layer = m_param->numViews > 1 ? m_frame->m_viewId : (m_param->numScalableLayers > 1) ? m_frame->m_sLayerId : 0;
@@ -4591,7 +4592,7 @@ bool Search::predMixedIntraBCInterSearch(Mode& intraBCMixedMode, const CUGeom& c
                 pixel* ref;
                 int refStride;
                 MergeData merge;
-                memset(&merge, 0, sizeof(merge));
+                std::memset(&merge, 0, sizeof(merge));
                 for (int refList = 0; refList < numPredDir; refList++)
                 {
                     uint32_t numRef = refList ? ((m_slice->m_numRefIdx[1] > 1) ? 2 : 1) : ((m_slice->m_numRefIdx[0] - 1 > 1) ? 2 : 1);
@@ -5102,7 +5103,7 @@ void Search::encodeResAndCalcRdInterCU(Mode& interMode, const CUGeom& cuGeom)
     if ((m_limitTU & X265_TU_LIMIT_DFS) && !(m_limitTU & X265_TU_LIMIT_NEIGH))
         m_maxTUDepth = -1;
     else if (m_limitTU & X265_TU_LIMIT_BFS)
-        memset(&m_cacheTU, 0, sizeof(TUInfoCache));
+        std::memset(&m_cacheTU, 0, sizeof(TUInfoCache));
 
     Cost costs;
     if (m_limitTU & X265_TU_LIMIT_NEIGH)
@@ -5610,7 +5611,7 @@ void Search::estimateResidualQT(Mode& mode, const CUGeom& cuGeom, uint32_t absPa
                     primitives.cu[partSize].blockfill_s[strideResiY % 64 == 0](curResiY, strideResiY, 0);
 #if CHECKED_BUILD || _DEBUG
                     uint32_t numCoeffY = 1 << (log2TrSize << 1);
-                    memset(coeffCurY, 0, sizeof(coeff_t)* numCoeffY);
+                    std::memset(coeffCurY, 0, sizeof(coeff_t)* numCoeffY);
 #endif
                     if (checkTransformSkipY)
                         minCost[TEXT_LUMA][0] = nullCostY;
@@ -5726,7 +5727,7 @@ void Search::estimateResidualQT(Mode& mode, const CUGeom& cuGeom, uint32_t absPa
                                 primitives.cu[partSizeC].blockfill_s[strideResiC % 64 == 0](curResiC, strideResiC, 0);
 #if CHECKED_BUILD || _DEBUG
                                 uint32_t numCoeffC = 1 << (log2TrSizeC << 1);
-                                memset(coeffCurC + subTUOffset, 0, sizeof(coeff_t) * numCoeffC);
+                                std::memset(coeffCurC + subTUOffset, 0, sizeof(coeff_t) * numCoeffC);
 #endif
                                 if (checkTransformSkipC)
                                     minCost[chromaId][tuIterator.section] = nullCostC;
