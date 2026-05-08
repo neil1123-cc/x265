@@ -423,6 +423,15 @@ def has_manual_standard_wrapper_call(command, manual_standard_variables, wrapper
     return False
 
 
+def foreach_values_contain_manual_standard(values, manual_standard_variables):
+    if contains_manual_standard_flag(values) or contains_manual_standard_variable(values, manual_standard_variables):
+        return True
+    upper_values = [value.upper() for value in values]
+    if len(values) >= 3 and upper_values[0] == 'IN' and upper_values[1] == 'LISTS':
+        return any(value in manual_standard_variables for value in values[2:])
+    return False
+
+
 def has_manual_standard_flag(command, manual_standard_variables=None):
     manual_standard_variables = manual_standard_variables or set()
     name = cmake_command_name(command)
@@ -568,7 +577,7 @@ def check_contract(source_dir):
                     loop_variable = parts[0]
                     if loop_variable not in manual_standard_variables:
                         values = parts[1:]
-                        if contains_manual_standard_flag(values) or contains_manual_standard_variable(values, manual_standard_variables):
+                        if foreach_values_contain_manual_standard(values, manual_standard_variables):
                             manual_standard_variables.add(loop_variable)
                             changed = True
 

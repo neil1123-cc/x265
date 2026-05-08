@@ -407,6 +407,26 @@ def main():
         ''')
         expect_fail(run_checker(chained_target_properties_flag_source), 'manual C++ standard flag in CMake')
 
+        cached_indirect_standard_flag_source = write_source(root / 'cached-indirect-standard-flag')
+        cached_indirect_standard_flag_nested = cached_indirect_standard_flag_source / 'cmake'
+        cached_indirect_standard_flag_nested.mkdir()
+        (cached_indirect_standard_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set(CACHED_STD_FLAG ${LOCAL_STD_FLAG} CACHE INTERNAL "" FORCE)
+        target_compile_options(cli PRIVATE ${CACHED_STD_FLAG})
+        ''')
+        expect_fail(run_checker(cached_indirect_standard_flag_source), 'manual C++ standard flag in CMake')
+
+        cached_wrapper_standard_flag_source = write_source(root / 'cached-wrapper-standard-flag')
+        cached_wrapper_standard_flag_nested = cached_wrapper_standard_flag_source / 'cmake'
+        cached_wrapper_standard_flag_nested.mkdir()
+        (cached_wrapper_standard_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set(CACHED_STD_FLAG ${LOCAL_STD_FLAG} CACHE STRING "" FORCE)
+        x265_add_option(${CACHED_STD_FLAG})
+        ''')
+        expect_fail(run_checker(cached_wrapper_standard_flag_source), 'manual C++ standard flag in CMake')
+
         wrapped_compile_option_source = write_source(root / 'wrapped-compile-option')
         wrapped_compile_option_nested = wrapped_compile_option_source / 'cmake'
         wrapped_compile_option_nested.mkdir()
@@ -610,6 +630,58 @@ def main():
         endforeach()
         ''')
         expect_fail(run_checker(foreach_variable_forward_source), 'manual C++ standard flag in CMake')
+
+        foreach_in_lists_forward_source = write_source(root / 'foreach-in-lists-forward-standard-flag')
+        foreach_in_lists_forward_nested = foreach_in_lists_forward_source / 'cmake'
+        foreach_in_lists_forward_nested.mkdir()
+        (foreach_in_lists_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set(STD_FLAG_LIST ${LOCAL_STD_FLAG})
+        foreach(flag IN LISTS STD_FLAG_LIST)
+          target_compile_options(cli PRIVATE ${flag})
+        endforeach()
+        ''')
+        expect_fail(run_checker(foreach_in_lists_forward_source), 'manual C++ standard flag in CMake')
+
+        foreach_in_items_wrapper_source = write_source(root / 'foreach-in-items-wrapper-standard-flag')
+        foreach_in_items_wrapper_nested = foreach_in_items_wrapper_source / 'cmake'
+        foreach_in_items_wrapper_nested.mkdir()
+        (foreach_in_items_wrapper_nested / 'flags.cmake').write_text('''
+        foreach(flag IN ITEMS -std=gnu++17)
+          x265_add_option(${flag})
+        endforeach()
+        ''')
+        expect_fail(run_checker(foreach_in_items_wrapper_source), 'manual C++ standard flag in CMake')
+
+        list_transform_compile_flags_source = write_source(root / 'list-transform-compile-flags-pass')
+        list_transform_compile_flags_nested = list_transform_compile_flags_source / 'cmake'
+        list_transform_compile_flags_nested.mkdir()
+        (list_transform_compile_flags_nested / 'flags.cmake').write_text('''
+        set(CMAKE_CXX_FLAGS -Wextra)
+        list(TRANSFORM CMAKE_CXX_FLAGS PREPEND /clang:)
+        ''')
+        expect_pass(run_checker(list_transform_compile_flags_source))
+
+        source_append_string_property_manual_source = write_source(root / 'source-append-string-property-manual-standard')
+        source_append_string_property_manual_nested = source_append_string_property_manual_source / 'cmake'
+        source_append_string_property_manual_nested.mkdir()
+        (source_append_string_property_manual_nested / 'properties.cmake').write_text('set_property(SOURCE probe.cpp APPEND_STRING PROPERTY COMPILE_FLAGS ";-std=gnu++17")\n')
+        expect_fail(run_checker(source_append_string_property_manual_source), 'manual C++ standard flag in CMake')
+
+        target_compile_flags_semicolon_source = write_source(root / 'target-compile-flags-semicolon-standard')
+        target_compile_flags_semicolon_nested = target_compile_flags_semicolon_source / 'cmake'
+        target_compile_flags_semicolon_nested.mkdir()
+        (target_compile_flags_semicolon_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND PROPERTY COMPILE_FLAGS "-Wall;-std=gnu++17")\n')
+        expect_fail(run_checker(target_compile_flags_semicolon_source), 'manual C++ standard flag in CMake')
+
+        lowercase_wrapper_generator_variable_source = write_source(root / 'lowercase-wrapper-generator-variable-standard-flag')
+        lowercase_wrapper_generator_variable_nested = lowercase_wrapper_generator_variable_source / 'cmake'
+        lowercase_wrapper_generator_variable_nested.mkdir()
+        (lowercase_wrapper_generator_variable_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG "$<$<CONFIG:Debug>:-std=gnu++17>")
+        x265_add_option(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(lowercase_wrapper_generator_variable_source), 'manual C++ standard flag in CMake')
 
         included_manual_standard_source = write_source(root / 'included-manual-standard', BASE_CMAKELISTS + 'include(cmake/flags.cmake)\n')
         included_manual_standard_nested = included_manual_standard_source / 'cmake'
