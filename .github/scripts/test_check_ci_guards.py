@@ -59,6 +59,19 @@ jobs:
           extra-msys2-packages: >-
             mingw-w64-clang-x86_64-python
             mingw-w64-clang-x86_64-zimg
+      - name: Check GNU++20 downgrade guardrail
+        shell: bash
+        run: |
+          set -euo pipefail
+          source cxx20-scan-helpers.sh
+          configure_cxx20_scan x265/source build/cxx20-downgrade-guard \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DENABLE_CLI=OFF \
+            -DENABLE_ASSEMBLY=OFF
+          check_cxx20_commands_clang build/cxx20-downgrade-guard \
+            --min-cpp-commands=50 \
+            --forbidden-flag-substring=-std=gnu++17 \
+            --forbidden-flag-substring=-std=c++17
       - name: Run C++20 CLI and dependency warning scans
         shell: bash
         run: |
@@ -71,6 +84,21 @@ jobs:
           test -s build/cxx20-warning-scan/smoke_zimg.hevc
           grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log
           grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
+            -DHIGH_BIT_DEPTH=ON \
+            -DMAIN12=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-12bit \
+            --required-depth-define=-DX265_DEPTH=12
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-unity \
+            -DENABLE_UNITY_BUILD=ON
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-deps \
+            -DENABLE_LAVF=ON \
+            -DENABLE_LSMASH=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-shared-deps \
+            --required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF \
+            --required-file-flag=source/output/mp4.cpp=-DENABLE_LSMASH
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-deps-asm \
+            -DENABLE_ASSEMBLY=ON
       - name: Run C++20 shared and all-bit-depth warning scans
         shell: bash
         run: |
@@ -88,6 +116,25 @@ jobs:
           test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc
           build/cxx20-warning-scan-all/x265.exe --input build/cxx20-warning-scan-all/smoke_all.yuv --input-res 64x64 --input-depth 10 --output-depth 10 --fps 1 --frames 1 --output build/cxx20-warning-scan-all/smoke_all.hevc
           test -s build/cxx20-warning-scan-all/smoke_all.hevc
+      - name: Run C++20 CPU and ASM warning scans
+        shell: bash
+        run: |
+          for target_cpu in haswell arrowlake znver5; do
+            configure_cxx20_scan x265/source "build/cxx20-warning-scan-${target_cpu}" \
+              --target-cpu="${target_cpu}" \
+              -DENABLE_CLI=OFF \
+              -DENABLE_ASSEMBLY=OFF
+            check_cxx20_commands_clang "build/cxx20-warning-scan-${target_cpu}" \
+              --required-file-substring=source/common/cpu.cpp \
+              --forbidden-file-substring=source/output/
+          done
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-asm \
+            -DENABLE_ASSEMBLY=ON \
+            -DENABLE_TESTS=ON \
+            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
+          check_cxx20_commands_clang build/cxx20-warning-scan-asm \
+            --required-file-substring=source/test/
+          ninja -C build/cxx20-warning-scan-asm TestBench
   cxx20-gcc-compile-commands:
     runs-on: windows-latest
     steps:
@@ -95,6 +142,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          check_cxx20_commands_gcc build/cxx20-gcc-compile-commands \
+            --required-file-substring=source/output/reconplay.cpp
+          ninja -C build/cxx20-gcc-compile-commands cli
           check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit
           ninja -C build/cxx20-gcc-compile-commands-12bit x265-static
           check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-8bit-lib \
@@ -147,7 +197,13 @@ jobs:
             --required-file-flag=source/encoder/api.cpp=-DLINKED_8BIT=1 \
             --required-file-flag=source/encoder/api.cpp=-DLINKED_12BIT=1 \
             --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
-          ninja -C build/cxx20-gcc-compile-commands-all cli
+          configure_cxx20_scan x265/source build/cxx20-linux-gcc-compile-commands-12bit \
+            -DHIGH_BIT_DEPTH=ON \
+            -DMAIN12=ON
+          check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands-12bit \
+            --required-depth-define=-DX265_DEPTH=12 \
+            --forbidden-file-flag=source/encoder/api.cpp=-DEXPORT_C_API=1
+          ninja -C build/cxx20-linux-gcc-compile-commands-12bit x265-static
   build:
     runs-on: windows-latest
     steps:
@@ -759,8 +815,32 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'testsrc2=size=160x90:rate=24', 'testsrc2=size=80x45:rate=24')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_threaded_me.y4m')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-flag-substring=-std=gnu++17', '# --forbidden-flag-substring=-std=gnu++17')
+        expect_fail(run_checker(repo), 'GNU++20 downgrade guard must reject GNU++17 flags')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'for target_cpu in haswell arrowlake znver5; do', 'for target_cpu in haswell znver5; do')
+        expect_fail(run_checker(repo), 'CPU warning scan must actively cover haswell/arrowlake/znver5 loop')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '-DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy', '# -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy')
+        expect_fail(run_checker(repo), 'ASM warning scan must preserve NASM legacy macro warning flag')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF', '--required-file-substring=source/input/lavf.cpp')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively require LAVF macro')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands-12bit', 'echo skip-linux-gcc-12bit-shape')
+        expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively check 12-bit compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -814,7 +894,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands', 'echo skip-linux-gcc-compile-commands')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands')
+        expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively check compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -831,8 +911,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-substring=source/output/reconplay.cpp', '--required-file-substring=source/output/')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-substring=source/output/reconplay.cpp')
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands', 'echo skip-windows-gcc-base')
+        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check base compile commands')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
