@@ -274,8 +274,153 @@ def variable_references(parts):
     return variables
 
 
+def wrapper_parameter_references(parts, parameters):
+    references = set()
+    for variable in variable_references(parts):
+        if variable in parameters or variable in {'ARGN', 'ARGV'} or re.fullmatch(r'ARGV[0-9]+', variable):
+            references.add(variable)
+    return references
+
+
+def wrapper_sink_argument_parts(parts, parameters, sink_parameters):
+    selected_parts = []
+    parameter_positions = {parameter: index for index, parameter in enumerate(parameters)}
+    for sink_parameter in sink_parameters:
+        if sink_parameter == 'ARGV':
+            selected_parts.extend(parts)
+            continue
+        if sink_parameter == 'ARGN':
+            selected_parts.extend(parts[len(parameters):])
+            continue
+        match = re.fullmatch(r'ARGV([0-9]+)', sink_parameter)
+        if match:
+            index = int(match.group(1))
+            if index < len(parts):
+                selected_parts.append(parts[index])
+            continue
+        if sink_parameter in parameter_positions:
+            index = parameter_positions[sink_parameter]
+            if index < len(parts):
+                selected_parts.append(parts[index])
+    return selected_parts
+
+
+
+
+def collect_wrapper_definitions(source_commands):
+    definitions = {}
+    for _path, commands in source_commands:
+        current_name = None
+        current_end = None
+        current_parameters = ()
+        current_body = []
+        for _index, command in commands:
+            name = cmake_command_name(command)
+            parts = tokenize_cmake_body(command)
+            if current_name is not None:
+                if name == current_end:
+                    definitions.setdefault(current_name, []).append((current_parameters, tuple(current_body)))
+                    current_name = None
+                    current_end = None
+                    current_parameters = ()
+                    current_body = []
+                    continue
+                current_body.append(command)
+                continue
+            if name in ('function', 'macro') and parts:
+                current_name = parts[0].lower()
+                current_end = f'end{name}'
+                current_parameters = tuple(parts[1:])
+                current_body = []
+    return definitions
+
+
+def referenced_wrapper_sink_parameters(command, parameters, wrapper_sink_parameters):
+    name = cmake_command_name(command)
+    parts = tokenize_cmake_body(command)
+    if parts is None:
+        return set()
+    if name == 'set' and parts:
+        variable = parts[0]
+        if is_compile_flag_variable(variable):
+            return wrapper_parameter_references(parts[1:], parameters)
+    if name == 'list' and len(parts) >= 3 and parts[0].lower() in LIST_COMPILE_FLAG_SUBCOMMANDS:
+        variable = parts[1]
+        if is_compile_flag_variable(variable):
+            return wrapper_parameter_references(parts[2:], parameters)
+    if name == 'string' and len(parts) >= 3 and parts[0].lower() in STRING_COMPILE_FLAG_SUBCOMMANDS:
+        variable = parts[1]
+        if is_compile_flag_variable(variable):
+            return wrapper_parameter_references(parts[2:], parameters)
+    if name in COMPILE_FLAG_COMMANDS:
+        return wrapper_parameter_references(parts, parameters)
+    if name in COMPILE_FLAG_PROPERTY_COMMANDS:
+        upper_parts = [part.upper() for part in parts]
+        property_indices = [index for index, part in enumerate(upper_parts) if part in ('PROPERTIES', 'PROPERTY')]
+        references = set()
+        for property_index in property_indices:
+            index = property_index + 1
+            while index < len(parts):
+                if upper_parts[index] in COMPILE_FLAG_PROPERTIES:
+                    value_start = index + 1
+                    if value_start >= len(parts):
+                        return references
+                    if upper_parts[property_index] == 'PROPERTY':
+                        references.update(wrapper_parameter_references(parts[value_start:], parameters))
+                    else:
+                        references.update(wrapper_parameter_references([parts[value_start]], parameters))
+                    index += 2
+                else:
+                    index += 2
+        return references
+    if name in wrapper_sink_parameters:
+        references = set()
+        for wrapper_parameters, sink_parameters in wrapper_sink_parameters[name]:
+            references.update(variable_references(wrapper_sink_argument_parts(parts, parameters, sink_parameters)))
+        return references
+    if name not in WRAPPED_FLAG_COMMAND_ALLOWLIST and any(marker in name for marker in WRAPPED_FLAG_COMMAND_MARKERS):
+        return wrapper_parameter_references(parts, parameters)
+    return set()
+
+
+def collect_wrapper_sink_parameters(source_commands):
+    wrapper_definitions = collect_wrapper_definitions(source_commands)
+    wrapper_sink_parameters = {
+        name: [(parameters, set()) for parameters, _body in definitions]
+        for name, definitions in wrapper_definitions.items()
+    }
+    changed = True
+    while changed:
+        changed = False
+        for name, definitions in wrapper_definitions.items():
+            for definition_index, (parameters, body) in enumerate(definitions):
+                sink_parameters = wrapper_sink_parameters[name][definition_index][1]
+                references = set()
+                for command in body:
+                    references.update(referenced_wrapper_sink_parameters(command, parameters, wrapper_sink_parameters))
+                if not references.issubset(sink_parameters):
+                    sink_parameters.update(references)
+                    changed = True
+    return {
+        name: [(parameters, frozenset(sink_parameters)) for parameters, sink_parameters in definitions]
+        for name, definitions in wrapper_sink_parameters.items()
+    }
+
+
 def contains_manual_standard_variable(parts, manual_standard_variables):
     return bool(variable_references(parts) & manual_standard_variables)
+
+
+def has_manual_standard_wrapper_call(command, manual_standard_variables, wrapper_sink_parameters):
+    name = cmake_command_name(command)
+    parts = tokenize_cmake_body(command)
+    if parts is None or name not in wrapper_sink_parameters:
+        return False
+    for parameters, sink_parameters in wrapper_sink_parameters[name]:
+        argument_parts = wrapper_sink_argument_parts(parts, parameters, sink_parameters)
+        if contains_manual_standard_flag(argument_parts) or contains_manual_standard_variable(argument_parts, manual_standard_variables):
+            return True
+    return False
 
 
 def has_manual_standard_flag(command, manual_standard_variables=None):
@@ -378,11 +523,13 @@ def check_contract(source_dir):
             fail(f'top-level GNU++20 contract drift: set({name} {value})', top, index)
 
     manual_standard_variables = set()
+    source_commands = [(path, tuple(cmake_commands(path))) for path in iter_source_cmake_files(root)]
+    wrapper_sink_parameters = collect_wrapper_sink_parameters(source_commands)
     changed = True
     while changed:
         changed = False
-        for path in iter_source_cmake_files(root):
-            for index, command in cmake_commands(path):
+        for path, commands in source_commands:
+            for index, command in commands:
                 name = cmake_command_name(command)
                 parts = tokenize_cmake_body(command)
                 if parts is None:
@@ -408,6 +555,15 @@ def check_contract(source_dir):
                     if not new_parameters.issubset(manual_standard_variables):
                         manual_standard_variables.update(new_parameters)
                         changed = True
+                if name in wrapper_sink_parameters and parts:
+                    wrapper_name = name
+                    call_arguments = parts
+                    for parameters, sink_parameters in wrapper_sink_parameters[wrapper_name]:
+                        argument_parts = wrapper_sink_argument_parts(call_arguments, parameters, sink_parameters)
+                        newly_tainted = variable_references(argument_parts) & manual_standard_variables
+                        if not newly_tainted.issubset(manual_standard_variables):
+                            manual_standard_variables.update(newly_tainted)
+                            changed = True
                 if name == 'foreach' and len(parts) >= 2:
                     loop_variable = parts[0]
                     if loop_variable not in manual_standard_variables:
@@ -432,7 +588,7 @@ def check_contract(source_dir):
                 parsed_value = normalize_contract_value(parsed[0], parsed[1])
                 if parsed_value != REQUIRED_TOP_LEVEL_CONTRACT[parsed[0]] or path != top:
                     extension_overrides.append((path, index, command))
-            if has_manual_standard_flag(command, manual_standard_variables):
+            if has_manual_standard_flag(command, manual_standard_variables) or has_manual_standard_wrapper_call(command, manual_standard_variables, wrapper_sink_parameters):
                 manual_standard_flags.append((path, index, command))
 
     repo_root = root.parent

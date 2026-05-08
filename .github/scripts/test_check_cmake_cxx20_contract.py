@@ -463,6 +463,39 @@ def main():
         (string_concat_compile_flags_nested / 'flags.cmake').write_text('string(CONCAT CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} " -std=gnu++17")\n')
         expect_fail(run_checker(string_concat_compile_flags_source), 'manual C++ standard flag in CMake')
 
+        list_insert_indirect_compile_options_source = write_source(root / 'list-insert-indirect-compile-options')
+        list_insert_indirect_compile_options_nested = list_insert_indirect_compile_options_source / 'cmake'
+        list_insert_indirect_compile_options_nested.mkdir()
+        (list_insert_indirect_compile_options_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        list(INSERT PROJECT_CXX_FLAGS 0 ${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(list_insert_indirect_compile_options_source), 'manual C++ standard flag in CMake')
+
+        lowercase_string_concat_indirect_compile_flags_source = write_source(root / 'lowercase-string-concat-indirect-compile-flags')
+        lowercase_string_concat_indirect_compile_flags_nested = lowercase_string_concat_indirect_compile_flags_source / 'cmake'
+        lowercase_string_concat_indirect_compile_flags_nested.mkdir()
+        (lowercase_string_concat_indirect_compile_flags_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        string(concat project_cxx_flags ${LOCAL_STD_FLAG} " -Wextra")
+        ''')
+        expect_fail(run_checker(lowercase_string_concat_indirect_compile_flags_source), 'manual C++ standard flag in CMake')
+
+        set_target_properties_quoted_compile_options_source = write_source(root / 'set-target-properties-quoted-compile-options')
+        set_target_properties_quoted_compile_options_nested = set_target_properties_quoted_compile_options_source / 'cmake'
+        set_target_properties_quoted_compile_options_nested.mkdir()
+        (set_target_properties_quoted_compile_options_nested / 'flags.cmake').write_text('set_target_properties(cli PROPERTIES COMPILE_OPTIONS "-std=gnu++17")\n')
+        expect_fail(run_checker(set_target_properties_quoted_compile_options_source), 'manual C++ standard flag in CMake')
+
+        set_property_quoted_indirect_compile_options_source = write_source(root / 'set-property-quoted-indirect-compile-options')
+        set_property_quoted_indirect_compile_options_nested = set_property_quoted_indirect_compile_options_source / 'cmake'
+        set_property_quoted_indirect_compile_options_nested.mkdir()
+        (set_property_quoted_indirect_compile_options_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        set_property(TARGET cli PROPERTY COMPILE_OPTIONS "${LOCAL_STD_FLAG}")
+        ''')
+        expect_fail(run_checker(set_property_quoted_indirect_compile_options_source), 'manual C++ standard flag in CMake')
+
         function_parent_scope_source = write_source(root / 'function-parent-scope-flags')
         function_parent_scope_nested = function_parent_scope_source / 'cmake'
         function_parent_scope_nested.mkdir()
@@ -506,6 +539,66 @@ def main():
         add_cli_flags(${LOCAL_STD_FLAG})
         ''')
         expect_fail(run_checker(macro_parameter_forward_source), 'manual C++ standard flag in CMake')
+
+        neutral_function_parameter_forward_source = write_source(root / 'neutral-function-parameter-forward-standard-flag')
+        neutral_function_parameter_forward_nested = neutral_function_parameter_forward_source / 'cmake'
+        neutral_function_parameter_forward_nested.mkdir()
+        (neutral_function_parameter_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        function(forward_args flag)
+          target_compile_options(cli PRIVATE ${flag})
+        endfunction()
+        forward_args(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(neutral_function_parameter_forward_source), 'manual C++ standard flag in CMake')
+
+        neutral_macro_parameter_forward_source = write_source(root / 'neutral-macro-parameter-forward-standard-flag')
+        neutral_macro_parameter_forward_nested = neutral_macro_parameter_forward_source / 'cmake'
+        neutral_macro_parameter_forward_nested.mkdir()
+        (neutral_macro_parameter_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        macro(forward_args flag)
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${flag})
+        endmacro()
+        forward_args(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(neutral_macro_parameter_forward_source), 'manual C++ standard flag in CMake')
+
+        function_argn_forward_source = write_source(root / 'function-argn-forward-standard-flag')
+        function_argn_forward_nested = function_argn_forward_source / 'cmake'
+        function_argn_forward_nested.mkdir()
+        (function_argn_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        function(add_cli_flags)
+          target_compile_options(cli PRIVATE ${ARGN})
+        endfunction()
+        add_cli_flags(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(function_argn_forward_source), 'manual C++ standard flag in CMake')
+
+        function_argv_forward_source = write_source(root / 'function-argv-forward-standard-flag')
+        function_argv_forward_nested = function_argv_forward_source / 'cmake'
+        function_argv_forward_nested.mkdir()
+        (function_argv_forward_nested / 'flags.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        function(add_cli_flags first second)
+          set_property(TARGET cli APPEND PROPERTY COMPILE_OPTIONS ${ARGV1})
+        endfunction()
+        add_cli_flags(-Wextra ${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(function_argv_forward_source), 'manual C++ standard flag in CMake')
+
+        neutral_wrapper_warning_flag_source = write_source(root / 'neutral-wrapper-warning-flag-pass')
+        neutral_wrapper_warning_flag_nested = neutral_wrapper_warning_flag_source / 'cmake'
+        neutral_wrapper_warning_flag_nested.mkdir()
+        (neutral_wrapper_warning_flag_nested / 'flags.cmake').write_text('''
+        set(LOCAL_WARNING_FLAG -Wextra)
+        function(forward_args flag)
+          target_compile_options(cli PRIVATE ${flag})
+        endfunction()
+        forward_args(${LOCAL_WARNING_FLAG})
+        ''')
+        expect_pass(run_checker(neutral_wrapper_warning_flag_source))
 
         foreach_variable_forward_source = write_source(root / 'foreach-variable-forward-standard-flag')
         foreach_variable_forward_nested = foreach_variable_forward_source / 'cmake'
@@ -634,6 +727,36 @@ def main():
         target_property_append_string_compile_flags_pass_nested.mkdir()
         (target_property_append_string_compile_flags_pass_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS " -Wextra")\n')
         expect_pass(run_checker(target_property_append_string_compile_flags_pass_source))
+
+        target_property_append_string_generator_standard_source = write_source(root / 'target-property-append-string-generator-standard-flag')
+        target_property_append_string_generator_standard_nested = target_property_append_string_generator_standard_source / 'cmake'
+        target_property_append_string_generator_standard_nested.mkdir()
+        (target_property_append_string_generator_standard_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS " $<$<CONFIG:Debug>:-std=gnu++17>")\n')
+        expect_fail(run_checker(target_property_append_string_generator_standard_source), 'manual C++ standard flag in CMake')
+
+        target_property_append_string_bracket_standard_source = write_source(root / 'target-property-append-string-bracket-standard-flag')
+        target_property_append_string_bracket_standard_nested = target_property_append_string_bracket_standard_source / 'cmake'
+        target_property_append_string_bracket_standard_nested.mkdir()
+        (target_property_append_string_bracket_standard_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS [=[ -std=gnu++17 ]=])\n')
+        expect_fail(run_checker(target_property_append_string_bracket_standard_source), 'manual C++ standard flag in CMake')
+
+        target_property_append_string_generator_warning_source = write_source(root / 'target-property-append-string-generator-warning-pass')
+        target_property_append_string_generator_warning_nested = target_property_append_string_generator_warning_source / 'cmake'
+        target_property_append_string_generator_warning_nested.mkdir()
+        (target_property_append_string_generator_warning_nested / 'properties.cmake').write_text('set_property(TARGET cli APPEND_STRING PROPERTY COMPILE_FLAGS " $<$<CONFIG:Debug>:-Wextra>")\n')
+        expect_pass(run_checker(target_property_append_string_generator_warning_source))
+
+        source_windows_path_property_source = write_source(root / 'source-windows-path-property-pass')
+        source_windows_path_property_nested = source_windows_path_property_source / 'cmake'
+        source_windows_path_property_nested.mkdir()
+        (source_windows_path_property_nested / 'properties.cmake').write_text('set_property(SOURCE "C:/src/probe.cpp" PROPERTY COMPILE_OPTIONS -Wextra)\n')
+        expect_pass(run_checker(source_windows_path_property_source))
+
+        source_windows_path_property_manual_source = write_source(root / 'source-windows-path-property-manual-standard')
+        source_windows_path_property_manual_nested = source_windows_path_property_manual_source / 'cmake'
+        source_windows_path_property_manual_nested.mkdir()
+        (source_windows_path_property_manual_nested / 'properties.cmake').write_text('set_property(SOURCE "C:/src/probe.cpp" PROPERTY COMPILE_OPTIONS -std=gnu++17)\n')
+        expect_fail(run_checker(source_windows_path_property_manual_source), 'manual C++ standard flag in CMake')
 
         top_text = '''
         cmake_minimum_required(VERSION 3.20)
