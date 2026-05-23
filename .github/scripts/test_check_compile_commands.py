@@ -2149,6 +2149,7 @@ def main():
         }])
         expect_pass(run_checker(msvc_tp_response_command_dir, '--min-cpp-commands=1'))
         expect_pass(run_checker(msvc_tp_response_command_dir, '--required-file-substring=source/common/template.inc', '--min-cpp-commands=1'))
+        expect_pass(run_checker(msvc_tp_response_command_dir, '--forbidden-file-substring=source/output/mp4.cpp', '--min-cpp-commands=1'))
 
         msvc_tp_response_required_file_flag_dir = root / 'msvc-tp-response-required-file-flag'
         msvc_tp_response_required_file_flag_dir.mkdir()
