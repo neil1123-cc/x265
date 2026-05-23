@@ -883,7 +883,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"', ': # check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"')
-        expect_fail(run_checker(repo), 'PGO consume helper must actively run: check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -955,25 +955,25 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt", "grep -Fq 'threaded-me' smoke_threaded_me_log.txt\n          # grep -Fq 'frame threads / pool features       : 1 / threaded-me' smoke_threaded_me_log.txt")
-        expect_fail(run_checker(repo), 'Threaded ME smoke must require enabled threaded-me log')
+        expect_fail(run_checker(repo), "missing required Build workflow guard snippet: frame threads / pool features       : 1 / threaded-me")
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q \'nb_read_frames=16\' smoke_threaded_me_count.txt', 'grep -q \'nb_read_frames=2\' smoke_threaded_me_count.txt\n          # grep -q \'nb_read_frames=16\' smoke_threaded_me_count.txt')
-        expect_fail(run_checker(repo), 'Threaded ME smoke must require 16 decoded frames')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: grep -q \'nb_read_frames=16\' smoke_threaded_me_count.txt')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt", "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 16 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt\n          # --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress")
-        expect_fail(run_checker(repo), 'Threaded ME smoke --pools must be 32, got 16')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt", "build/all/x265.exe --input smoke_threaded_me.y4m --input-res 160x90 --fps 24 --frames 16 --preset medium --pools 32 --frame-threads 1 --no-wpp --no-progress --output smoke_threaded_me.hevc 2>&1 | tee smoke_threaded_me_log.txt\n          # --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress")
-        expect_fail(run_checker(repo), 'missing Threaded ME smoke argument: --threaded-me')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --input-res 160x90 --fps 24 --frames 16 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -986,6 +986,12 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50', 'echo skip-all-12b-pgo-consume')
         expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'python .github/scripts/check_cmake_cxx20_contract.py source', 'echo skip-cmake-contract\n          # python .github/scripts/check_cmake_cxx20_contract.py source')
+        expect_fail(run_checker(repo), 'missing job validate-deps-cache-suffix step: Check CMake C++20 contract')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1063,7 +1069,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands', 'echo skip-linux-gcc-compile-commands\n          # check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands')
-        expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively check compile commands')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-substring=source/output/reconplay.cpp')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1099,7 +1105,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log', '# test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log')
-        expect_fail(run_checker(repo), 'Linux GCC smoke must require non-empty smoke log')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

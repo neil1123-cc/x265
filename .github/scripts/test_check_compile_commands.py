@@ -1287,6 +1287,22 @@ def main():
         write_compile_commands(root / 'only-c', 'cc -std=c11 -c source/common/pixel.c', 'source/common/pixel.c')
         expect_fail(run_checker(root / 'only-c'), 'no C++ compile commands')
 
+        cpp_suffix_c_language_override_dir = root / 'cpp-suffix-c-language-override'
+        write_compile_commands_records(cpp_suffix_c_language_override_dir, [{
+            'directory': str(cpp_suffix_c_language_override_dir),
+            'command': 'cc -x c -std=c11 -c source/common/template.cpp',
+            'file': str(root / 'source/common/template.cpp'),
+        }])
+        expect_fail(run_checker(cpp_suffix_c_language_override_dir), 'no C++ compile commands')
+
+        msvc_cpp_suffix_c_language_override_dir = root / 'msvc-cpp-suffix-c-language-override'
+        write_compile_commands_records(msvc_cpp_suffix_c_language_override_dir, [{
+            'directory': str(msvc_cpp_suffix_c_language_override_dir),
+            'arguments': ['clang-cl', '/TC', '/std:c++20', '/c', 'source/common/template.cpp'],
+            'file': str(root / 'source/common/template.cpp'),
+        }])
+        expect_fail(run_checker(msvc_cpp_suffix_c_language_override_dir), 'no C++ compile commands')
+
         response_dir = root / 'response-file'
         response_dir.mkdir()
         (response_dir / 'args.rsp').write_text('-std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8')

@@ -71,8 +71,27 @@ def has_cxx_language_flag(tokens):
     return False
 
 
+def has_c_language_override(tokens):
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        lower = token.lower()
+        if token == '-x' and index + 1 < len(tokens):
+            if tokens[index + 1].lower() == 'c':
+                return True
+            index += 2
+            continue
+        if lower == '/tc' or lower.startswith('/tc'):
+            return True
+        index += 1
+    return False
+
+
 def is_cpp_entry(entry):
-    return entry_file_path(entry).lower().endswith(CXX_SUFFIXES) or any(has_cxx_language_flag(tokens) for tokens in entry_token_groups(entry))
+    token_groups = entry_token_groups(entry)
+    if any(has_c_language_override(tokens) for tokens in token_groups):
+        return any(has_cxx_language_flag(tokens) for tokens in token_groups)
+    return entry_file_path(entry).lower().endswith(CXX_SUFFIXES) or any(has_cxx_language_flag(tokens) for tokens in token_groups)
 
 
 def unique_source_count(entries):

@@ -582,6 +582,12 @@ def require_run_text(script, required, path, context):
         fail(f'missing required {context} snippet: {required}', path)
 
 
+def require_active_run_text(script, required, path, context):
+    active_lines = shell_active_logical_lines(script)
+    if not any(required in line for line in active_lines):
+        fail(f'missing required {context} snippet: {required}', path)
+
+
 def block_scalar(lines, start_index, base_indent):
     collected = []
     index = start_index + 1
@@ -1871,7 +1877,7 @@ def validate_workflow_steps(repo_root, relative_path, context, requirements):
         step = named_step(workflow_steps(parsed, path, job_name), step_name, path, required_items, job_name)
         script = required_run(step, path, step_name)
         for required in required_items:
-            require_run_text(script, required, path, context)
+            require_active_run_text(script, required, path, context)
     return parsed
 
 
@@ -1900,7 +1906,7 @@ def validate_required_snippets(repo_root):
         step = named_step(action_steps(profiling_action, profiling_action_path), step_name, profiling_action_path)
         script = required_run(step, profiling_action_path, step_name)
         for required in required_items:
-            require_run_text(script, required, profiling_action_path, 'Build Profiling action guard')
+            require_active_run_text(script, required, profiling_action_path, 'Build Profiling action guard')
 
     windows_deps = load_yaml(repo_root, WINDOWS_DEPS_ACTION)
     windows_deps_path = repo_root / WINDOWS_DEPS_ACTION
@@ -1912,7 +1918,7 @@ def validate_required_snippets(repo_root):
         step = named_step(action_steps(windows_deps, windows_deps_path), step_name, windows_deps_path)
         script = required_run(step, windows_deps_path, step_name)
         for required in required_items:
-            require_run_text(script, required, windows_deps_path, 'setup-windows-deps guard')
+            require_active_run_text(script, required, windows_deps_path, 'setup-windows-deps guard')
     print('Required CI guard steps validated')
 
 
