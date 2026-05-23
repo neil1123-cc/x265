@@ -2396,6 +2396,16 @@ def main():
         }])
         expect_pass(run_checker(response_cxx_header_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
+        response_cxx_header_required_file_flag_dir = root / 'response-x-cxx-header-required-file-flag'
+        response_cxx_header_required_file_flag_dir.mkdir()
+        (response_cxx_header_required_file_flag_dir / 'lang.rsp').write_text('-x c++-header -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF')
+        write_compile_commands_records(response_cxx_header_required_file_flag_dir, [{
+            'directory': str(response_cxx_header_required_file_flag_dir),
+            'arguments': ['cc', '@lang.rsp', '-c', 'source/common/template.inc'],
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(response_cxx_header_required_file_flag_dir, '--required-file-flag=source/common/template.inc=-DENABLE_LAVF', '--min-cpp-commands=1'))
+
         response_fused_objective_cxx_language_dir = root / 'response-fused-xobjective-cxx-language'
         response_fused_objective_cxx_language_dir.mkdir()
         (response_fused_objective_cxx_language_dir / 'lang.rsp').write_text('-xobjective-c++ -std=gnu++20 -Wdeprecated -Werror=deprecated')
@@ -2405,6 +2415,16 @@ def main():
             'file': str(root / 'source/common/template.inc'),
         }])
         expect_pass(run_checker(response_fused_objective_cxx_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        response_objective_cxx_forbidden_file_flag_dir = root / 'response-objective-cxx-forbidden-file-flag'
+        response_objective_cxx_forbidden_file_flag_dir.mkdir()
+        (response_objective_cxx_forbidden_file_flag_dir / 'lang.rsp').write_text('-x objective-c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_MKV')
+        write_compile_commands_records(response_objective_cxx_forbidden_file_flag_dir, [{
+            'directory': str(response_objective_cxx_forbidden_file_flag_dir),
+            'command': 'cc @lang.rsp -c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(response_objective_cxx_forbidden_file_flag_dir, '--forbidden-file-flag=source/common/template.inc=-DENABLE_MKV', '--min-cpp-commands=1'), 'forbidden flag -DENABLE_MKV for file substring source/common/template.inc')
 
         response_fused_cxx_header_language_dir = root / 'response-fused-xcxx-header-language'
         response_fused_cxx_header_language_dir.mkdir()
