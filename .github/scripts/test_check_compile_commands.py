@@ -2446,6 +2446,45 @@ def main():
         ])
         expect_fail(run_checker(duplicate_source_dual_field_arguments_missing_flag_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=2'), 'missing required flag -Werror=deprecated')
 
+        duplicate_source_required_file_flag_dir = root / 'duplicate-source-required-file-flag'
+        write_compile_commands_entries(duplicate_source_required_file_flag_dir, [
+            ('c++ -std=gnu++20 -DENABLE_LAVF -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
+            ('c++ -std=gnu++20 -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
+            ('c++ -std=gnu++20 -DENABLE_LAVF -c source/encoder/encoder.cpp', 'source/encoder/encoder.cpp'),
+        ])
+        expect_fail(run_checker(duplicate_source_required_file_flag_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF', '--min-cpp-commands=2'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
+
+        duplicate_source_forbidden_file_flag_dir = root / 'duplicate-source-forbidden-file-flag'
+        write_compile_commands_entries(duplicate_source_forbidden_file_flag_dir, [
+            ('c++ -std=gnu++20 -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
+            ('c++ -std=gnu++20 -DENABLE_MKV -c source/input/lavf.cpp', 'source/input/lavf.cpp'),
+            ('c++ -std=gnu++20 -c source/encoder/encoder.cpp', 'source/encoder/encoder.cpp'),
+        ])
+        expect_fail(run_checker(duplicate_source_forbidden_file_flag_dir, '--forbidden-file-flag=source/input/lavf.cpp=-DENABLE_MKV', '--min-cpp-commands=2'), 'forbidden flag -DENABLE_MKV for file substring source/input/lavf.cpp')
+
+        duplicate_source_dual_field_required_file_flag_dir = root / 'duplicate-source-dual-field-required-file-flag'
+        write_compile_commands_records(duplicate_source_dual_field_required_file_flag_dir, [
+            {
+                'directory': str(duplicate_source_dual_field_required_file_flag_dir),
+                'command': 'c++ -std=gnu++20 -c source/input/lavf.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-DENABLE_LAVF', '-c', 'source/input/lavf.cpp'],
+                'file': str(root / 'source/input/lavf.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_required_file_flag_dir),
+                'command': 'c++ -std=gnu++20 -DENABLE_LAVF -c source/input/lavf.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-DENABLE_LAVF', '-c', 'source/input/lavf.cpp'],
+                'file': str(root / 'source/input/lavf.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_required_file_flag_dir),
+                'command': 'c++ -std=gnu++20 -DENABLE_LAVF -c source/encoder/encoder.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-DENABLE_LAVF', '-c', 'source/encoder/encoder.cpp'],
+                'file': str(root / 'source/encoder/encoder.cpp'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_dual_field_required_file_flag_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF', '--min-cpp-commands=2'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
+
         windows_duplicate_source_min_cpp_dir = root / 'windows-duplicate-source-min-cpp-commands'
         write_compile_commands_records(windows_duplicate_source_min_cpp_dir, [
             {
