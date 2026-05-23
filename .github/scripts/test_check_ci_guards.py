@@ -6,6 +6,17 @@ import tempfile
 from pathlib import Path
 
 CHECKER = Path(__file__).with_name('check_ci_guards.py')
+BASH_CANDIDATES = (
+    Path('D:/msys64/usr/bin/bash.exe'),
+    Path('C:/msys64/usr/bin/bash.exe'),
+)
+
+
+def preferred_bash():
+    for candidate in BASH_CANDIDATES:
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 BUILD_YML = '''
 name: Build
@@ -248,6 +259,40 @@ jobs:
           ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
           ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
           grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
+      - name: QPFile Smoke (All CLI)
+        shell: bash
+        run: |
+          cat > smoke_qpfile.txt <<'EOF'
+          0 I 22
+          3 P 24
+          6 B 26
+          9 K 20
+          EOF
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p smoke_qpfile.y4m
+          build/all/x265.exe --input smoke_qpfile.y4m --input-res 160x90 --fps 24 --frames 12 --qpfile smoke_qpfile.txt --output smoke_qpfile.hevc
+          test -s smoke_qpfile.hevc
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_qpfile.hevc > smoke_qpfile_count.txt
+          grep -q "nb_read_frames=12" smoke_qpfile_count.txt
+      - name: Zonefile Smoke (All CLI)
+        shell: bash
+        run: |
+          cat > smoke_zonefile.txt <<'EOF'
+          0 --bitrate 350
+          6 --bitrate 500
+          EOF
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p smoke_zonefile.y4m
+          build/all/x265.exe --input smoke_zonefile.y4m --input-res 160x90 --fps 24 --frames 12 --bitrate 400 --zonefile smoke_zonefile.txt --output smoke_zonefile.hevc
+          test -s smoke_zonefile.hevc
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_zonefile.hevc > smoke_zonefile_count.txt
+          grep -q "nb_read_frames=12" smoke_zonefile_count.txt
+      - name: Recon Smoke (All CLI)
+        shell: bash
+        run: |
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 12 -pix_fmt yuv420p smoke_recon.y4m
+          build/all/x265.exe --input smoke_recon.y4m --input-res 160x90 --fps 24 --frames 12 --recon smoke_recon_out.y4m --output smoke_recon.hevc
+          test -s smoke_recon.hevc
+          test -s smoke_recon_out.y4m
+          grep -q '^YUV4MPEG2 ' smoke_recon_out.y4m
       - name: MKV Smoke (All CLI)
         shell: bash
         run: |
@@ -349,6 +394,16 @@ jobs:
           assert_common_mp4 smoke_zero 128 72 yuv420p 24/1 1 1/24000
           assert_mp4_markers smoke_zero.mp4 iso6 hvc1 hvcC
           assert_single_frame_mp4 smoke_zero 0.05 0.02 0.08
+      - name: MP4 Smoke (All CLI Single Frame 24000/1001)
+        shell: bash
+        run: |
+          source ./mp4_smoke_helpers.sh
+          make_y4m smoke_single_frac.y4m 24000/1001 1 yuv420p
+          build/all/x265.exe --input smoke_single_frac.y4m --input-res 128x72 --fps 24000/1001 --frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_single_frac.mp4
+          probe_mp4 smoke_single_frac smoke_single_frac.mp4 flags
+          assert_common_mp4 smoke_single_frac 128 72 yuv420p 24000/1001 1 1/24000
+          assert_mp4_markers smoke_single_frac.mp4 iso6 hvc1 hvcC
+          assert_single_frame_mp4 smoke_single_frac 0.06 0.03 0.06
       - name: MP4 Smoke (All CLI VUI Metadata)
         shell: bash
         run: |
@@ -364,6 +419,20 @@ jobs:
           grep -q "color_transfer=bt709" smoke_vui_stream.txt
           grep -q "color_primaries=bt709" smoke_vui_stream.txt
           assert_mp4_markers smoke_vui.mp4 iso6 colr
+      - name: MP4 Smoke (All CLI Strict-CBR Fails)
+        shell: bash
+        run: |
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_strict_cbr.y4m
+          if build/all/x265.exe --input smoke_strict_cbr.y4m --input-res 128x72 --fps 24 --frames 16 --bitrate 300 --vbv-bufsize 300 --strict-cbr --hrd --output smoke_strict_cbr.mp4; then
+            echo "strict-cbr MP4 encode unexpectedly succeeded"
+            exit 1
+          fi
+          if [ -f smoke_strict_cbr.mp4 ] && [ -s smoke_strict_cbr.mp4 ]; then
+            ffprobe -v error smoke_strict_cbr.mp4 >/dev/null 2>&1 && {
+              echo "strict-cbr MP4 output should not be a valid playable file"
+              exit 1
+            }
+          fi
       - name: MP4 Smoke (All CLI 24000/1001)
         shell: bash
         run: |
@@ -720,8 +789,12 @@ runs:
 
 
 def run_checker(repo):
+    command = [sys.executable, str(CHECKER), '--repo-root', str(repo)]
+    bash = preferred_bash()
+    if bash:
+        command.extend(['--bash', bash])
     return subprocess.run(
-        [sys.executable, str(CHECKER), '--repo-root', str(repo)],
+        command,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1187,6 +1260,42 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '9 K 20', '9 K 18')
+        expect_fail(run_checker(repo), 'QPFile smoke must require frame 9 K 20 entry')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--qpfile smoke_qpfile.txt --output smoke_qpfile.hevc', '--qpfile wrong_qpfile.txt --output smoke_qpfile.hevc')
+        expect_fail(run_checker(repo), 'QPFile smoke --qpfile must be smoke_qpfile.txt, got wrong_qpfile.txt')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '6 --bitrate 500', '6 --bitrate 450')
+        expect_fail(run_checker(repo), 'Zonefile smoke must require frame 6 bitrate override')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--bitrate 400 --zonefile smoke_zonefile.txt --output smoke_zonefile.hevc', '--bitrate 350 --zonefile smoke_zonefile.txt --output smoke_zonefile.hevc')
+        expect_fail(run_checker(repo), 'Zonefile smoke --bitrate must be 400, got 350')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--recon smoke_recon_out.y4m --output smoke_recon.hevc', '--output smoke_recon.hevc')
+        expect_fail(run_checker(repo), 'missing Recon smoke value for --recon')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -q '^YUV4MPEG2 ' smoke_recon_out.y4m", "grep -q '^FRAME' smoke_recon_out.y4m")
+        expect_fail(run_checker(repo), 'Recon smoke must require YUV4MPEG2 header in recon output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test "$(wc -l < smoke_gop_data_files.txt)" -eq 2', '# test "$(wc -l < smoke_gop_data_files.txt)" -eq 2')
         expect_fail(run_checker(repo), 'GOP smoke must require exactly two gop-data sidecars')
 
@@ -1259,6 +1368,18 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'make_y4m smoke_single_frac.y4m 24000/1001 1 yuv420p', 'make_y4m smoke_single_frac.y4m 24000/1001 2 yuv420p')
+        expect_fail(run_checker(repo), 'MP4 single-frame 24000/1001 smoke must generate 1-frame yuv420p input')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'assert_single_frame_mp4 smoke_single_frac 0.06 0.03 0.06', 'assert_single_frame_mp4 smoke_single_frac 0.04 0.01 0.04')
+        expect_fail(run_checker(repo), 'MP4 single-frame 24000/1001 smoke must require single-frame timing window')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 0 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4', '--frames 1 --bframes 0 --keyint 1 --min-keyint 1 --output smoke_zero.mp4')
         expect_fail(run_checker(repo), 'MP4 frames=0 smoke --frames must be 0, got 1')
 
@@ -1273,6 +1394,18 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q "color_primaries=bt709" smoke_vui_stream.txt', 'grep -q "color_primaries=unknown" smoke_vui_stream.txt')
         expect_fail(run_checker(repo), 'MP4 VUI smoke must require bt709 primaries metadata')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--strict-cbr --hrd --output smoke_strict_cbr.mp4', '--strict-cbr --output smoke_strict_cbr.mp4')
+        expect_fail(run_checker(repo), 'missing MP4 strict-CBR smoke argument: --hrd')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'echo "strict-cbr MP4 encode unexpectedly succeeded"', 'echo "strict-cbr unexpectedly succeeded"')
+        expect_fail(run_checker(repo), 'MP4 strict-CBR smoke must fail if strict-CBR MP4 encode unexpectedly succeeds')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

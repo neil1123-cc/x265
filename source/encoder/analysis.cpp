@@ -344,9 +344,9 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
             uint8_t depth = (uint8_t)ctuTemp->ctuPartitions[depthIdx];
             uint8_t content = (uint8_t)(*((int32_t *)ctuTemp->ctuInfo + depthIdx));
             int prevCtuInfoChange = m_frame->m_prevCtuInfoChange[ctu.m_cuAddr * maxNum8x8Partitions + depthIdx];
-            memset(depthInfoPtr, depth, sizeof(uint8_t) * numPartition >> 2 * depth);
-            memset(contentInfoPtr, content, sizeof(uint8_t) * numPartition >> 2 * depth);
-            memset(prevCtuInfoChangePtr, 0, sizeof(int) * numPartition >> 2 * depth);
+            std::memset(depthInfoPtr, depth, sizeof(uint8_t) * numPartition >> 2 * depth);
+            std::memset(contentInfoPtr, content, sizeof(uint8_t) * numPartition >> 2 * depth);
+            std::memset(prevCtuInfoChangePtr, 0, sizeof(int) * numPartition >> 2 * depth);
             for (uint32_t l = 0; l < numPartition >> 2 * depth; l++)
                 prevCtuInfoChangePtr[l] = prevCtuInfoChange;
             depthInfoPtr += ctu.m_numPartitions >> 2 * depth;
@@ -357,7 +357,7 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
 
         m_additionalCtuInfo = m_frame->m_addOnCtuInfo[ctu.m_cuAddr];
         m_prevCtuInfoChange = m_frame->m_addOnPrevChange[ctu.m_cuAddr];
-        memcpy(ctu.m_cuDepth, m_frame->m_addOnDepth[ctu.m_cuAddr], sizeof(uint8_t) * numPartition);
+        std::memcpy(ctu.m_cuDepth, m_frame->m_addOnDepth[ctu.m_cuAddr], sizeof(uint8_t) * numPartition);
         //Calculate log2CUSize from depth
         for (uint32_t i = 0; i < cuGeom.numPartitions; i++)
             ctu.m_log2CUSize[i] = (uint8_t)m_param->maxLog2CUSize - ctu.m_cuDepth[i];
@@ -377,7 +377,7 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
     }
     
     int reuseLevel = X265_MAX(m_param->analysisSaveReuseLevel, m_param->analysisLoadReuseLevel);
-    if ((strlen(m_param->analysisSave) || strlen(m_param->analysisLoad)) && m_slice->m_sliceType != I_SLICE && reuseLevel > 1 && reuseLevel < 10)
+    if ((std::strlen(m_param->analysisSave) || std::strlen(m_param->analysisLoad)) && m_slice->m_sliceType != I_SLICE && reuseLevel > 1 && reuseLevel < 10)
     {
         int numPredDir = m_slice->isInterP() ? 1 : 2;
         m_reuseInterDataCTU = m_frame->m_analysisData.interData;
@@ -391,7 +391,7 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
             m_reusePartSize = &m_reuseInterDataCTU->partSize[ctu.m_cuAddr * ctu.m_numPartitions];
             m_reuseMergeFlag = &m_reuseInterDataCTU->mergeFlag[ctu.m_cuAddr * ctu.m_numPartitions];
         }
-        if (strlen(m_param->analysisSave) && !strlen(m_param->analysisLoad))
+        if (std::strlen(m_param->analysisSave) && !std::strlen(m_param->analysisLoad))
             for (int i = 0; i < X265_MAX_PRED_MODE_PER_CTU * numPredDir; i++)
                 m_reuseRef[i] = -1;
     }
@@ -4323,7 +4323,7 @@ int Analysis::calculateQpforCuSize(const CUData& ctu, const CUGeom& cuGeom, int3
     double qp = baseQp >= 0 ? baseQp : curEncData.m_cuStat[ctu.m_cuAddr].baseQp;
     bool bCuTreeOffset = IS_REFERENCED(m_frame) && m_param->rc.cuTree && !complexCheck;
 
-    if ((m_param->analysisMultiPassDistortion && m_param->rc.bStatRead) || (m_param->ctuDistortionRefine && strlen(m_param->analysisLoad)))
+    if ((m_param->analysisMultiPassDistortion && m_param->rc.bStatRead) || (m_param->ctuDistortionRefine && std::strlen(m_param->analysisLoad)))
     {
         x265_analysis_distortion_data* distortionData = m_frame->m_analysisData.distortionData;
         if ((distortionData->threshold[ctu.m_cuAddr] < 0.9 || distortionData->threshold[ctu.m_cuAddr] > 1.1)

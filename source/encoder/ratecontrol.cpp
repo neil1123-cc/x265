@@ -39,6 +39,7 @@
 #include "sei.h"
 #include <atomic>
 #include <cmath>
+#include <cstring>
 
 #define BR_SHIFT  6
 #define CPB_SHIFT 4
@@ -112,7 +113,7 @@ void static ReadSharedCUTreeData(void *dst, void *src, int32_t size)
     ///< for memory alignment, the type will take 32bit in the shared memory
     int32_t offset = (sizeof(*statsDst->type) + SHARED_DATA_ALIGNMENT - 1) & ~(SHARED_DATA_ALIGNMENT - 1);
     uint16_t *statsSrc = reinterpret_cast<uint16_t *>(typeSrc + offset);
-    memcpy(statsDst->stats, statsSrc, size - offset);
+    std::memcpy(statsDst->stats, statsSrc, size - offset);
 }
 
 void static WriteSharedCUTreeData(void *dst, void *src, int32_t size)
@@ -124,7 +125,7 @@ void static WriteSharedCUTreeData(void *dst, void *src, int32_t size)
     ///< for memory alignment, the type will take 32bit in the shared memory
     int32_t offset = (sizeof(*statsSrc->type) + SHARED_DATA_ALIGNMENT - 1) & ~(SHARED_DATA_ALIGNMENT - 1);
     uint16_t *statsDst = reinterpret_cast<uint16_t *>(typeDst + offset);
-    memcpy(statsDst, statsSrc->stats, size - offset);
+    std::memcpy(statsDst, statsSrc->stats, size - offset);
 }
 
 
@@ -496,7 +497,7 @@ bool RateControl::init(const SPS& sps)
     {
         /* If the user hasn't defined the stat filename, use the default value */
         const char *fileName = m_param->rc.statFileName;
-        if (!strlen(fileName))
+        if (!std::strlen(fileName))
             fileName = s_defaultStatFileName;
         /* Load stat file and init 2pass algo */
         if (m_param->rc.bStatRead)
@@ -524,7 +525,7 @@ bool RateControl::init(const SPS& sps)
                 }
 
                 /* check whether 1st pass options were compatible with current options */
-                if (strncmp(statsBuf, "#options:", 9))
+                if (std::strncmp(statsBuf, "#options:", 9))
                 {
                     x265_log(m_param, X265_LOG_ERROR, "options list in stats file not valid\n");
                     return false;
@@ -534,7 +535,7 @@ bool RateControl::init(const SPS& sps)
                     uint32_t k, l;
                     bool bErr = false;
                     char *opts = statsBuf;
-                    statsIn = strchr(statsBuf, '\n');
+                    statsIn = std::strchr(statsBuf, '\n');
                     if (!statsIn)
                     {
                         x265_log(m_param, X265_LOG_ERROR, "Malformed stats file\n");
@@ -618,7 +619,7 @@ bool RateControl::init(const SPS& sps)
                 p = statsIn;
                 int numEntries;
                 for (numEntries = -1; p; numEntries++)
-                    p = strchr(p + 1, ';');
+                    p = std::strchr(p + 1, ';');
                 if (!numEntries)
                 {
                     x265_log(m_param, X265_LOG_ERROR, "empty stats file\n");
@@ -3397,7 +3398,7 @@ void RateControl::terminate()
 void RateControl::destroy()
 {
     const char *fileName = m_param->rc.statFileName;
-    if (!strlen(fileName))
+    if (!std::strlen(fileName))
         fileName = s_defaultStatFileName;
 
     if (m_statFileOut)

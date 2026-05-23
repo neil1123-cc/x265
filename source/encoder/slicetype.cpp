@@ -37,6 +37,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 
 #if DETAILED_CU_STATS
 #define ProfileLookaheadTime(elapsed, count) ScopedElapsedTime _scope(elapsed); count++
@@ -167,9 +168,9 @@ void edgeFilter(Frame *curFrame, x265_param* param)
     uint32_t numCuInHeight = (height + param->maxCUSize - 1) / param->maxCUSize;
     int maxHeight = numCuInHeight * param->maxCUSize;
 
-    memset(curFrame->m_edgePic, 0, stride * (maxHeight + (curFrame->m_fencPic->m_lumaMarginY * 2)) * sizeof(pixel));
-    memset(curFrame->m_gaussianPic, 0, stride * (maxHeight + (curFrame->m_fencPic->m_lumaMarginY * 2)) * sizeof(pixel));
-    memset(curFrame->m_thetaPic, 0, stride * (maxHeight + (curFrame->m_fencPic->m_lumaMarginY * 2)) * sizeof(pixel));
+    std::memset(curFrame->m_edgePic, 0, stride * (maxHeight + (curFrame->m_fencPic->m_lumaMarginY * 2)) * sizeof(pixel));
+    std::memset(curFrame->m_gaussianPic, 0, stride * (maxHeight + (curFrame->m_fencPic->m_lumaMarginY * 2)) * sizeof(pixel));
+    std::memset(curFrame->m_thetaPic, 0, stride * (maxHeight + (curFrame->m_fencPic->m_lumaMarginY * 2)) * sizeof(pixel));
 
     pixel *src = (pixel*)curFrame->m_fencPic->m_picOrg[0];
     pixel *edgePic = curFrame->m_edgePic + curFrame->m_fencPic->m_lumaMarginY * stride + curFrame->m_fencPic->m_lumaMarginX;
@@ -178,8 +179,8 @@ void edgeFilter(Frame *curFrame, x265_param* param)
 
     for (int i = 0; i < height; i++)
     {
-        memcpy(edgePic, src, width * sizeof(pixel));
-        memcpy(refPic, src, width * sizeof(pixel));
+        std::memcpy(edgePic, src, width * sizeof(pixel));
+        std::memcpy(refPic, src, width * sizeof(pixel));
         src += stride;
         edgePic += stride;
         refPic += stride;
@@ -498,8 +499,8 @@ void LookaheadTLD::calcAdaptiveQuantFrame(Frame *curFrame, x265_param* param)
                 }
                 else
                 {
-                    memset(curFrame->m_lowres.qpCuTreeOffset, 0, blockCount * sizeof(double));
-                    memset(curFrame->m_lowres.qpAqOffset, 0, blockCount * sizeof(double));
+                    std::memset(curFrame->m_lowres.qpCuTreeOffset, 0, blockCount * sizeof(double));
+                    std::memset(curFrame->m_lowres.qpAqOffset, 0, blockCount * sizeof(double));
                     for (int cuxy = 0; cuxy < blockCount; cuxy++)
                         curFrame->m_lowres.invQscaleFactor[cuxy] = 256;
                 }
@@ -1083,21 +1084,21 @@ Lookahead::Lookahead(x265_param *param, ThreadPool* pool)
 
     m_accHistDiffRunningAvgCb = X265_MALLOC(uint32_t*, NUMBER_OF_SEGMENTS_IN_WIDTH * sizeof(uint32_t*));
     m_accHistDiffRunningAvgCb[0] = X265_MALLOC(uint32_t, NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
-    memset(m_accHistDiffRunningAvgCb[0], 0, sizeof(uint32_t) * NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
+    std::memset(m_accHistDiffRunningAvgCb[0], 0, sizeof(uint32_t) * NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
     for (uint32_t w = 1; w < NUMBER_OF_SEGMENTS_IN_WIDTH; w++) {
         m_accHistDiffRunningAvgCb[w] = m_accHistDiffRunningAvgCb[0] + w * NUMBER_OF_SEGMENTS_IN_HEIGHT;
     }
 
     m_accHistDiffRunningAvgCr = X265_MALLOC(uint32_t*, NUMBER_OF_SEGMENTS_IN_WIDTH * sizeof(uint32_t*));
     m_accHistDiffRunningAvgCr[0] = X265_MALLOC(uint32_t, NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
-    memset(m_accHistDiffRunningAvgCr[0], 0, sizeof(uint32_t) * NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
+    std::memset(m_accHistDiffRunningAvgCr[0], 0, sizeof(uint32_t) * NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
     for (uint32_t w = 1; w < NUMBER_OF_SEGMENTS_IN_WIDTH; w++) {
         m_accHistDiffRunningAvgCr[w] = m_accHistDiffRunningAvgCr[0] + w * NUMBER_OF_SEGMENTS_IN_HEIGHT;
     }
 
     m_accHistDiffRunningAvg = X265_MALLOC(uint32_t*, NUMBER_OF_SEGMENTS_IN_WIDTH * sizeof(uint32_t*));
     m_accHistDiffRunningAvg[0] = X265_MALLOC(uint32_t, NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
-    memset(m_accHistDiffRunningAvg[0], 0, sizeof(uint32_t) * NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
+    std::memset(m_accHistDiffRunningAvg[0], 0, sizeof(uint32_t) * NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
     for (uint32_t w = 1; w < NUMBER_OF_SEGMENTS_IN_WIDTH; w++) {
         m_accHistDiffRunningAvg[w] = m_accHistDiffRunningAvg[0] + w * NUMBER_OF_SEGMENTS_IN_HEIGHT;
     }
@@ -1229,7 +1230,7 @@ void Lookahead::destroy()
 /* Called by API thread */
 void Lookahead::addPicture(Frame& curFrame, int sliceType)
 {
-    if (strlen(m_param->analysisLoad) && m_param->bDisableLookahead)
+    if (std::strlen(m_param->analysisLoad) && m_param->bDisableLookahead)
     {
         if (!m_filled)
             m_filled = true;
@@ -1340,7 +1341,7 @@ Frame* Lookahead::getDecidedPicture()
             return out;
         }
 
-        if (strlen(m_param->analysisLoad) && m_param->bDisableLookahead)
+        if (std::strlen(m_param->analysisLoad) && m_param->bDisableLookahead)
             return NULL;
 
         findJob(-1); /* run slicetypeDecide() if necessary */
@@ -1410,14 +1411,14 @@ void Lookahead::getEstimatedPictureCost(Frame *curFrame)
     default:
         return;
     }
-    if (!strlen(curFrame->m_param->analysisLoad) || !curFrame->m_param->bDisableLookahead)
+    if (!std::strlen(curFrame->m_param->analysisLoad) || !curFrame->m_param->bDisableLookahead)
     {
         X265_CHECK(curFrame->m_lowres.costEst[b - p0][p1 - b] > 0, "Slice cost not estimated\n")
 
         if (curFrame->m_param->rc.cuTree && !curFrame->m_param->rc.bStatRead)
             /* update row satds based on cutree offsets */
             curFrame->m_lowres.satdCost = frameCostRecalculate(frames, p0, p1, b);
-        else if (!strlen(curFrame->m_param->analysisLoad) || curFrame->m_param->scaleFactor || curFrame->m_param->bAnalysisType == HEVC_INFO)
+        else if (!std::strlen(curFrame->m_param->analysisLoad) || curFrame->m_param->scaleFactor || curFrame->m_param->bAnalysisType == HEVC_INFO)
         {
             if (curFrame->m_param->rc.aqMode)
                 curFrame->m_lowres.satdCost = curFrame->m_lowres.costEstAq[b - p0][p1 - b];
@@ -1910,12 +1911,12 @@ bool Lookahead::generatemcstf(Frame * frameEnc, PicList refPic, int poclast)
                     TemporalFilter * mcstf = frameEnc->m_mcstf;
                     while (mcstf->m_numRef)
                     {
-                        memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs0, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 16) * (mcstf->m_sourceHeight / 16)));
-                        memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs1, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 16) * (mcstf->m_sourceHeight / 16)));
-                        memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs2, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 16) * (mcstf->m_sourceHeight / 16)));
-                        memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 4) * (mcstf->m_sourceHeight / 4)));
-                        memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].noise, 0, sizeof(int) * ((mcstf->m_sourceWidth / 4) * (mcstf->m_sourceHeight / 4)));
-                        memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].error, 0, sizeof(int) * ((mcstf->m_sourceWidth / 4) * (mcstf->m_sourceHeight / 4)));
+                        std::memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs0, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 16) * (mcstf->m_sourceHeight / 16)));
+                        std::memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs1, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 16) * (mcstf->m_sourceHeight / 16)));
+                        std::memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs2, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 16) * (mcstf->m_sourceHeight / 16)));
+                        std::memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].mvs, 0, sizeof(MV) * ((mcstf->m_sourceWidth / 4) * (mcstf->m_sourceHeight / 4)));
+                        std::memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].noise, 0, sizeof(int) * ((mcstf->m_sourceWidth / 4) * (mcstf->m_sourceHeight / 4)));
+                        std::memset(frameEnc->m_mcstfRefList[mcstf->m_numRef].error, 0, sizeof(int) * ((mcstf->m_sourceWidth / 4) * (mcstf->m_sourceHeight / 4)));
 
                         mcstf->m_numRef--;
                     }
@@ -1945,8 +1946,8 @@ void Lookahead::slicetypeDecide()
     PreLookaheadGroup pre(*this);
     Lowres* frames[X265_LOOKAHEAD_MAX + X265_BFRAME_MAX + 4];
     Frame*  list[X265_BFRAME_MAX + 4];
-    memset(frames, 0, sizeof(frames));
-    memset(list, 0, sizeof(list));
+    std::memset(frames, 0, sizeof(frames));
+    std::memset(list, 0, sizeof(list));
     int maxSearch = X265_MIN(m_param->lookaheadDepth, X265_LOOKAHEAD_MAX);
     maxSearch = X265_MAX(1, maxSearch);
 
@@ -2055,7 +2056,7 @@ void Lookahead::slicetypeDecide()
         if (!m_param->rc.bStatRead)
             slicetypeAnalyse(frames, false);
         bool bIsVbv = m_param->rc.vbvBufferSize > 0 && m_param->rc.vbvMaxBitrate > 0;
-        if ((strlen(m_param->analysisLoad) && m_param->scaleFactor && bIsVbv) || m_param->bliveVBV2pass)
+        if ((std::strlen(m_param->analysisLoad) && m_param->scaleFactor && bIsVbv) || m_param->bliveVBV2pass)
         {
             int numFrames;
             for (numFrames = 0; numFrames < maxSearch; numFrames++)
@@ -2069,7 +2070,7 @@ void Lookahead::slicetypeDecide()
     }
 
     int bframes, brefs;
-    if (!strlen(m_param->analysisLoad) || m_param->bAnalysisType == HEVC_INFO)
+    if (!std::strlen(m_param->analysisLoad) || m_param->bAnalysisType == HEVC_INFO)
     {
         bool isClosedGopRadl = m_param->radl && (m_param->keyframeMax != m_param->keyframeMin);
         for (bframes = 0, brefs = 0;; bframes++)

@@ -976,6 +976,175 @@ def validate_lavf_smoke(repo_root):
     print('LAVF smoke guard validated')
 
 
+def validate_qpfile_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'QPFile Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'QPFile Smoke (All CLI)'))
+
+    for required, message in {
+        "cat > smoke_qpfile.txt <<'EOF'": 'QPFile smoke must create smoke_qpfile.txt via heredoc',
+        '0 I 22': 'QPFile smoke must require frame 0 I 22 entry',
+        '3 P 24': 'QPFile smoke must require frame 3 P 24 entry',
+        '6 B 26': 'QPFile smoke must require frame 6 B 26 entry',
+        '9 K 20': 'QPFile smoke must require frame 9 K 20 entry',
+        'EOF': 'QPFile smoke must close heredoc',
+        'test -s smoke_qpfile.hevc': 'QPFile smoke must require non-empty HEVC output',
+        'ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_qpfile.hevc > smoke_qpfile_count.txt': 'QPFile smoke must count decoded frames',
+        'grep -q "nb_read_frames=12" smoke_qpfile_count.txt': 'QPFile smoke must require 12 decoded frames',
+    }.items():
+        if required not in active_lines:
+            fail(message, build)
+
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_qpfile.y4m' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one QPFile input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse QPFile input generator command: {exc}', build)
+    for option, expected in MKV_GENERATOR_OPTIONS:
+        option_value(generator_args, option, expected, build, 'QPFile input generator')
+    if generator_args[-1] != 'smoke_qpfile.y4m':
+        fail(f'QPFile input generator must write smoke_qpfile.y4m, got {generator_args[-1]}', build)
+
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_qpfile' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one QPFile x265 command, found {len(command_lines)}', build)
+    try:
+        args = shlex.split(command_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse QPFile smoke command: {exc}', build)
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'QPFile smoke must run build/all/x265.exe, got {actual}', build)
+    for option, expected in (
+        ('--input', 'smoke_qpfile.y4m'),
+        ('--input-res', '160x90'),
+        ('--fps', '24'),
+        ('--frames', '12'),
+        ('--qpfile', 'smoke_qpfile.txt'),
+        ('--output', 'smoke_qpfile.hevc'),
+    ):
+        option_value(args, option, expected, build, 'QPFile smoke')
+    print('QPFile smoke guard validated')
+
+
+def validate_zonefile_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'Zonefile Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'Zonefile Smoke (All CLI)'))
+
+    for required, message in {
+        "cat > smoke_zonefile.txt <<'EOF'": 'Zonefile smoke must create smoke_zonefile.txt via heredoc',
+        '0 --bitrate 350': 'Zonefile smoke must require frame 0 bitrate override',
+        '6 --bitrate 500': 'Zonefile smoke must require frame 6 bitrate override',
+        'EOF': 'Zonefile smoke must close heredoc',
+        'test -s smoke_zonefile.hevc': 'Zonefile smoke must require non-empty HEVC output',
+        'ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_zonefile.hevc > smoke_zonefile_count.txt': 'Zonefile smoke must count decoded frames',
+        'grep -q "nb_read_frames=12" smoke_zonefile_count.txt': 'Zonefile smoke must require 12 decoded frames',
+    }.items():
+        if required not in active_lines:
+            fail(message, build)
+
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_zonefile.y4m' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one Zonefile input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse Zonefile input generator command: {exc}', build)
+    for option, expected in MKV_GENERATOR_OPTIONS:
+        option_value(generator_args, option, expected, build, 'Zonefile input generator')
+    if generator_args[-1] != 'smoke_zonefile.y4m':
+        fail(f'Zonefile input generator must write smoke_zonefile.y4m, got {generator_args[-1]}', build)
+
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_zonefile' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one Zonefile x265 command, found {len(command_lines)}', build)
+    try:
+        args = shlex.split(command_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse Zonefile smoke command: {exc}', build)
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'Zonefile smoke must run build/all/x265.exe, got {actual}', build)
+    for option, expected in (
+        ('--input', 'smoke_zonefile.y4m'),
+        ('--input-res', '160x90'),
+        ('--fps', '24'),
+        ('--frames', '12'),
+        ('--bitrate', '400'),
+        ('--zonefile', 'smoke_zonefile.txt'),
+        ('--output', 'smoke_zonefile.hevc'),
+    ):
+        option_value(args, option, expected, build, 'Zonefile smoke')
+    print('Zonefile smoke guard validated')
+
+
+def validate_recon_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'Recon Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'Recon Smoke (All CLI)'))
+
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_recon.y4m' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one Recon input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse Recon input generator command: {exc}', build)
+    for option, expected in MKV_GENERATOR_OPTIONS:
+        option_value(generator_args, option, expected, build, 'Recon input generator')
+    if generator_args[-1] != 'smoke_recon.y4m':
+        fail(f'Recon input generator must write smoke_recon.y4m, got {generator_args[-1]}', build)
+
+    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_recon' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one Recon x265 command, found {len(command_lines)}', build)
+    try:
+        args = shlex.split(command_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse Recon smoke command: {exc}', build)
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'Recon smoke must run build/all/x265.exe, got {actual}', build)
+    for option, expected in (
+        ('--input', 'smoke_recon.y4m'),
+        ('--input-res', '160x90'),
+        ('--fps', '24'),
+        ('--frames', '12'),
+        ('--recon', 'smoke_recon_out.y4m'),
+        ('--output', 'smoke_recon.hevc'),
+    ):
+        option_value(args, option, expected, build, 'Recon smoke')
+    for required, message in {
+        'test -s smoke_recon.hevc': 'Recon smoke must require non-empty HEVC output',
+        'test -s smoke_recon_out.y4m': 'Recon smoke must require non-empty recon output',
+        "grep -q '^YUV4MPEG2 ' smoke_recon_out.y4m": 'Recon smoke must require YUV4MPEG2 header in recon output',
+    }.items():
+        if required not in active_lines:
+            fail(message, build)
+    print('Recon smoke guard validated')
+
+
 def validate_gop_output_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     parsed = load_yaml(repo_root, BUILD_WORKFLOW)
@@ -1181,6 +1350,33 @@ def validate_mp4_smokes(repo_root):
             },
         ),
         (
+            'MP4 single-frame 24000/1001 smoke',
+            'MP4 Smoke (All CLI Single Frame 24000/1001)',
+            'smoke_single_frac',
+            'smoke_single_frac.mp4',
+            'flags',
+            '24000/1001',
+            '1',
+            'yuv420p',
+            (),
+            (
+                ('--input', 'smoke_single_frac.y4m'),
+                ('--input-res', '128x72'),
+                ('--fps', '24000/1001'),
+                ('--frames', '1'),
+                ('--bframes', '0'),
+                ('--keyint', '1'),
+                ('--min-keyint', '1'),
+                ('--output', 'smoke_single_frac.mp4'),
+            ),
+            {
+                'probe_mp4 smoke_single_frac smoke_single_frac.mp4 flags': 'MP4 single-frame 24000/1001 smoke must probe packet flags',
+                'assert_common_mp4 smoke_single_frac 128 72 yuv420p 24000/1001 1 1/24000': 'MP4 single-frame 24000/1001 smoke must require common MP4 stream properties',
+                'assert_mp4_markers smoke_single_frac.mp4 iso6 hvc1 hvcC': 'MP4 single-frame 24000/1001 smoke must require MP4 HEVC markers',
+                'assert_single_frame_mp4 smoke_single_frac 0.06 0.03 0.06': 'MP4 single-frame 24000/1001 smoke must require single-frame timing window',
+            },
+        ),
+        (
             'MP4 24000/1001 smoke',
             'MP4 Smoke (All CLI 24000/1001)',
             'smoke_frac',
@@ -1304,6 +1500,48 @@ def validate_mp4_smokes(repo_root):
         for required, message in required_lines.items():
             if required not in active_lines:
                 fail(message, build)
+
+    step = named_step(workflow_steps(parsed, build, 'build'), 'MP4 Smoke (All CLI Strict-CBR Fails)', build, job_name='build')
+    active_lines = shell_active_logical_lines(required_run(step, build, 'MP4 Smoke (All CLI Strict-CBR Fails)'))
+    generator_line = 'ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_strict_cbr.y4m'
+    if generator_line not in active_lines:
+        fail('MP4 strict-CBR smoke must generate 16-frame yuv420p input', build)
+    command_lines = [line for line in active_lines if 'build/all/x265.exe' in line and 'smoke_strict_cbr.mp4' in line]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one MP4 strict-CBR smoke x265 command, found {len(command_lines)}', build)
+    before_then = command_lines[0]
+    if before_then.startswith('if '):
+        before_then = before_then[3:].strip()
+    if before_then.endswith('; then'):
+        before_then = before_then[:-6].strip()
+    try:
+        args = shlex.split(before_then)
+    except ValueError as exc:
+        fail(f'could not parse MP4 strict-CBR smoke command: {exc}', build)
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'MP4 strict-CBR smoke must run build/all/x265.exe, got {actual}', build)
+    for option, expected in (
+        ('--input', 'smoke_strict_cbr.y4m'),
+        ('--input-res', '128x72'),
+        ('--fps', '24'),
+        ('--frames', '16'),
+        ('--bitrate', '300'),
+        ('--vbv-bufsize', '300'),
+        ('--output', 'smoke_strict_cbr.mp4'),
+    ):
+        option_value(args, option, expected, build, 'MP4 strict-CBR smoke')
+    for expected in ('--strict-cbr', '--hrd'):
+        if expected not in args:
+            fail(f'missing MP4 strict-CBR smoke argument: {expected}', build)
+    for required, message in {
+        'echo "strict-cbr MP4 encode unexpectedly succeeded"': 'MP4 strict-CBR smoke must fail if strict-CBR MP4 encode unexpectedly succeeds',
+        'if [ -f smoke_strict_cbr.mp4 ] && [ -s smoke_strict_cbr.mp4 ]; then': 'MP4 strict-CBR smoke must conditionally inspect unexpected MP4 output',
+        'ffprobe -v error smoke_strict_cbr.mp4 >/dev/null 2>&1 && {': 'MP4 strict-CBR smoke must reject valid playable MP4 output',
+        'echo "strict-cbr MP4 output should not be a valid playable file"': 'MP4 strict-CBR smoke must explain unexpected valid MP4 output',
+    }.items():
+        if required not in active_lines:
+            fail(message, build)
     print('MP4 smoke guards validated')
 
 
@@ -1698,6 +1936,9 @@ def main():
         validate_threaded_me_smoke(repo_root)
         validate_mkv_smoke(repo_root)
         validate_lavf_smoke(repo_root)
+        validate_qpfile_smoke(repo_root)
+        validate_zonefile_smoke(repo_root)
+        validate_recon_smoke(repo_root)
         validate_gop_output_smoke(repo_root)
         validate_mp4_smokes(repo_root)
         validate_zimg_smoke(repo_root)

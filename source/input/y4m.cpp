@@ -40,7 +40,6 @@
 #endif
 
 using namespace X265_NS;
-using namespace std;
 static const char header[] = {'F','R','A','M','E'};
 Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
 {
