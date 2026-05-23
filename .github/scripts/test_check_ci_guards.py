@@ -1200,6 +1200,12 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/all/x265.exe --input smoke_mkv.y4m', 'build/8b/x265.exe --input smoke_mkv.y4m')
+        expect_fail(run_checker(repo), 'MKV smoke must run build/all/x265.exe, got build/8b/x265.exe')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s smoke_mkv.mkv', '# test -s smoke_mkv.mkv')
         expect_fail(run_checker(repo), 'MKV smoke must require non-empty MKV output')
 
@@ -1242,6 +1248,12 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '2>&1 | tee smoke_lavf_log.txt', '2>&1')
+        expect_fail(run_checker(repo), 'LAVF smoke must capture x265 log to smoke_lavf_log.txt')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q "nb_read_frames=12" smoke_lavf_count.txt', 'grep -q "nb_read_frames=1" smoke_lavf_count.txt')
         expect_fail(run_checker(repo), 'LAVF smoke must require 12 decoded frames')
 
@@ -1256,6 +1268,12 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 16 --bframes 0 --keyint 8 --min-keyint 8 --no-open-gop --output smoke_gop.gop', '--frames 16 --bframes 0 --keyint 16 --min-keyint 8 --no-open-gop --output smoke_gop.gop')
         expect_fail(run_checker(repo), 'GOP smoke --keyint must be 8, got 16')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'gop_muxer.exe smoke_gop.gop', 'gop_muxer.exe wrong.gop')
+        expect_fail(run_checker(repo), 'GOP smoke must mux smoke_gop.gop with gop_muxer.exe')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
