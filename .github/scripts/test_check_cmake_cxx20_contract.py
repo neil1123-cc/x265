@@ -224,6 +224,26 @@ def main():
         ''')
         expect_pass(run_checker(variable_warning_feature_source))
 
+        chained_variable_standard_feature_source = write_source(root / 'chained-variable-standard-target-feature')
+        chained_variable_standard_feature_nested = chained_variable_standard_feature_source / 'cmake'
+        chained_variable_standard_feature_nested.mkdir()
+        (chained_variable_standard_feature_nested / 'features.cmake').write_text('''
+        set(CXX_STD_FEATURE cxx_std_20)
+        set(CXX_STD_FEATURE_ALIAS ${CXX_STD_FEATURE})
+        target_compile_features(cli PRIVATE ${CXX_STD_FEATURE_ALIAS})
+        ''')
+        expect_fail(run_checker(chained_variable_standard_feature_source), 'target-level C++ compile feature override')
+
+        chained_variable_warning_feature_source = write_source(root / 'chained-variable-warning-target-feature-pass')
+        chained_variable_warning_feature_nested = chained_variable_warning_feature_source / 'cmake'
+        chained_variable_warning_feature_nested.mkdir()
+        (chained_variable_warning_feature_nested / 'features.cmake').write_text('''
+        set(CXX_WARNING_FEATURE cxx_constexpr)
+        set(CXX_WARNING_FEATURE_ALIAS ${CXX_WARNING_FEATURE})
+        target_compile_features(cli PRIVATE ${CXX_WARNING_FEATURE_ALIAS})
+        ''')
+        expect_pass(run_checker(chained_variable_warning_feature_source))
+
         bracket_comment_feature_source = write_source(root / 'bracket-comment-target-feature')
         bracket_comment_feature_nested = bracket_comment_feature_source / 'cmake'
         bracket_comment_feature_nested.mkdir()
