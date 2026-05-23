@@ -408,6 +408,46 @@ def collect_wrapper_sink_parameters(source_commands):
     }
 
 
+def referenced_wrapper_target_feature_parameters(command, parameters, wrapper_target_feature_parameters):
+    name = cmake_command_name(command)
+    parts = tokenize_cmake_body(command)
+    if parts is None:
+        return set()
+    if name == 'target_compile_features':
+        return wrapper_parameter_references(parts, parameters)
+    if name in wrapper_target_feature_parameters:
+        references = set()
+        for wrapper_parameters, target_feature_parameters in wrapper_target_feature_parameters[name]:
+            argument_parts = wrapper_sink_argument_parts(parts, wrapper_parameters, target_feature_parameters)
+            references.update(wrapper_parameter_references(argument_parts, parameters))
+        return references
+    return set()
+
+
+def collect_wrapper_target_feature_parameters(source_commands):
+    wrapper_definitions = collect_wrapper_definitions(source_commands)
+    wrapper_target_feature_parameters = {
+        name: [(parameters, set()) for parameters, _body in definitions]
+        for name, definitions in wrapper_definitions.items()
+    }
+    changed = True
+    while changed:
+        changed = False
+        for name, definitions in wrapper_definitions.items():
+            for definition_index, (parameters, body) in enumerate(definitions):
+                target_feature_parameters = wrapper_target_feature_parameters[name][definition_index][1]
+                references = set()
+                for command in body:
+                    references.update(referenced_wrapper_target_feature_parameters(command, parameters, wrapper_target_feature_parameters))
+                if not references.issubset(target_feature_parameters):
+                    target_feature_parameters.update(references)
+                    changed = True
+    return {
+        name: [(parameters, frozenset(target_feature_parameters)) for parameters, target_feature_parameters in definitions]
+        for name, definitions in wrapper_target_feature_parameters.items()
+    }
+
+
 def contains_manual_standard_variable(parts, manual_standard_variables):
     return bool(variable_references(parts) & manual_standard_variables)
 
@@ -429,12 +469,33 @@ def has_manual_standard_wrapper_call(command, manual_standard_variables, wrapper
     return False
 
 
+def has_target_feature_wrapper_call(command, target_feature_variables, wrapper_target_feature_parameters):
+    name = cmake_command_name(command)
+    parts = tokenize_cmake_body(command)
+    if parts is None or name not in wrapper_target_feature_parameters:
+        return False
+    for parameters, target_feature_parameters in wrapper_target_feature_parameters[name]:
+        argument_parts = wrapper_sink_argument_parts(parts, parameters, target_feature_parameters)
+        if contains_target_feature_override_values(argument_parts, target_feature_variables):
+            return True
+    return False
+
+
 def foreach_values_contain_manual_standard(values, manual_standard_variables):
     if contains_manual_standard_flag(values) or contains_manual_standard_variable(values, manual_standard_variables):
         return True
     upper_values = [value.upper() for value in values]
     if len(values) >= 3 and upper_values[0] == 'IN' and upper_values[1] == 'LISTS':
         return any(value in manual_standard_variables for value in values[2:])
+    return False
+
+
+def foreach_values_contain_target_feature(values, target_feature_variables):
+    if contains_target_feature_override_values(values, target_feature_variables):
+        return True
+    upper_values = [value.upper() for value in values]
+    if len(values) >= 3 and upper_values[0] == 'IN' and upper_values[1] == 'LISTS':
+        return any(value in target_feature_variables for value in values[2:])
     return False
 
 
@@ -541,6 +602,7 @@ def check_contract(source_dir):
     target_feature_variables = set()
     source_commands = [(path, tuple(cmake_commands(path))) for path in iter_source_cmake_files(root)]
     wrapper_sink_parameters = collect_wrapper_sink_parameters(source_commands)
+    wrapper_target_feature_parameters = collect_wrapper_target_feature_parameters(source_commands)
     changed = True
     while changed:
         changed = False
@@ -591,6 +653,11 @@ def check_contract(source_dir):
                         if foreach_values_contain_manual_standard(values, manual_standard_variables):
                             manual_standard_variables.add(loop_variable)
                             changed = True
+                    if loop_variable not in target_feature_variables:
+                        values = parts[1:]
+                        if foreach_values_contain_target_feature(values, target_feature_variables):
+                            target_feature_variables.add(loop_variable)
+                            changed = True
 
     target_overrides = []
     manual_standard_flags = []
@@ -602,7 +669,7 @@ def check_contract(source_dir):
             parsed = parse_cmake_set(command)
             if name in ('set_target_properties', 'set_property') and has_target_property_override(command):
                 target_overrides.append((path, index, command))
-            if has_target_feature_override(command, target_feature_variables):
+            if has_target_feature_override(command, target_feature_variables) or has_target_feature_wrapper_call(command, target_feature_variables, wrapper_target_feature_parameters):
                 target_feature_overrides.append((path, index, command))
             if parsed and parsed[0] in REQUIRED_TOP_LEVEL_CONTRACT:
                 parsed_value = normalize_contract_value(parsed[0], parsed[1])

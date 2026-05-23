@@ -244,6 +244,52 @@ def main():
         ''')
         expect_pass(run_checker(chained_variable_warning_feature_source))
 
+        function_variable_standard_feature_source = write_source(root / 'function-variable-standard-target-feature')
+        function_variable_standard_feature_nested = function_variable_standard_feature_source / 'cmake'
+        function_variable_standard_feature_nested.mkdir()
+        (function_variable_standard_feature_nested / 'features.cmake').write_text('''
+        set(CXX_STD_FEATURE cxx_std_20)
+        function(add_std_feature feature)
+          target_compile_features(cli PRIVATE ${feature})
+        endfunction()
+        add_std_feature(${CXX_STD_FEATURE})
+        ''')
+        expect_fail(run_checker(function_variable_standard_feature_source), 'target-level C++ compile feature override')
+
+        function_variable_warning_feature_source = write_source(root / 'function-variable-warning-target-feature-pass')
+        function_variable_warning_feature_nested = function_variable_warning_feature_source / 'cmake'
+        function_variable_warning_feature_nested.mkdir()
+        (function_variable_warning_feature_nested / 'features.cmake').write_text('''
+        set(CXX_WARNING_FEATURE cxx_constexpr)
+        function(add_warning_feature feature)
+          target_compile_features(cli PRIVATE ${feature})
+        endfunction()
+        add_warning_feature(${CXX_WARNING_FEATURE})
+        ''')
+        expect_pass(run_checker(function_variable_warning_feature_source))
+
+        foreach_variable_standard_feature_source = write_source(root / 'foreach-variable-standard-target-feature')
+        foreach_variable_standard_feature_nested = foreach_variable_standard_feature_source / 'cmake'
+        foreach_variable_standard_feature_nested.mkdir()
+        (foreach_variable_standard_feature_nested / 'features.cmake').write_text('''
+        set(CXX_STD_FEATURE cxx_std_20)
+        foreach(feature ${CXX_STD_FEATURE})
+          target_compile_features(cli PRIVATE ${feature})
+        endforeach()
+        ''')
+        expect_fail(run_checker(foreach_variable_standard_feature_source), 'target-level C++ compile feature override')
+
+        foreach_variable_warning_feature_source = write_source(root / 'foreach-variable-warning-target-feature-pass')
+        foreach_variable_warning_feature_nested = foreach_variable_warning_feature_source / 'cmake'
+        foreach_variable_warning_feature_nested.mkdir()
+        (foreach_variable_warning_feature_nested / 'features.cmake').write_text('''
+        set(CXX_WARNING_FEATURE cxx_constexpr)
+        foreach(feature ${CXX_WARNING_FEATURE})
+          target_compile_features(cli PRIVATE ${feature})
+        endforeach()
+        ''')
+        expect_pass(run_checker(foreach_variable_warning_feature_source))
+
         bracket_comment_feature_source = write_source(root / 'bracket-comment-target-feature')
         bracket_comment_feature_nested = bracket_comment_feature_source / 'cmake'
         bracket_comment_feature_nested.mkdir()
