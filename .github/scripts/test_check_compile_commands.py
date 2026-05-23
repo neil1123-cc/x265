@@ -2148,6 +2148,7 @@ def main():
             'file': str(root / 'source/common/template.inc'),
         }])
         expect_pass(run_checker(msvc_tp_response_command_dir, '--min-cpp-commands=1'))
+        expect_pass(run_checker(msvc_tp_response_command_dir, '--required-file-substring=source/common/template.inc', '--min-cpp-commands=1'))
 
         msvc_tp_response_required_file_flag_dir = root / 'msvc-tp-response-required-file-flag'
         msvc_tp_response_required_file_flag_dir.mkdir()
@@ -2566,6 +2567,52 @@ def main():
             },
         ])
         expect_fail(run_checker(duplicate_source_dual_field_required_file_flag_dir, '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF', '--min-cpp-commands=2'), 'missing required flag -DENABLE_LAVF for file substring source/input/lavf.cpp')
+
+        duplicate_source_dual_field_forbidden_file_flag_dir = root / 'duplicate-source-dual-field-forbidden-file-flag'
+        write_compile_commands_records(duplicate_source_dual_field_forbidden_file_flag_dir, [
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_file_flag_dir),
+                'command': 'c++ -std=gnu++20 -c source/input/lavf.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-DENABLE_MKV', '-c', 'source/input/lavf.cpp'],
+                'file': str(root / 'source/input/lavf.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_file_flag_dir),
+                'command': 'c++ -std=gnu++20 -c source/input/lavf.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-c', 'source/input/lavf.cpp'],
+                'file': str(root / 'source/input/lavf.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_file_flag_dir),
+                'command': 'c++ -std=gnu++20 -c source/encoder/encoder.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-c', 'source/encoder/encoder.cpp'],
+                'file': str(root / 'source/encoder/encoder.cpp'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_dual_field_forbidden_file_flag_dir, '--forbidden-file-flag=source/input/lavf.cpp=-DENABLE_MKV', '--min-cpp-commands=2'), 'forbidden flag -DENABLE_MKV for file substring source/input/lavf.cpp')
+
+        duplicate_source_dual_field_forbidden_flag_substring_dir = root / 'duplicate-source-dual-field-forbidden-flag-substring'
+        write_compile_commands_records(duplicate_source_dual_field_forbidden_flag_substring_dir, [
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_flag_substring_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Wno-error=deprecated', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_flag_substring_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_flag_substring_dir),
+                'command': 'c++ -std=gnu++20 -Wdeprecated -c source/encoder/encoder.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-c', 'source/encoder/encoder.cpp'],
+                'file': str(root / 'source/encoder/encoder.cpp'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_dual_field_forbidden_flag_substring_dir, '--forbidden-flag-substring=-Wno-error=deprecated', '--min-cpp-commands=2'), 'forbidden flag substring -Wno-error=deprecated')
 
         windows_duplicate_source_min_cpp_dir = root / 'windows-duplicate-source-min-cpp-commands'
         write_compile_commands_records(windows_duplicate_source_min_cpp_dir, [
