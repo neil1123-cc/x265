@@ -850,6 +850,15 @@ def main():
         }])
         expect_pass(run_checker(equivalent_std_fields_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
+        duplicate_equivalent_std_fields_dir = root / 'duplicate-equivalent-command-arguments-std'
+        write_compile_commands_records(duplicate_equivalent_std_fields_dir, [{
+            'directory': str(duplicate_equivalent_std_fields_dir),
+            'command': 'c++ --std gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp',
+            'arguments': ['c++', '-std=gnu++20', '-Wdeprecated', '-Werror=deprecated', '-c', 'source/common/common.cpp'],
+            'file': str(root / 'source/common/common.cpp'),
+        }])
+        expect_pass(run_checker(duplicate_equivalent_std_fields_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
         missing_argument_std_dir = root / 'command-arguments-missing-std'
         write_compile_commands_records(missing_argument_std_dir, [{
             'directory': str(missing_argument_std_dir),
@@ -1151,6 +1160,14 @@ def main():
         }])
         expect_pass(run_checker(cxx_header_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
 
+        cxx_header_required_file_flag_dir = root / 'x-cxx-header-required-file-flag'
+        write_compile_commands_records(cxx_header_required_file_flag_dir, [{
+            'directory': str(cxx_header_required_file_flag_dir),
+            'command': 'cc -x c++-header -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_pass(run_checker(cxx_header_required_file_flag_dir, '--required-file-flag=source/common/template.inc=-DENABLE_LAVF', '--min-cpp-commands=1'))
+
         objective_cxx_language_dir = root / 'x-objective-cxx-language'
         write_compile_commands_records(objective_cxx_language_dir, [{
             'directory': str(objective_cxx_language_dir),
@@ -1158,6 +1175,14 @@ def main():
             'file': str(root / 'source/common/template.inc'),
         }])
         expect_pass(run_checker(objective_cxx_language_dir, '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
+        objective_cxx_forbidden_file_flag_dir = root / 'x-objective-cxx-forbidden-file-flag'
+        write_compile_commands_records(objective_cxx_forbidden_file_flag_dir, [{
+            'directory': str(objective_cxx_forbidden_file_flag_dir),
+            'command': 'cc -x objective-c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_MKV -c source/common/template.inc',
+            'file': str(root / 'source/common/template.inc'),
+        }])
+        expect_fail(run_checker(objective_cxx_forbidden_file_flag_dir, '--forbidden-file-flag=source/common/template.inc=-DENABLE_MKV', '--min-cpp-commands=1'), 'forbidden flag -DENABLE_MKV for file substring source/common/template.inc')
 
         cxx_language_arguments_dir = root / 'x-cxx-language-arguments'
         write_compile_commands_records(cxx_language_arguments_dir, [{
