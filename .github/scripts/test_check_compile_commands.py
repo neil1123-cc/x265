@@ -2615,6 +2615,29 @@ def main():
         ])
         expect_fail(run_checker(duplicate_source_dual_field_forbidden_flag_substring_dir, '--forbidden-flag-substring=-Wno-error=deprecated', '--min-cpp-commands=2'), 'forbidden flag substring -Wno-error=deprecated')
 
+        duplicate_source_dual_field_forbidden_exact_flag_dir = root / 'duplicate-source-dual-field-forbidden-exact-flag'
+        write_compile_commands_records(duplicate_source_dual_field_forbidden_exact_flag_dir, [
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_exact_flag_dir),
+                'command': 'c++ -std=gnu++20 -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-DX265_DEPTH=12', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_exact_flag_dir),
+                'command': 'c++ -std=gnu++20 -c source/common/common.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-c', 'source/common/common.cpp'],
+                'file': str(root / 'source/common/common.cpp'),
+            },
+            {
+                'directory': str(duplicate_source_dual_field_forbidden_exact_flag_dir),
+                'command': 'c++ -std=gnu++20 -c source/encoder/encoder.cpp',
+                'arguments': ['c++', '-std=gnu++20', '-c', 'source/encoder/encoder.cpp'],
+                'file': str(root / 'source/encoder/encoder.cpp'),
+            },
+        ])
+        expect_fail(run_checker(duplicate_source_dual_field_forbidden_exact_flag_dir, '--forbidden-flag=-DX265_DEPTH=12', '--min-cpp-commands=2'), 'forbidden flag -DX265_DEPTH=12')
+
         windows_duplicate_source_min_cpp_dir = root / 'windows-duplicate-source-min-cpp-commands'
         write_compile_commands_records(windows_duplicate_source_min_cpp_dir, [
             {
