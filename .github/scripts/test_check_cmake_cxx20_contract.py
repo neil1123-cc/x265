@@ -426,6 +426,15 @@ def main():
         ''')
         expect_fail(run_checker(chained_interface_property_source), 'manual C++ standard flag in CMake')
 
+        interface_property_warning_pass_source = write_source(root / 'interface-property-warning-pass')
+        interface_property_warning_pass_nested = interface_property_warning_pass_source / 'cmake'
+        interface_property_warning_pass_nested.mkdir()
+        (interface_property_warning_pass_nested / 'flags.cmake').write_text('''
+        set(LOCAL_INTERFACE_FLAGS -Wall -Wextra)
+        set_property(TARGET cli APPEND PROPERTY INTERFACE_COMPILE_OPTIONS ${LOCAL_INTERFACE_FLAGS})
+        ''')
+        expect_pass(run_checker(interface_property_warning_pass_source))
+
         chained_target_properties_flag_source = write_source(root / 'chained-target-properties-standard-flag')
         chained_target_properties_flag_nested = chained_target_properties_flag_source / 'cmake'
         chained_target_properties_flag_nested.mkdir()
@@ -827,6 +836,18 @@ def main():
         ''')
         expect_fail(run_checker(macro_directory_property_forward_source), 'manual C++ standard flag in CMake')
 
+        function_interface_property_forward_source = write_source(root / 'function-interface-property-forward-standard-flag')
+        function_interface_property_forward_nested = function_interface_property_forward_source / 'cmake'
+        function_interface_property_forward_nested.mkdir()
+        (function_interface_property_forward_nested / 'properties.cmake').write_text('''
+        set(LOCAL_STD_FLAG -std=gnu++17)
+        function(add_interface_flag flag)
+          set_property(TARGET cli APPEND PROPERTY INTERFACE_COMPILE_OPTIONS ${flag})
+        endfunction()
+        add_interface_flag(${LOCAL_STD_FLAG})
+        ''')
+        expect_fail(run_checker(function_interface_property_forward_source), 'manual C++ standard flag in CMake')
+
         neutral_source_property_forward_source = write_source(root / 'neutral-source-property-forward-warning-pass')
         neutral_source_property_forward_nested = neutral_source_property_forward_source / 'cmake'
         neutral_source_property_forward_nested.mkdir()
@@ -1049,6 +1070,25 @@ def main():
                               COMPILE_OPTIONS -std=gnu++17)
         ''')
         expect_fail(run_checker(target_properties_compile_flag_source), 'manual C++ standard flag in CMake')
+
+        target_properties_interface_compile_flag_source = write_source(root / 'target-properties-interface-compile-flag')
+        target_properties_interface_compile_flag_nested = target_properties_interface_compile_flag_source / 'cmake'
+        target_properties_interface_compile_flag_nested.mkdir()
+        (target_properties_interface_compile_flag_nested / 'properties.cmake').write_text('''
+        set_target_properties(cli PROPERTIES
+                              INTERFACE_COMPILE_OPTIONS -std=gnu++17)
+        ''')
+        expect_fail(run_checker(target_properties_interface_compile_flag_source), 'manual C++ standard flag in CMake')
+
+        target_properties_interface_compile_flag_pass_source = write_source(root / 'target-properties-interface-compile-flag-pass')
+        target_properties_interface_compile_flag_pass_nested = target_properties_interface_compile_flag_pass_source / 'cmake'
+        target_properties_interface_compile_flag_pass_nested.mkdir()
+        (target_properties_interface_compile_flag_pass_nested / 'properties.cmake').write_text('''
+        set_target_properties(cli PROPERTIES
+                              OUTPUT_NAME x265
+                              INTERFACE_COMPILE_OPTIONS "-Wall;-Wextra")
+        ''')
+        expect_pass(run_checker(target_properties_interface_compile_flag_pass_source))
 
         target_property_multi_compile_flag_source = write_source(root / 'target-property-multi-compile-flag')
         target_property_multi_compile_flag_nested = target_property_multi_compile_flag_source / 'cmake'
