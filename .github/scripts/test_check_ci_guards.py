@@ -906,6 +906,18 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-downgrade-guard', 'configure_cxx20_scan x265/source build/cxx20-warning-scan')
+        expect_fail(run_checker(repo), 'GNU++20 downgrade guard must actively configure downgrade build')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_clang build/cxx20-downgrade-guard', 'check_cxx20_commands_clang build/cxx20-warning-scan')
+        expect_fail(run_checker(repo), 'GNU++20 downgrade guard must actively check compile commands')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'for target_cpu in haswell arrowlake znver5; do', 'for target_cpu in haswell znver5; do')
         expect_fail(run_checker(repo), 'CPU warning scan must actively cover haswell/arrowlake/znver5 loop')
 
@@ -914,6 +926,18 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '-DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy', '# -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy')
         expect_fail(run_checker(repo), 'ASM warning scan must preserve NASM legacy macro warning flag')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_clang build/cxx20-warning-scan-asm', 'check_cxx20_commands_clang build/cxx20-warning-scan')
+        expect_fail(run_checker(repo), 'ASM warning scan must actively check asm compile commands target')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-substring=source/test/', '--required-file-substring=source/common/')
+        expect_fail(run_checker(repo), 'ASM warning scan must actively require test sources')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1273,7 +1297,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'gop_muxer.exe smoke_gop.gop', 'gop_muxer.exe wrong.gop')
-        expect_fail(run_checker(repo), 'GOP smoke must mux smoke_gop.gop with gop_muxer.exe')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: gop_muxer.exe smoke_gop.gop')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

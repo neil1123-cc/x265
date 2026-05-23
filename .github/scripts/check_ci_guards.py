@@ -1768,6 +1768,14 @@ def validate_gnu20_diagnostic_steps(repo_root):
     exact_command_requirements = (
         (
             'cxx20-warning-scan',
+            'Check GNU++20 downgrade guardrail',
+            (
+                (('configure_cxx20_scan', 'x265/source', 'build/cxx20-downgrade-guard'), 'GNU++20 downgrade guard must actively configure downgrade build'),
+                (('check_cxx20_commands_clang', 'build/cxx20-downgrade-guard'), 'GNU++20 downgrade guard must actively check compile commands'),
+            ),
+        ),
+        (
+            'cxx20-warning-scan',
             'Run C++20 CLI and dependency warning scans',
             (
                 (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan'), 'C++20 warning scan must actively configure base warning-scan target'),
@@ -1785,6 +1793,13 @@ def validate_gnu20_diagnostic_steps(repo_root):
             (
                 (('configure_cxx20_scan', 'x265/source', 'build/cxx20-warning-scan-all-12b-lib'), 'C++20 warning scan must actively configure all 12-bit lib'),
                 (('check_cxx20_commands_clang', 'build/cxx20-warning-scan-all'), 'C++20 warning scan must actively check all-bit-depth warning-scan compile commands target'),
+            ),
+        ),
+        (
+            'cxx20-warning-scan',
+            'Run C++20 CPU and ASM warning scans',
+            (
+                (('check_cxx20_commands_clang', 'build/cxx20-warning-scan-asm'), 'ASM warning scan must actively check asm compile commands target'),
             ),
         ),
         (
