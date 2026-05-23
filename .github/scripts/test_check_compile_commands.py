@@ -932,6 +932,9 @@ def main():
         write_compile_commands(root / 'plain-cxx20', 'c++ -std=c++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
         expect_fail(run_checker(root / 'plain-cxx20'), 'non-GNU C++20 dialect flag -std=c++20')
 
+        write_compile_commands(root / 'split-gnu20-double-dash', 'c++ --std gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
+        expect_pass(run_checker(root / 'split-gnu20-double-dash', '--required-flag=-Werror=deprecated', '--min-cpp-commands=1'))
+
         write_compile_commands(root / 'mixed-plain-cxx20', 'c++ -std=gnu++20 -std=c++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp')
         expect_fail(run_checker(root / 'mixed-plain-cxx20'), 'duplicate standard flags -std=gnu++20,-std=c++20')
 
@@ -994,11 +997,23 @@ def main():
         write_compile_commands(root / 'missing-file', 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/encoder/api.cpp', 'source/encoder/api.cpp')
         expect_fail(run_checker(root / 'missing-file', '--required-file-substring=source/common/'), 'missing compile command for file substring source/common/')
 
+        write_compile_commands_entries(root / 'required-file-substring-only-c-entry', [
+            ('cc -std=c11 -c source/common/pixel.c', 'source/common/pixel.c'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_fail(run_checker(root / 'required-file-substring-only-c-entry', '--required-file-substring=source/common/pixel.c'), 'missing compile command for file substring source/common/pixel.c')
+
         write_compile_commands_entries(root / 'forbidden-file-substring', [
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/output/mkv.cpp', 'source/output/mkv.cpp'),
         ])
         expect_fail(run_checker(root / 'forbidden-file-substring', '--forbidden-file-substring=source/output/mkv.cpp'), 'forbidden compile command for file substring source/output/mkv.cpp')
+
+        write_compile_commands_entries(root / 'forbidden-file-substring-only-c-entry-pass', [
+            ('cc -std=c11 -c source/output/legacy.c', 'source/output/legacy.c'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(root / 'forbidden-file-substring-only-c-entry-pass', '--forbidden-file-substring=source/output/legacy.c'))
 
         write_compile_commands(root / 'forbidden-windows-file-substring', 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/output/mp4.cpp', 'source\\output\\mp4.cpp')
         expect_fail(run_checker(root / 'forbidden-windows-file-substring', '--forbidden-file-substring=source/output/mp4.cpp'), 'forbidden compile command for file substring source/output/mp4.cpp')
