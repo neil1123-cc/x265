@@ -1218,6 +1218,7 @@ def main():
         }])
         expect_pass(run_checker(msvc_tp_language_dir, '--min-cpp-commands=1'))
         expect_pass(run_checker(msvc_tp_language_dir, '--required-file-substring=source/common/template.inc', '--min-cpp-commands=1'))
+        expect_pass(run_checker(msvc_tp_language_dir, '--forbidden-file-substring=source/output/mp4.cpp', '--min-cpp-commands=1'))
 
         msvc_fused_tp_language_dir = root / 'msvc-fused-tp-cxx-language'
         write_compile_commands_records(msvc_fused_tp_language_dir, [{
