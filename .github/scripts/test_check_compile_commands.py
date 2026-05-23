@@ -807,6 +807,14 @@ def main():
         }])
         expect_pass(run_checker(windows_mixed_required_file_flag_dir, '--required-file-flag=source\\input/lavf.cpp=-DENABLE_LAVF'))
 
+        windows_casefold_required_file_rules_dir = root / 'windows-casefold-required-file-rules'
+        write_compile_commands_records(windows_casefold_required_file_rules_dir, [{
+            'directory': str(windows_casefold_required_file_rules_dir),
+            'command': 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DENABLE_LAVF -c source/input/lavf.cpp',
+            'file': str(root / 'SOURCE\\INPUT\\LAVF.CPP'),
+        }])
+        expect_pass(run_checker(windows_casefold_required_file_rules_dir, '--required-file-substring=source/input/lavf.cpp', '--required-file-flag=source/input/lavf.cpp=-DENABLE_LAVF'))
+
         windows_forbidden_backslash_arg_dir = root / 'windows-forbidden-backslash-arg-substring'
         write_compile_commands_records(windows_forbidden_backslash_arg_dir, [{
             'directory': str(windows_forbidden_backslash_arg_dir),
@@ -2035,6 +2043,13 @@ def main():
             ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
         ])
         expect_pass(run_checker(windows_depth_exclude_both_depths_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source\\dynamicHDR10\\'))
+
+        windows_casefold_depth_exclude_dir = root / 'windows-casefold-depth-exclude'
+        write_compile_commands_entries(windows_casefold_depth_exclude_dir, [
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -c source/dynamicHDR10/json11.cpp', 'SOURCE\\DYNAMICHDR10\\JSON11.CPP'),
+            ('c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(windows_casefold_depth_exclude_dir, '--required-depth-define=-DX265_DEPTH=8', '--depth-exclude-path=source/dynamicHDR10/'))
 
         windows_response_required_file_substring_dir = root / 'windows-response-required-file-substring'
         windows_response_required_file_substring_dir.mkdir()

@@ -282,6 +282,16 @@ def wrapper_parameter_references(parts, parameters):
     return references
 
 
+def wrapper_parameter_source_references(parts, parameters, variable_sources=None):
+    references = set()
+    for variable in variable_references(parts):
+        if variable in parameters or variable in {'ARGN', 'ARGV'} or re.fullmatch(r'ARGV[0-9]+', variable):
+            references.add(variable)
+        elif variable_sources and variable in variable_sources:
+            references.update(variable_sources[variable])
+    return references
+
+
 def wrapper_sink_argument_parts(parts, parameters, sink_parameters):
     selected_parts = []
     parameter_positions = {parameter: index for index, parameter in enumerate(parameters)}
@@ -408,18 +418,18 @@ def collect_wrapper_sink_parameters(source_commands):
     }
 
 
-def referenced_wrapper_target_feature_parameters(command, parameters, wrapper_target_feature_parameters):
+def referenced_wrapper_target_feature_parameters(command, parameters, wrapper_target_feature_parameters, variable_sources=None):
     name = cmake_command_name(command)
     parts = tokenize_cmake_body(command)
     if parts is None:
         return set()
     if name == 'target_compile_features':
-        return wrapper_parameter_references(parts, parameters)
+        return wrapper_parameter_source_references(parts, parameters, variable_sources)
     if name in wrapper_target_feature_parameters:
         references = set()
         for wrapper_parameters, target_feature_parameters in wrapper_target_feature_parameters[name]:
             argument_parts = wrapper_sink_argument_parts(parts, wrapper_parameters, target_feature_parameters)
-            references.update(wrapper_parameter_references(argument_parts, parameters))
+            references.update(wrapper_parameter_source_references(argument_parts, parameters, variable_sources))
         return references
     return set()
 
@@ -437,8 +447,29 @@ def collect_wrapper_target_feature_parameters(source_commands):
             for definition_index, (parameters, body) in enumerate(definitions):
                 target_feature_parameters = wrapper_target_feature_parameters[name][definition_index][1]
                 references = set()
+                local_variable_sources = {}
                 for command in body:
-                    references.update(referenced_wrapper_target_feature_parameters(command, parameters, wrapper_target_feature_parameters))
+                    command_name = cmake_command_name(command)
+                    parts = tokenize_cmake_body(command)
+                    if parts is None:
+                        continue
+                    local_variable = None
+                    values = ()
+                    if command_name == 'set' and len(parts) >= 2 and not is_compile_flag_variable(parts[0]):
+                        local_variable = parts[0]
+                        values = parts[1:]
+                    elif command_name == 'list' and len(parts) >= 3 and parts[0].lower() in LIST_COMPILE_FLAG_SUBCOMMANDS and not is_compile_flag_variable(parts[1]):
+                        local_variable = parts[1]
+                        values = parts[2:]
+                    elif command_name == 'string' and len(parts) >= 3 and parts[0].lower() in STRING_COMPILE_FLAG_SUBCOMMANDS and not is_compile_flag_variable(parts[1]):
+                        local_variable = parts[1]
+                        values = parts[2:]
+                    if local_variable:
+                        local_sources = wrapper_parameter_source_references(values, parameters, local_variable_sources)
+                        if local_sources:
+                            existing_sources = local_variable_sources.setdefault(local_variable, set())
+                            existing_sources.update(local_sources)
+                    references.update(referenced_wrapper_target_feature_parameters(command, parameters, wrapper_target_feature_parameters, local_variable_sources))
                 if not references.issubset(target_feature_parameters):
                     target_feature_parameters.update(references)
                     changed = True
@@ -636,6 +667,11 @@ def check_contract(source_dir):
                     new_parameters = {parameter for parameter in parts[1:] if parameter in tainted_parameters}
                     if not new_parameters.issubset(manual_standard_variables):
                         manual_standard_variables.update(new_parameters)
+                        changed = True
+                    target_feature_parameters = variable_references(parts[1:]) & target_feature_variables
+                    new_target_feature_parameters = {parameter for parameter in parts[1:] if parameter in target_feature_parameters}
+                    if not new_target_feature_parameters.issubset(target_feature_variables):
+                        target_feature_variables.update(new_target_feature_parameters)
                         changed = True
                 if name in wrapper_sink_parameters and parts:
                     wrapper_name = name

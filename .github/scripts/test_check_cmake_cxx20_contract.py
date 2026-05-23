@@ -256,6 +256,22 @@ def main():
         ''')
         expect_fail(run_checker(function_variable_standard_feature_source), 'target-level C++ compile feature override')
 
+        nested_function_variable_standard_feature_source = write_source(root / 'nested-function-variable-standard-target-feature')
+        nested_function_variable_standard_feature_nested = nested_function_variable_standard_feature_source / 'cmake'
+        nested_function_variable_standard_feature_nested.mkdir()
+        (nested_function_variable_standard_feature_nested / 'features.cmake').write_text('''
+        set(CXX_STD_FEATURE cxx_std_20)
+        function(add_std_feature feature)
+          target_compile_features(cli PRIVATE ${feature})
+        endfunction()
+        function(forward_std_feature feature)
+          set(local_feature ${feature})
+          add_std_feature(${local_feature})
+        endfunction()
+        forward_std_feature(${CXX_STD_FEATURE})
+        ''')
+        expect_fail(run_checker(nested_function_variable_standard_feature_source), 'target-level C++ compile feature override')
+
         function_variable_warning_feature_source = write_source(root / 'function-variable-warning-target-feature-pass')
         function_variable_warning_feature_nested = function_variable_warning_feature_source / 'cmake'
         function_variable_warning_feature_nested.mkdir()

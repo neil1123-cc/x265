@@ -38,6 +38,14 @@ def normalize_path_fragment(fragment):
     return str(fragment).replace('\\', '/')
 
 
+def normalized_entry_file_path(entry):
+    return entry_file_path(entry).lower()
+
+
+def normalized_path_fragment(fragment):
+    return normalize_path_fragment(fragment).lower()
+
+
 def canonical_standard_flag(flag):
     if flag in ACCEPTED_STANDARD_FLAGS[:2]:
         return 'gnu++20'
@@ -68,7 +76,7 @@ def is_cpp_entry(entry):
 
 
 def unique_source_count(entries):
-    return len({entry_file_path(entry).lower() for entry in entries})
+    return len({normalized_entry_file_path(entry) for entry in entries})
 
 
 def strip_quotes(token):
@@ -296,9 +304,9 @@ def main():
     entry_token_map = {id(entry): entry_tokens(entry) for entry in cpp}
     required_file_flags = parse_file_flag_rules(args.required_file_flag)
     forbidden_file_flag_rules = parse_file_flag_rules(args.forbidden_file_flag)
-    required_file_substrings = [normalize_path_fragment(substring) for substring in args.required_file_substring]
-    forbidden_file_substrings_arg = [normalize_path_fragment(substring) for substring in args.forbidden_file_substring]
-    depth_exclude_paths = [normalize_path_fragment(path) for path in args.depth_exclude_path]
+    required_file_substrings = [normalized_path_fragment(substring) for substring in args.required_file_substring]
+    forbidden_file_substrings_arg = [normalized_path_fragment(substring) for substring in args.forbidden_file_substring]
+    depth_exclude_paths = [normalized_path_fragment(path) for path in args.depth_exclude_path]
 
     old_std = []
     gnu_dialect_drift = []
@@ -329,17 +337,18 @@ def main():
         for flag_prefix in args.required_flag_prefix
         if entry_missing_required_flag_prefix(entry, flag_prefix)
     ]
-    missing_file_substrings = [substring for substring in required_file_substrings if not any(substring in entry_file_path(entry) for entry in cpp)]
+    missing_file_substrings = [substring for substring in required_file_substrings if not any(substring in normalized_entry_file_path(entry) for entry in cpp)]
     forbidden_file_substrings = [
         (entry, substring)
         for entry in cpp
         for substring in forbidden_file_substrings_arg
-        if substring in entry_file_path(entry)
+        if substring in normalized_entry_file_path(entry)
     ]
     missing_file_flag_matches = []
     missing_file_flags = []
     for file_substring, flag in required_file_flags:
-        matches = [entry for entry in cpp if file_substring in entry_file_path(entry)]
+        normalized_file_substring = normalized_path_fragment(file_substring)
+        matches = [entry for entry in cpp if normalized_file_substring in normalized_entry_file_path(entry)]
         if not matches:
             missing_file_flag_matches.append((file_substring, flag))
             continue
@@ -348,8 +357,9 @@ def main():
                 missing_file_flags.append((entry, file_substring, flag))
     forbidden_file_flags = []
     for file_substring, flag in forbidden_file_flag_rules:
+        normalized_file_substring = normalized_path_fragment(file_substring)
         for entry in cpp:
-            if file_substring in entry_file_path(entry) and entry_has_flag(entry, flag):
+            if normalized_file_substring in normalized_entry_file_path(entry) and entry_has_flag(entry, flag):
                 forbidden_file_flags.append((entry, file_substring, flag))
     forbidden_exact_flags = [
         (entry, flag)
@@ -369,7 +379,7 @@ def main():
     mixed_depth = []
     if args.required_depth_define:
         for entry in cpp:
-            path = entry_file_path(entry)
+            path = normalized_entry_file_path(entry)
             if any(excluded in path for excluded in depth_exclude_paths):
                 continue
             depth_checked += 1
