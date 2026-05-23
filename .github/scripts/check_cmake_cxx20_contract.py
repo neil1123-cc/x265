@@ -412,6 +412,11 @@ def contains_manual_standard_variable(parts, manual_standard_variables):
     return bool(variable_references(parts) & manual_standard_variables)
 
 
+def contains_target_feature_override_values(parts, target_feature_variables=None):
+    target_feature_variables = target_feature_variables or set()
+    return any(re.search(r'(?<![A-Za-z0-9_])cxx_std_[0-9]+(?![A-Za-z0-9_])', part) for part in parts) or bool(variable_references(parts) & target_feature_variables)
+
+
 def has_manual_standard_wrapper_call(command, manual_standard_variables, wrapper_sink_parameters):
     name = cmake_command_name(command)
     parts = tokenize_cmake_body(command)
@@ -475,13 +480,13 @@ def has_manual_standard_flag(command, manual_standard_variables=None):
     return False
 
 
-def has_target_feature_override(command):
+def has_target_feature_override(command, target_feature_variables=None):
     if cmake_command_name(command) != 'target_compile_features':
         return False
     parts = tokenize_cmake_body(command)
     if parts is None:
         return False
-    return any(re.search(r'(?<![A-Za-z0-9_])cxx_std_[0-9]+(?![A-Za-z0-9_])', part) for part in parts)
+    return contains_target_feature_override_values(parts, target_feature_variables)
 
 
 def iter_source_cmake_files(root):
@@ -533,6 +538,7 @@ def check_contract(source_dir):
             fail(f'top-level GNU++20 contract drift: set({name} {value})', top, index)
 
     manual_standard_variables = set()
+    target_feature_variables = set()
     source_commands = [(path, tuple(cmake_commands(path))) for path in iter_source_cmake_files(root)]
     wrapper_sink_parameters = collect_wrapper_sink_parameters(source_commands)
     changed = True
@@ -558,6 +564,10 @@ def check_contract(source_dir):
                 if manual_variable and manual_variable not in manual_standard_variables:
                     if contains_manual_standard_flag(values) or contains_manual_standard_variable(values, manual_standard_variables):
                         manual_standard_variables.add(manual_variable)
+                        changed = True
+                if manual_variable and manual_variable not in target_feature_variables:
+                    if contains_target_feature_override_values(values, target_feature_variables):
+                        target_feature_variables.add(manual_variable)
                         changed = True
                 if name in ('function', 'macro') and len(parts) >= 2:
                     tainted_parameters = variable_references(parts[1:]) & manual_standard_variables
@@ -592,7 +602,7 @@ def check_contract(source_dir):
             parsed = parse_cmake_set(command)
             if name in ('set_target_properties', 'set_property') and has_target_property_override(command):
                 target_overrides.append((path, index, command))
-            if has_target_feature_override(command):
+            if has_target_feature_override(command, target_feature_variables):
                 target_feature_overrides.append((path, index, command))
             if parsed and parsed[0] in REQUIRED_TOP_LEVEL_CONTRACT:
                 parsed_value = normalize_contract_value(parsed[0], parsed[1])

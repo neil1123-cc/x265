@@ -206,6 +206,24 @@ def main():
         (public_standard_feature_nested / 'features.cmake').write_text('target_compile_features(cli PUBLIC cxx_std_17)\n')
         expect_fail(run_checker(public_standard_feature_source), 'target-level C++ compile feature override')
 
+        variable_standard_feature_source = write_source(root / 'variable-standard-target-feature')
+        variable_standard_feature_nested = variable_standard_feature_source / 'cmake'
+        variable_standard_feature_nested.mkdir()
+        (variable_standard_feature_nested / 'features.cmake').write_text('''
+        set(CXX_STD_FEATURE cxx_std_20)
+        target_compile_features(cli PRIVATE ${CXX_STD_FEATURE})
+        ''')
+        expect_fail(run_checker(variable_standard_feature_source), 'target-level C++ compile feature override')
+
+        variable_warning_feature_source = write_source(root / 'variable-warning-target-feature-pass')
+        variable_warning_feature_nested = variable_warning_feature_source / 'cmake'
+        variable_warning_feature_nested.mkdir()
+        (variable_warning_feature_nested / 'features.cmake').write_text('''
+        set(CXX_WARNING_FEATURE cxx_constexpr)
+        target_compile_features(cli PRIVATE ${CXX_WARNING_FEATURE})
+        ''')
+        expect_pass(run_checker(variable_warning_feature_source))
+
         bracket_comment_feature_source = write_source(root / 'bracket-comment-target-feature')
         bracket_comment_feature_nested = bracket_comment_feature_source / 'cmake'
         bracket_comment_feature_nested.mkdir()
