@@ -1136,6 +1136,26 @@ void Encoder::copyUserSEIMessages(Frame *frame, const x265_picture* pic_in)
             userPayload = 1;;
     }
 
+    if (pic_in->userSEI.numPayloads < 0)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid user SEI payload count\n");
+        if (toneMap.payload)
+            x265_free(toneMap.payload);
+        if (seiMsg.payload)
+            x265_free(seiMsg.payload);
+        return;
+    }
+
+    if (pic_in->userSEI.numPayloads && !pic_in->userSEI.payloads)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "User SEI payload array is null for non-zero payload count\n");
+        if (toneMap.payload)
+            x265_free(toneMap.payload);
+        if (seiMsg.payload)
+            x265_free(seiMsg.payload);
+        return;
+    }
+
     int numPayloads = pic_in->userSEI.numPayloads + toneMapPayload + userPayload;
 
     // TODO: we may reuse buffer if become smaller than exist buffer
@@ -1166,6 +1186,26 @@ void Encoder::copyUserSEIMessages(Frame *frame, const x265_picture* pic_in)
                 input = seiMsg;
             else
                 input = pic_in->userSEI.payloads[i];
+
+            if (input.payloadSize < 0)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "Invalid user SEI payload size\n");
+                if (toneMap.payload)
+                    x265_free(toneMap.payload);
+                if (seiMsg.payload)
+                    x265_free(seiMsg.payload);
+                return;
+            }
+
+            if (input.payloadSize && !input.payload)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "User SEI payload data is null for non-zero payload size\n");
+                if (toneMap.payload)
+                    x265_free(toneMap.payload);
+                if (seiMsg.payload)
+                    x265_free(seiMsg.payload);
+                return;
+            }
 
             // TODO: condition may improve, because buffer size may change from big to small, but never back to original allocate size
             if (frame->m_userSEI.payloads[i].payload && frame->m_userSEI.payloads[i].payloadSize < input.payloadSize)
