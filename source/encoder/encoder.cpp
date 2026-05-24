@@ -47,6 +47,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 
 #if _MSC_VER
 #pragma warning(disable: 4996) // POSIX functions are just fine, thanks
@@ -1247,47 +1248,74 @@ void Encoder::copyUserSEIMessages(Frame *frame, const x265_picture* pic_in)
             userPayload = 1;;
     }
 
-    if (pic_in->userSEI.numPayloads < 0)
+    auto releaseTempPayloads = [&]()
     {
-        x265_log(m_param, X265_LOG_ERROR, "Invalid user SEI payload count\n");
         if (toneMap.payload)
             x265_free(toneMap.payload);
         if (seiMsg.payload)
             x265_free(seiMsg.payload);
+    };
+
+    auto clearFrameUserSEI = [&]()
+    {
+        if (frame->m_userSEI.payloads)
+        {
+            for (int i = 0; i < frame->m_userSEI.numPayloads; i++)
+                delete[] frame->m_userSEI.payloads[i].payload;
+            delete[] frame->m_userSEI.payloads;
+            frame->m_userSEI.payloads = NULL;
+        }
+        frame->m_userSEI.numPayloads = 0;
+    };
+
+    if (pic_in->userSEI.numPayloads < 0)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid user SEI payload count\n");
+        clearFrameUserSEI();
+        releaseTempPayloads();
         return;
     }
 
     if (pic_in->userSEI.numPayloads && !pic_in->userSEI.payloads)
     {
         x265_log(m_param, X265_LOG_ERROR, "User SEI payload array is null for non-zero payload count\n");
-        if (toneMap.payload)
-            x265_free(toneMap.payload);
-        if (seiMsg.payload)
-            x265_free(seiMsg.payload);
+        clearFrameUserSEI();
+        releaseTempPayloads();
         return;
     }
 
-    int numPayloads = pic_in->userSEI.numPayloads + toneMapPayload + userPayload;
+    const int extraPayloads = toneMapPayload + userPayload;
+    const int maxUserPayloads = INT_MAX - extraPayloads;
+    if (pic_in->userSEI.numPayloads > maxUserPayloads)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "User SEI payload count is too large\n");
+        clearFrameUserSEI();
+        releaseTempPayloads();
+        return;
+    }
+
+    int numPayloads = pic_in->userSEI.numPayloads + extraPayloads;
 
     // TODO: we may reuse buffer if become smaller than exist buffer
     if (frame->m_userSEI.payloads && numPayloads != frame->m_userSEI.numPayloads)
-    {
-        for (int i = 0; i < frame->m_userSEI.numPayloads; i++)
-            delete[] frame->m_userSEI.payloads[i].payload;
-        delete[] frame->m_userSEI.payloads;
-        frame->m_userSEI.payloads = NULL;
-    }
+        clearFrameUserSEI();
 
-    frame->m_userSEI.numPayloads = numPayloads;
-
-    if (frame->m_userSEI.numPayloads)
+    if (numPayloads)
     {
         if (!frame->m_userSEI.payloads)
         {
-            frame->m_userSEI.payloads = new x265_sei_payload[numPayloads];
+            frame->m_userSEI.payloads = new (std::nothrow) x265_sei_payload[numPayloads];
+            if (!frame->m_userSEI.payloads)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "Unable to allocate user SEI payload array\n");
+                clearFrameUserSEI();
+                releaseTempPayloads();
+                return;
+            }
             for (int i = 0; i < numPayloads; i++)
                 frame->m_userSEI.payloads[i].payload = NULL;
         }
+        frame->m_userSEI.numPayloads = numPayloads;
         for (int i = 0; i < numPayloads; i++)
         {
             x265_sei_payload input;
@@ -1301,20 +1329,16 @@ void Encoder::copyUserSEIMessages(Frame *frame, const x265_picture* pic_in)
             if (input.payloadSize < 0)
             {
                 x265_log(m_param, X265_LOG_ERROR, "Invalid user SEI payload size\n");
-                if (toneMap.payload)
-                    x265_free(toneMap.payload);
-                if (seiMsg.payload)
-                    x265_free(seiMsg.payload);
+                clearFrameUserSEI();
+                releaseTempPayloads();
                 return;
             }
 
             if (input.payloadSize && !input.payload)
             {
                 x265_log(m_param, X265_LOG_ERROR, "User SEI payload data is null for non-zero payload size\n");
-                if (toneMap.payload)
-                    x265_free(toneMap.payload);
-                if (seiMsg.payload)
-                    x265_free(seiMsg.payload);
+                clearFrameUserSEI();
+                releaseTempPayloads();
                 return;
             }
 
@@ -1324,17 +1348,27 @@ void Encoder::copyUserSEIMessages(Frame *frame, const x265_picture* pic_in)
                 delete[] frame->m_userSEI.payloads[i].payload;
                 frame->m_userSEI.payloads[i].payload = NULL;
             }
-            if (!frame->m_userSEI.payloads[i].payload)
-                frame->m_userSEI.payloads[i].payload = new uint8_t[input.payloadSize];
-            std::memcpy(frame->m_userSEI.payloads[i].payload, input.payload, input.payloadSize);
+            if (!frame->m_userSEI.payloads[i].payload && input.payloadSize)
+            {
+                frame->m_userSEI.payloads[i].payload = new (std::nothrow) uint8_t[input.payloadSize];
+                if (!frame->m_userSEI.payloads[i].payload)
+                {
+                    x265_log(m_param, X265_LOG_ERROR, "Unable to allocate user SEI payload data\n");
+                    clearFrameUserSEI();
+                    releaseTempPayloads();
+                    return;
+                }
+            }
+            if (input.payloadSize)
+                std::memcpy(frame->m_userSEI.payloads[i].payload, input.payload, input.payloadSize);
             frame->m_userSEI.payloads[i].payloadSize = input.payloadSize;
             frame->m_userSEI.payloads[i].payloadType = input.payloadType;
         }
-        if (toneMap.payload)
-            x265_free(toneMap.payload);
-        if (seiMsg.payload)
-            x265_free(seiMsg.payload);
     }
+    else
+        frame->m_userSEI.numPayloads = 0;
+
+    releaseTempPayloads();
 }
 
 //Find Sum of Squared Difference (SSD) between two pictures
