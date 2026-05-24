@@ -56,6 +56,34 @@ namespace X265_NS {
         return true;
     }
 
+    static bool validateConfigArgCapacity(char* start, const char* context)
+    {
+        if (!start)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "%s is missing arguments\n", context);
+            return false;
+        }
+
+        int argCount = 1;
+        for (char* scan = start; *scan; )
+        {
+            while (std::isspace((unsigned char)*scan))
+                scan++;
+            if (!*scan)
+                break;
+            argCount++;
+            while (*scan && !std::isspace((unsigned char)*scan))
+                scan++;
+        }
+
+        if (argCount >= 256)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "%s exceeds supported argument count\n", context);
+            return false;
+        }
+        return true;
+    }
+
     static void printVersion(x265_param *param, const x265_api* api)
     {
         x265_log(param, X265_LOG_INFO, "HEVC encoder version %s\n", api->version_str);
@@ -1145,7 +1173,7 @@ namespace X265_NS {
 #if ENABLE_ALPHA || ENABLE_MULTIVIEW
             if (param->bEnableAlpha || param->numViews > 1)
             {
-                char* temp = new char[std::strlen(reconfn[0])];
+                char* temp = new char[std::strlen(reconfn[0]) + 1];
                 std::strcpy(temp, reconfn[0]);
                 const char* token = std::strtok(temp, ".");
                 for (int view = 0; view < param->numLayers; view++)
@@ -1154,6 +1182,7 @@ namespace X265_NS {
                     std::snprintf(buf, std::strlen(temp) + 7, "%s-%d.yuv", token, view);
                     reconfn[view] = buf;
                 }
+                delete[] temp;
             }
 #endif
             for (int i = 0; i < param->numLayers; i++)
@@ -1278,8 +1307,15 @@ namespace X265_NS {
                 argLine = line;
                 while (std::isspace((unsigned char)*argLine)) argLine++;
                 char* start = std::strchr(argLine, ' ');
+                if (!start)
+                {
+                    x265_log(NULL, X265_LOG_ERROR, "Missing zone file arguments at entry %d\n", i);
+                    return false;
+                }
                 start++;
                 param->rc.zones[i].startFrame = std::atoi(argLine);
+                if (!validateConfigArgCapacity(start, "Zone file entry"))
+                    return false;
                 int argCount = 0;
                 // Adding a dummy string to avoid file parsing error
                 args[argCount++] = (char *)"x265";
@@ -1370,8 +1406,15 @@ namespace X265_NS {
             argLine = line;
             while (std::isspace((unsigned char)*argLine)) argLine++;
             char* start = std::strchr(argLine, '-');
+            if (!validateConfigArgCapacity(start, "Scenecut-aware QP config"))
+                return false;
             int argCount = 0;
             char **args = (char**)std::malloc(256 * sizeof(char *));
+            if (!args)
+            {
+                x265_log(NULL, X265_LOG_ERROR, "Unable to allocate scenecut-aware QP config arguments\n");
+                return false;
+            }
             //Adding a dummy string to avoid file parsing error
             args[argCount++] = (char *)"x265";
             char* token = std::strtok(start, " ");
@@ -1384,11 +1427,13 @@ namespace X265_NS {
             CLIOptions cliopt;
             if (cliopt.parseScenecutAwareQpParam(argCount, args, param))
             {
+                std::free(args);
                 cliopt.destroy();
                 if (cliopt.api)
                     cliopt.api->param_free(cliopt.param);
                 std::exit(1);
             }
+            std::free(args);
             break;
         }
         return 1;
@@ -1487,6 +1532,11 @@ namespace X265_NS {
         int linenum = 0;
         int numInput = 0;
         char** args = (char**)std::malloc(256 * sizeof(char*));
+        if (!args)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "Unable to allocate multiview config arguments\n");
+            return false;
+        }
         while (std::fgets(line, sizeof(line), multiViewConfig))
         {
             if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
@@ -1496,6 +1546,11 @@ namespace X265_NS {
             argLine = line;
             while (std::isspace((unsigned char)*argLine)) argLine++;
             char* start = std::strchr(argLine, '-');
+            if (!validateConfigArgCapacity(start, "Multiview config"))
+            {
+                std::free(args);
+                return false;
+            }
             int argCount = 0;
             char flag[] = "true";
             //Adding a dummy string to avoid file parsing error

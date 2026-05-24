@@ -1228,6 +1228,29 @@ def validate_zonefile_smoke(repo_root):
     print('Zonefile smoke guard validated')
 
 
+def validate_zonefile_oversized_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'Zonefile Oversized Argument Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'Zonefile Oversized Argument Smoke (All CLI)'))
+
+    for required, message in {
+        "tokens = ' '.join(f'--bitrate {100 + i}' for i in range(260))": 'Zonefile oversized smoke must synthesize excessive zone arguments',
+        "Path('smoke_zonefile_oversized.txt').write_text('0 ' + tokens + '\\\\n', encoding='utf-8')": 'Zonefile oversized smoke must write oversized zonefile config',
+        'if build/all/x265.exe --input smoke_zonefile.y4m --input-res 160x90 --fps 24 --frames 12 --bitrate 400 --zonefile smoke_zonefile_oversized.txt --output smoke_zonefile_oversized.hevc > smoke_zonefile_oversized.log 2>&1; then': 'Zonefile oversized smoke must actively require failure',
+        'echo "Zonefile oversized-argument smoke unexpectedly succeeded"': 'Zonefile oversized smoke must report unexpected success',
+        "grep -Fq 'Zone file entry exceeds supported argument count' smoke_zonefile_oversized.log": 'Zonefile oversized smoke must require argument-count error log',
+    }.items():
+        if required not in active_lines:
+            fail(message, build)
+    print('Zonefile oversized-argument smoke guard validated')
+
+
 def validate_recon_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     parsed = load_yaml(repo_root, BUILD_WORKFLOW)
@@ -1278,6 +1301,28 @@ def validate_recon_smoke(repo_root):
         if required not in active_lines:
             fail(message, build)
     print('Recon smoke guard validated')
+
+
+def validate_video_signal_type_preset_oversized_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'Video Signal Type Preset Oversized Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'Video Signal Type Preset Oversized Smoke (All CLI)'))
+
+    for required, message in {
+        'long_vst="$(python -c "print(\'A\' * 200 + \':P3D65x1000n0005\')")"': 'Video-signal-type-preset oversized smoke must synthesize oversized preset',
+        'if build/all/x265.exe --input smoke_recon.y4m --input-res 160x90 --fps 24 --frames 1 --video-signal-type-preset "$long_vst" --output smoke_vst_oversized.hevc > smoke_vst_oversized.log 2>&1; then': 'Video-signal-type-preset oversized smoke must actively require failure',
+        'echo "Video-signal-type-preset oversized smoke unexpectedly succeeded"': 'Video-signal-type-preset oversized smoke must report unexpected success',
+        "grep -Fq 'Incorrect system-id, aborting' smoke_vst_oversized.log": 'Video-signal-type-preset oversized smoke must require invalid system-id log',
+    }.items():
+        if required not in active_lines:
+            fail(message, build)
+    print('Video-signal-type-preset oversized smoke guard validated')
 
 
 def validate_gop_output_smoke(repo_root):
@@ -2027,10 +2072,10 @@ def build_step_requirements():
         ('build', 'Threaded ME Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[21:28]),
         ('build', 'Threaded ME Stress Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[28:32]),
         ('build', 'GOP Output Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[32:43]),
-        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[43:45] + REQUIRED_BUILD_SNIPPETS[49:57]),
+        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[44:45] + REQUIRED_BUILD_SNIPPETS[48:49] + REQUIRED_BUILD_SNIPPETS[49:56]),
         ('cxx20-warning-scan', 'Run C++20 CLI and dependency warning scans', REQUIRED_BUILD_SNIPPETS[57:67]),
         ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[56:57]),
-        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[67:71]),
+        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[44:48] + REQUIRED_BUILD_SNIPPETS[67:71]),
     )
 
 
@@ -2137,7 +2182,9 @@ def main():
         validate_lavf_smoke(repo_root)
         validate_qpfile_smoke(repo_root)
         validate_zonefile_smoke(repo_root)
+        validate_zonefile_oversized_smoke(repo_root)
         validate_recon_smoke(repo_root)
+        validate_video_signal_type_preset_oversized_smoke(repo_root)
         validate_gop_output_smoke(repo_root)
         validate_mp4_smokes(repo_root)
         validate_zimg_smoke(repo_root)

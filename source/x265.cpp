@@ -157,47 +157,58 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
 {
     char line[1024];
     char* argLine;
-
-    char *strPool = (char*)std::malloc(256 * X265_MAX_STRING_SIZE * sizeof(char));
-    int strPoolSize = 256 * X265_MAX_STRING_SIZE;
-    for (uint32_t i = 0; i < numEncodes; i++)
+    int lineNumber = 0;
+    for (uint32_t i = 0; i < numEncodes; )
     {
-        char **argv = (char**)std::malloc(256 * sizeof(char *));
-        cliopt[i].stringPool = (i == 0 ? strPool : NULL);
-        cliopt[i].argString = argv;
+        cliopt[i].stringPool = NULL;
+        cliopt[i].argString = NULL;
         cliopt[i].orgArgv = NULL;
-        if (std::fgets(line, sizeof(line), abrConfig) == NULL) {
+        if (std::fgets(line, sizeof(line), abrConfig) == NULL)
+        {
             std::fprintf(stderr, "Error reading line from configuration file.\n");
             return false;
         }
-        if (*line == '#' || (std::strcmp(line, "\r\n") == 0))
+        lineNumber++;
+        if (*line == '#' || (std::strcmp(line, "\r\n") == 0) || (std::strcmp(line, "\n") == 0))
             continue;
         int index = (int)std::strcspn(line, "\r\n");
         line[index] = '\0';
         argLine = line;
         char* start = std::strchr(argLine, ' ');
+        if (!start)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "Missing ABR CLI arguments at line %d\n", lineNumber);
+            return false;
+        }
         while (std::isspace((unsigned char)*start)) start++;
-        int argc = 0;
-        // Adding a dummy string to avoid file parsing error
-        argv[argc++] = (char *)"x265";
+        if (!*start)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "Missing ABR CLI arguments at line %d\n", lineNumber);
+            return false;
+        }
 
         /* Parse CLI header to identify the ID of the load encode and the reuse level */
         char *header = std::strtok(argLine, "[]");
+        if (!header)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "Missing ABR CLI header at line %d\n", lineNumber);
+            return false;
+        }
         uint32_t idCount = 0;
         char *id = std::strtok(header, ":");
         char *head[X265_HEAD_ENTRIES];
         cliopt[i].encId = i;
         cliopt[i].isAbrLadderConfig = true;
 
-        while (id && (idCount <= X265_HEAD_ENTRIES))
+        while (id && (idCount < X265_HEAD_ENTRIES))
         {
             head[idCount] = id;
             id = std::strtok(NULL, ":");
             idCount++;
         }
-        if (idCount != X265_HEAD_ENTRIES)
+        if (idCount != X265_HEAD_ENTRIES || id)
         {
-            x265_log(NULL, X265_LOG_ERROR, "Incorrect number of arguments in ABR CLI header at line %d\n", i);
+            x265_log(NULL, X265_LOG_ERROR, "Incorrect number of arguments in ABR CLI header at line %d\n", lineNumber);
             return false;
         }
         else
@@ -207,13 +218,46 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
             std::snprintf(cliopt[i].reuseName, X265_MAX_STRING_SIZE, "%s", head[2]);
         }
 
+        int extraArgc = 0;
+        size_t strPoolSize = 0;
+        for (char* scan = start; *scan; )
+        {
+            while (std::isspace((unsigned char)*scan))
+                scan++;
+            if (!*scan)
+                break;
+            extraArgc++;
+            while (*scan && !std::isspace((unsigned char)*scan))
+            {
+                strPoolSize++;
+                scan++;
+            }
+            strPoolSize++;
+        }
+
+        char **argv = (char**)std::malloc((size_t(extraArgc) + 2) * sizeof(char *));
+        char *strPool = (char*)std::malloc(strPoolSize ? strPoolSize : 1);
+        if (!argv || !strPool)
+        {
+            std::free(argv);
+            std::free(strPool);
+            x265_log(NULL, X265_LOG_ERROR, "Unable to allocate ABR config argument buffers at line %d\n", lineNumber);
+            return false;
+        }
+
+        cliopt[i].stringPool = strPool;
+        cliopt[i].argString = argv;
+
+        int argc = 0;
+        argv[argc++] = (char *)"x265";
         char* token = std::strtok(start, " ");
         while (token)
         {
+            size_t tokenLen = std::strlen(token) + 1;
             argv[argc] = strPool;
-            strPool += std::strlen(token) + 1;
-            strPoolSize = strPoolSize - (int)std::strlen(token) + 1;
-            std::strcpy(argv[argc], token);
+            std::memcpy(argv[argc], token, tokenLen);
+            strPool += tokenLen;
+            strPoolSize -= tokenLen;
             token = std::strtok(NULL, " ");
             argc++;
         }
@@ -225,8 +269,8 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEnco
                 cliopt[i].api->param_free(cliopt[i].param);
             std::exit(1);
         }
+        i++;
     }
-    X265_CHECK(strPoolSize >= 0, "string pool broken!");
     return true;
 }
 

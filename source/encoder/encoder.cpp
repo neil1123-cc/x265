@@ -3871,7 +3871,13 @@ void Encoder::configureVideoSignalTypePreset(x265_param* p)
 {
     char systemId[20] = {};
     char colorVolume[20] = {};
-    std::sscanf(p->videoSignalTypePreset, "%[^:]:%s", systemId, colorVolume);
+    int parsed = std::sscanf(p->videoSignalTypePreset, "%19[^:]:%19s", systemId, colorVolume);
+    if (parsed < 1)
+    {
+        x265_log(NULL, X265_LOG_ERROR, "Incorrect video-signal-type-preset, aborting\n");
+        m_aborted = true;
+        return;
+    }
     uint32_t sysId = 0;
     while (std::strcmp(vstPresets[sysId].systemId, systemId))
     {

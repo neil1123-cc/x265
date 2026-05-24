@@ -1430,6 +1430,20 @@ jobs:
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_zonefile.hevc > smoke_zonefile_count.txt
         grep -q "nb_read_frames=12" smoke_zonefile_count.txt
 
+    - name: Zonefile Oversized Argument Smoke (All CLI)
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+        tokens = ' '.join(f'--bitrate {100 + i}' for i in range(260))
+        Path('smoke_zonefile_oversized.txt').write_text('0 ' + tokens + '\\n', encoding='utf-8')
+        PY
+        if build/all/x265.exe --input smoke_zonefile.y4m --input-res 160x90 --fps 24 --frames 12 --bitrate 400 --zonefile smoke_zonefile_oversized.txt --output smoke_zonefile_oversized.hevc > smoke_zonefile_oversized.log 2>&1; then
+          echo "Zonefile oversized-argument smoke unexpectedly succeeded"
+          exit 1
+        fi
+        grep -Fq 'Zone file entry exceeds supported argument count' smoke_zonefile_oversized.log
+
     - name: Recon Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
@@ -1438,6 +1452,16 @@ jobs:
         test -s smoke_recon.hevc
         test -s smoke_recon_out.y4m
         grep -q '^YUV4MPEG2 ' smoke_recon_out.y4m
+
+    - name: Video Signal Type Preset Oversized Smoke (All CLI)
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        long_vst="$(python -c "print('A' * 200 + ':P3D65x1000n0005')")"
+        if build/all/x265.exe --input smoke_recon.y4m --input-res 160x90 --fps 24 --frames 1 --video-signal-type-preset "$long_vst" --output smoke_vst_oversized.hevc > smoke_vst_oversized.log 2>&1; then
+          echo "Video-signal-type-preset oversized smoke unexpectedly succeeded"
+          exit 1
+        fi
+        grep -Fq 'Incorrect system-id, aborting' smoke_vst_oversized.log
 
     - name: GOP Output Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
