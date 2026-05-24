@@ -1827,8 +1827,26 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
         copyUserSEIMessages(inFrame[0], inputPic[0]);
 
         /*Copy Dolby Vision RPU from inputPic to frame*/
+        if (inputPic[0]->rpu.payloadSize < 0)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Invalid Dolby Vision RPU payload size\n");
+            return -1;
+        }
+
         if (inputPic[0]->rpu.payloadSize)
         {
+            if (!inputPic[0]->rpu.payload)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "Dolby Vision RPU payload is null for non-zero payload size\n");
+                return -1;
+            }
+
+            if (inFrame[0]->m_rpu.payload)
+            {
+                delete[] inFrame[0]->m_rpu.payload;
+                inFrame[0]->m_rpu.payload = NULL;
+                inFrame[0]->m_rpu.payloadSize = 0;
+            }
             inFrame[0]->m_rpu.payloadSize = inputPic[0]->rpu.payloadSize;
             inFrame[0]->m_rpu.payload = new uint8_t[inputPic[0]->rpu.payloadSize];
             std::memcpy(inFrame[0]->m_rpu.payload, inputPic[0]->rpu.payload, inputPic[0]->rpu.payloadSize);

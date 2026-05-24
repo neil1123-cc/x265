@@ -380,6 +380,13 @@ void Frame::destroy()
         delete[] m_userSEI.payloads;
     }
 
+    if (m_rpu.payload)
+    {
+        delete[] m_rpu.payload;
+        m_rpu.payload = NULL;
+        m_rpu.payloadSize = 0;
+    }
+
     if (m_ctuInfo)
     {
         uint32_t widthInCU = (m_param->sourceWidth + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
