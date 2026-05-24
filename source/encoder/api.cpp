@@ -389,10 +389,34 @@ int x265_encoder_reconfig_zone(x265_encoder* enc, x265_zone* zone_in)
         return -1;
 
     Encoder* encoder = static_cast<Encoder*>(enc);
+    if (!encoder->m_param->rc.zonefileCount || !encoder->m_param->rc.zones ||
+        !encoder->zoneReadCount || !encoder->zoneWriteCount)
+    {
+        x265_log(encoder->m_param, X265_LOG_ERROR, "Zone reconfiguration requires configured zonefile state\n");
+        return -1;
+    }
+
+    if (!zone_in->zoneParam)
+    {
+        x265_log(encoder->m_param, X265_LOG_ERROR, "Zone reconfiguration requires a non-null zoneParam\n");
+        return -1;
+    }
+
+    if (encoder->m_param->reconfigWindowSize && !zone_in->relativeComplexity)
+    {
+        x265_log(encoder->m_param, X265_LOG_ERROR, "Zone reconfiguration requires relativeComplexity for non-zero reconfig window size\n");
+        return -1;
+    }
+
     int read = encoder->zoneReadCount[encoder->m_zoneIndex].get();
     int write = encoder->zoneWriteCount[encoder->m_zoneIndex].get();
 
     x265_zone* zone = &(encoder->m_param->rc).zones[encoder->m_zoneIndex];
+    if (!zone || !zone->zoneParam || (encoder->m_param->reconfigWindowSize && !zone->relativeComplexity))
+    {
+        x265_log(encoder->m_param, X265_LOG_ERROR, "Zone reconfiguration state is incomplete\n");
+        return -1;
+    }
     x265_param* zoneParam = zone->zoneParam;
 
     if (write && (read < write))
@@ -413,7 +437,13 @@ int x265_encoder_reconfig_zone(x265_encoder* enc, x265_zone* zone_in)
 }
 void x265_configure_vbv_end(x265_encoder* enc, x265_picture* picture, double totalstreamduration)
 {
+    if (!enc || !picture)
+        return;
+
     Encoder* encoder = static_cast<Encoder*>(enc);
+    if (!encoder->m_param->fpsDenom)
+        return;
+
     if ((totalstreamduration > 0) && (picture->poc) > ((encoder->m_param->vbvEndFrameAdjust)*(totalstreamduration)*((double)(encoder->m_param->fpsNum / encoder->m_param->fpsDenom))))
     {
          picture->vbvEndFlag = 1;
