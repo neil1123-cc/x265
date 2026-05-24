@@ -474,6 +474,12 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
         EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)encoder->m_svtAppData->svtHevcParams;
         if (pic_in)
         {
+            if (!encoder->validateInputPicture(pic_in, true))
+            {
+                numEncoded = -1;
+                goto fail;
+            }
+
             if (pic_in->colorSpace == X265_CSP_I420) // SVT-HEVC supports only yuv420p color space
             {
                 EB_BUFFERHEADERTYPE *inputPtr = encoder->m_svtAppData->inputPictureBuffer;
@@ -489,9 +495,10 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                 inputData->cb = (unsigned char*) pic_in->planes[1];
                 inputData->cr = (unsigned char*) pic_in->planes[2];
 
-                inputData->yStride = encoder->m_param->sourceWidth;
-                inputData->cbStride = encoder->m_param->sourceWidth >> 1;
-                inputData->crStride = encoder->m_param->sourceWidth >> 1;
+                const int bytesPerSample = pic_in->bitDepth > 8 ? 2 : 1;
+                inputData->yStride = pic_in->stride[0] / bytesPerSample;
+                inputData->cbStride = pic_in->stride[1] / bytesPerSample;
+                inputData->crStride = pic_in->stride[2] / bytesPerSample;
 
                 inputData->lumaExt = nullptr;
                 inputData->cbExt = nullptr;
