@@ -3468,6 +3468,12 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
     OPT2("pools", "numa-pools")
     {
         char *pools = strdup(value);
+        if (!pools)
+        {
+            x265_log(param, X265_LOG_ERROR, "unable to allocate memory for SVT pools option\n");
+            bError = true;
+            break;
+        }
         char *temp1, *temp2;
         int count = 0;
 
@@ -3483,6 +3489,13 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
         {
             temp1 = strtok(pools, ",");
             temp2 = strtok(NULL, ",");
+            if (!temp1 || !temp2)
+            {
+                x265_log(param, X265_LOG_ERROR, "Invalid pools option %s\n", value);
+                free(pools);
+                bError = true;
+                break;
+            }
 
             if (!strcmp(temp1, "+"))
             {
@@ -3505,6 +3518,7 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
         }
         else
         {
+            temp1 = pools;
             if (!strcmp(temp1, "*")) svtHevcParam->targetSocket = -1;
             else
             {

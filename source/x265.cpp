@@ -137,10 +137,10 @@ static bool checkAbrLadder(int argc, char **argv, FILE **abrConfig)
     return false;
 }
 
-static uint8_t getNumAbrEncodes(FILE* abrConfig)
+static uint32_t getNumAbrEncodes(FILE* abrConfig)
 {
     char line[1024];
-    uint8_t numEncodes = 0;
+    uint32_t numEncodes = 0;
 
     while (std::fgets(line, sizeof(line), abrConfig))
     {
@@ -153,7 +153,7 @@ static uint8_t getNumAbrEncodes(FILE* abrConfig)
     return numEncodes;
 }
 
-static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEncodes)
+static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint32_t numEncodes)
 {
     char line[1024];
     char* argLine;
@@ -332,12 +332,19 @@ int main(int argc, char **argv)
     get_argv_utf8(&argc, &argv);
 #endif
 
-    uint8_t numEncodes = 1;
+    uint32_t numEncodes = 1;
     FILE *abrConfig = NULL;
     bool isAbrLadder = checkAbrLadder(argc, argv, &abrConfig);
 
     if (isAbrLadder)
+    {
         numEncodes = getNumAbrEncodes(abrConfig);
+        if (!numEncodes)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "ABR ladder config contains no valid encode entries\n");
+            std::exit(1);
+        }
+    }
 
     CLIOptions* cliopt = new CLIOptions[numEncodes];
     cliopt[0].orgArgv = argv;
@@ -375,7 +382,7 @@ int main(int argc, char **argv)
     while (threadsActive)
     {
         threadsActive = abrEnc->m_numActiveEncodes.waitForChange(threadsActive);
-        for (uint8_t idx = 0; idx < numEncodes; idx++)
+        for (uint32_t idx = 0; idx < numEncodes; idx++)
         {
             if (abrEnc->m_passEnc[idx]->m_ret)
             {
@@ -391,7 +398,7 @@ int main(int argc, char **argv)
     abrEnc->destroy();
     delete abrEnc;
 
-    for (uint8_t idx = 0; idx < numEncodes; idx++)
+    for (uint32_t idx = 0; idx < numEncodes; idx++)
         cliopt[idx].destroy();
 
     delete[] cliopt;
