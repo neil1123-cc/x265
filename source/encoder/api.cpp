@@ -72,6 +72,9 @@ static const char* summaryCSVHeader =
     "I count, I ave-QP, I kbps, I-PSNR Y, I-PSNR U, I-PSNR V, I-SSIM (dB), "
     "P count, P ave-QP, P kbps, P-PSNR Y, P-PSNR U, P-PSNR V, P-SSIM (dB), "
     "B count, B ave-QP, B kbps, B-PSNR Y, B-PSNR U, B-PSNR V, B-SSIM (dB), ";
+#ifdef SVT_HEVC
+static void svt_release_app_context(Encoder* encoder);
+#endif
 x265_encoder *x265_encoder_open(x265_param *p)
 {
     if (!p)
@@ -125,11 +128,14 @@ x265_encoder *x265_encoder_open(x265_param *p)
     if (param->bEnableSvtHevc)
     {
         EB_ERRORTYPE return_error = EB_ErrorNone;
-        int ret = 0;
 
-        svt_initialise_app_context(encoder);
-        ret = svt_initialise_input_buffer(encoder);
-        if (!ret)
+        if (!svt_initialise_app_context(encoder))
+        {
+            x265_log(param, X265_LOG_ERROR, "SVT-HEVC Encoder: Unable to allocate app context\n");
+            goto fail;
+        }
+
+        if (!svt_initialise_input_buffer(encoder))
         {
             x265_log(param, X265_LOG_ERROR, "SVT-HEVC Encoder: Unable to allocate input buffer \n");
             goto fail;
@@ -233,6 +239,9 @@ x265_encoder *x265_encoder_open(x265_param *p)
     return encoder;
 
 fail:
+#ifdef SVT_HEVC
+    svt_release_app_context(encoder);
+#endif
     delete encoder;
     PARAM_NS::x265_param_free(param);
     PARAM_NS::x265_param_free(latestParam);
@@ -2398,38 +2407,81 @@ double x265_calculate_vmaf_framelevelscore(x265_param *param, x265_vmaf_framedat
 namespace X265_NS {
 #ifdef SVT_HEVC
 
-void svt_initialise_app_context(x265_encoder *enc)
+static void svt_release_app_context(Encoder* encoder)
+{
+    if (!encoder || !encoder->m_svtAppData)
+        return;
+
+    if (encoder->m_svtAppData->inputPictureBuffer)
+    {
+        EB_H265_ENC_INPUT* inputData = (EB_H265_ENC_INPUT*)encoder->m_svtAppData->inputPictureBuffer->pBuffer;
+        if (inputData)
+        {
+            X265_FREE(inputData->dolbyVisionRpu.payload);
+            X265_FREE(inputData);
+        }
+        X265_FREE(encoder->m_svtAppData->inputPictureBuffer);
+        encoder->m_svtAppData->inputPictureBuffer = nullptr;
+    }
+
+    X265_FREE(encoder->m_svtAppData->svtHevcParams);
+    encoder->m_svtAppData->svtHevcParams = nullptr;
+    X265_FREE(encoder->m_svtAppData);
+    encoder->m_svtAppData = nullptr;
+}
+
+bool svt_initialise_app_context(x265_encoder *enc)
 {
     Encoder *encoder = static_cast<Encoder*>(enc);
 
     //Initialise Application Context
     encoder->m_svtAppData = (SvtAppContext*)x265_malloc(sizeof(SvtAppContext));
+    if (!encoder->m_svtAppData)
+        return false;
+    std::memset(encoder->m_svtAppData, 0, sizeof(SvtAppContext));
+
     encoder->m_svtAppData->svtHevcParams = (EB_H265_ENC_CONFIGURATION*)x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+    if (!encoder->m_svtAppData->svtHevcParams)
+    {
+        svt_release_app_context(encoder);
+        return false;
+    }
+    std::memset(encoder->m_svtAppData->svtHevcParams, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+
     encoder->m_svtAppData->dolbyVisionRpuCapacity = 0;
     encoder->m_svtAppData->byteCount = 0;
     encoder->m_svtAppData->outFrameCount = 0;
+    return true;
 }
 
-int svt_initialise_input_buffer(x265_encoder *enc)
+bool svt_initialise_input_buffer(x265_encoder *enc)
 {
     Encoder *encoder = static_cast<Encoder*>(enc);
 
     //Initialise Input Buffer
     encoder->m_svtAppData->inputPictureBuffer = (EB_BUFFERHEADERTYPE*)x265_malloc(sizeof(EB_BUFFERHEADERTYPE));
+    if (!encoder->m_svtAppData->inputPictureBuffer)
+    {
+        svt_release_app_context(encoder);
+        return false;
+    }
+    std::memset(encoder->m_svtAppData->inputPictureBuffer, 0, sizeof(EB_BUFFERHEADERTYPE));
+
     EB_BUFFERHEADERTYPE *inputPtr = encoder->m_svtAppData->inputPictureBuffer;
     inputPtr->pBuffer = (unsigned char*)x265_malloc(sizeof(EB_H265_ENC_INPUT));
+    if (!inputPtr->pBuffer)
+    {
+        svt_release_app_context(encoder);
+        return false;
+    }
 
     EB_H265_ENC_INPUT *inputData = (EB_H265_ENC_INPUT*)inputPtr->pBuffer;
     inputData->dolbyVisionRpu.payload = nullptr;
     inputData->dolbyVisionRpu.payloadSize = 0;
 
-
-    if (!inputPtr->pBuffer)
-        return 0;
-
     inputPtr->nSize = sizeof(EB_BUFFERHEADERTYPE);
     inputPtr->pAppPrivate = nullptr;
-    return 1;
+    return true;
 }
 #endif // ifdef SVT_HEVC
 
