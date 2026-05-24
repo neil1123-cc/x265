@@ -1095,12 +1095,27 @@ namespace X265_NS {
             }
         }
 
-            //TODO:Validate info params of both the views to equal values
+        int viewCount = param->numViews - !!param->format;
+        if (viewCount > 1)
+        {
+            for (int i = 1; i < viewCount; i++)
+            {
+                if (info[i].width != info[0].width || info[i].height != info[0].height ||
+                    info[i].csp != info[0].csp || info[i].depth != info[0].depth ||
+                    info[i].fpsNum != info[0].fpsNum || info[i].fpsDenom != info[0].fpsDenom ||
+                    info[i].sarWidth != info[0].sarWidth || info[i].sarHeight != info[0].sarHeight)
+                {
+                    x265_log(param, X265_LOG_ERROR, "Multiview input file <%s> does not match the first view\n", inputfn[i]);
+                    return true;
+                }
+            }
+        }
+
         /* Unconditionally accept height/width/csp/bitDepth from file info */
-            param->sourceWidth = info[0].width;
-            param->sourceHeight = info[0].height;
-            param->internalCsp = info[0].csp;
-            param->sourceBitDepth = info[0].depth;
+        param->sourceWidth = info[0].width;
+        param->sourceHeight = info[0].height;
+        param->internalCsp = info[0].csp;
+        param->sourceBitDepth = info[0].depth;
 
         /* Accept fps and sar from file info if not specified by user */
         if (param->fpsDenom == 0 || param->fpsNum == 0)

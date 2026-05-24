@@ -1903,6 +1903,11 @@ bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) con
         x265_log(m_param, X265_LOG_ERROR, "Input multiview format (%d) is unsupported\n", pic->format);
         return false;
     }
+    if (pic->format && m_param->numViews <= 1)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Input multiview format (%d) requires more than one view\n", pic->format);
+        return false;
+    }
 #else
     if (pic->format)
     {
@@ -1919,6 +1924,7 @@ bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) con
     }
 
     const int bytesPerSample = pic->bitDepth > 8 ? 2 : 1;
+    const int packedWidthFactor = pic->format == 1 ? 2 : 1;
     const int numPlanes = m_param->internalCsp == X265_CSP_I400 ? 1 : 3;
     const x265_cli_csp& csp = x265_cli_csps[pic->colorSpace];
 
@@ -1937,7 +1943,7 @@ bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) con
         }
 
         int planeWidth = m_param->sourceWidth >> csp.width[plane];
-        int minStrideBytes = planeWidth * bytesPerSample;
+        int minStrideBytes = planeWidth * packedWidthFactor * bytesPerSample;
         if (pic->stride[plane] < minStrideBytes)
         {
             x265_log(m_param, X265_LOG_ERROR, "Input stride %d is smaller than the minimum row size\n", plane);
@@ -1966,7 +1972,7 @@ bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) con
             return false;
         }
 
-        int minAlphaStrideBytes = m_param->sourceWidth * bytesPerSample;
+        int minAlphaStrideBytes = m_param->sourceWidth * packedWidthFactor * bytesPerSample;
         if (pic->stride[3] < minAlphaStrideBytes)
         {
             x265_log(m_param, X265_LOG_ERROR, "Input alpha stride is smaller than the minimum row size\n");
