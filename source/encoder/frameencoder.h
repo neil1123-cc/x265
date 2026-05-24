@@ -333,8 +333,8 @@ protected:
     void collectDynDataFrame(int layer);
     void computeAvgTrainingData(int layer);
     void collectDynDataRow(CUData& ctu, FrameStats* rowStats);    
-    void readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgrain);
-    void readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FILE* Aomfilmgrain);
+    bool readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgrain);
+    bool readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FILE* Aomfilmgrain);
 };
 }
 

@@ -43,6 +43,17 @@
 namespace X265_NS {
 void weightAnalyse(Slice& slice, Frame& frame, x265_param& param);
 
+static bool readBinaryOrLog(const x265_param* param, void* dst, size_t size, size_t count, FILE* file, const char* errorMessage)
+{
+    if (fread(dst, size, count, file) != count)
+    {
+        x265_log(param, X265_LOG_ERROR, "%s", errorMessage);
+        return false;
+    }
+
+    return true;
+}
+
 FrameEncoder::FrameEncoder()
 {
     m_reconfigure = false;
@@ -862,16 +873,20 @@ void FrameEncoder::compressFrame(int layer)
     {
         FilmGrainCharacteristics m_filmGrain;
         /* Read the Film grain model file */
-        readModel(&m_filmGrain, this->m_top->m_filmGrainIn);
-        m_filmGrain.writeSEImessages(m_bs, *slice->m_sps, NAL_UNIT_PREFIX_SEI, m_nalList, m_param->bSingleSeiNal, layer);
+        if (readModel(&m_filmGrain, this->m_top->m_filmGrainIn))
+            m_filmGrain.writeSEImessages(m_bs, *slice->m_sps, NAL_UNIT_PREFIX_SEI, m_nalList, m_param->bSingleSeiNal, layer);
+        else
+            x265_fclose(this->m_top->m_filmGrainIn);
     }
     /* Write Aom film grain characteristics if present */
     if (this->m_top->m_aomFilmGrainIn)
     {
         AomFilmGrainCharacteristics m_aomFilmGrain;
         /* Read the Film grain model file */
-        readAomModel(&m_aomFilmGrain, this->m_top->m_aomFilmGrainIn);
-        m_aomFilmGrain.writeSEImessages(m_bs, *slice->m_sps, NAL_UNIT_PREFIX_SEI, m_nalList, m_param->bSingleSeiNal);
+        if (readAomModel(&m_aomFilmGrain, this->m_top->m_aomFilmGrainIn))
+            m_aomFilmGrain.writeSEImessages(m_bs, *slice->m_sps, NAL_UNIT_PREFIX_SEI, m_nalList, m_param->bSingleSeiNal);
+        else
+            x265_fclose(this->m_top->m_aomFilmGrainIn);
     }
     /* Write user SEI */
     for (int i = 0; i < m_frame[layer]->m_userSEI.numPayloads; i++)
@@ -1656,7 +1671,7 @@ void FrameEncoder::processRowEncoder(int intRow, ThreadLocalData& tld, int layer
         const uint32_t bLastCuInSlice = (bLastRowInSlice & (col == numCols - 1)) ? 1 : 0;
 
         /* Must wait for TME to finish before initCTU because both threads
-         * operate on the same CUData â€ the encoder's initCTU would corrupt
+         * operate on the same CUData -  the encoder's initCTU would corrupt
          * data that deriveMVsForCTU is still reading. */
         if (m_top->m_threadedME && slice->m_sliceType != I_SLICE)
         {
@@ -2356,11 +2371,13 @@ void FrameEncoder::noiseReductionUpdate()
     }
 }
 
-void FrameEncoder::readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgrain)
+bool FrameEncoder::readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgrain)
 {
-    char const* errorMessage = "Error reading FilmGrain characteristics\n";
+    static const char* readError = "Error reading FilmGrain characteristics\n";
     FilmGrain m_fg;
-    x265_fread((char* )&m_fg, sizeof(bool) * 3 + sizeof(uint8_t), 1, filmgrain, errorMessage);
+    if (!readBinaryOrLog(m_param, &m_fg, sizeof(bool) * 3 + sizeof(uint8_t), 1, filmgrain, readError))
+        return false;
+
     m_filmGrain->m_filmGrainCharacteristicsCancelFlag = m_fg.m_filmGrainCharacteristicsCancelFlag;
     m_filmGrain->m_filmGrainCharacteristicsPersistenceFlag = m_fg.m_filmGrainCharacteristicsPersistenceFlag;
     m_filmGrain->m_filmGrainModelId = m_fg.m_filmGrainModelId;
@@ -2368,7 +2385,8 @@ void FrameEncoder::readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgr
     if (m_filmGrain->m_separateColourDescriptionPresentFlag)
     {
         ColourDescription m_clr;
-        x265_fread((char* )&m_clr, sizeof(bool) + sizeof(uint8_t) * 5, 1, filmgrain, errorMessage);
+        if (!readBinaryOrLog(m_param, &m_clr, sizeof(bool) + sizeof(uint8_t) * 5, 1, filmgrain, readError))
+            return false;
         m_filmGrain->m_filmGrainBitDepthLumaMinus8 = m_clr.m_filmGrainBitDepthLumaMinus8;
         m_filmGrain->m_filmGrainBitDepthChromaMinus8 = m_clr.m_filmGrainBitDepthChromaMinus8;
         m_filmGrain->m_filmGrainFullRangeFlag = m_clr.m_filmGrainFullRangeFlag;
@@ -2377,7 +2395,9 @@ void FrameEncoder::readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgr
         m_filmGrain->m_filmGrainMatrixCoeffs = m_clr.m_filmGrainMatrixCoeffs;
     }
     FGPresent m_present;
-    x265_fread((char* )&m_present, sizeof(bool) * 3 + sizeof(uint8_t) * 2, 1, filmgrain, errorMessage);
+    if (!readBinaryOrLog(m_param, &m_present, sizeof(bool) * 3 + sizeof(uint8_t) * 2, 1, filmgrain, readError))
+        return false;
+
     m_filmGrain->m_blendingModeId = m_present.m_blendingModeId;
     m_filmGrain->m_log2ScaleFactor = m_present.m_log2ScaleFactor;
     m_filmGrain->m_compModel[0].bPresentFlag = m_present.m_presentFlag[0];
@@ -2385,23 +2405,52 @@ void FrameEncoder::readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgr
     m_filmGrain->m_compModel[2].bPresentFlag = m_present.m_presentFlag[2];
     for (int i = 0; i < MAX_NUM_COMPONENT; i++)
     {
-        if (m_filmGrain->m_compModel[i].bPresentFlag)
+        if (!m_filmGrain->m_compModel[i].bPresentFlag)
+            continue;
+
+        if (!readBinaryOrLog(m_param, &m_filmGrain->m_compModel[i].m_filmGrainNumIntensityIntervalMinus1, sizeof(uint8_t), 1, filmgrain, readError))
+            return false;
+        if (!readBinaryOrLog(m_param, &m_filmGrain->m_compModel[i].numModelValues, sizeof(uint8_t), 1, filmgrain, readError))
+            return false;
+
+        if (!m_filmGrain->m_compModel[i].numModelValues || m_filmGrain->m_compModel[i].numModelValues > 8)
         {
-            x265_fread((char* )(&m_filmGrain->m_compModel[i].m_filmGrainNumIntensityIntervalMinus1), sizeof(uint8_t), 1, filmgrain, errorMessage);
-            x265_fread((char* )(&m_filmGrain->m_compModel[i].numModelValues), sizeof(uint8_t), 1, filmgrain, errorMessage);
-            m_filmGrain->m_compModel[i].intensityValues = (FilmGrainCharacteristics::CompModelIntensityValues* ) malloc(sizeof(FilmGrainCharacteristics::CompModelIntensityValues) * (m_filmGrain->m_compModel[i].m_filmGrainNumIntensityIntervalMinus1+1)) ;
-            for (int j = 0; j <= m_filmGrain->m_compModel[i].m_filmGrainNumIntensityIntervalMinus1; j++)
+            x265_log(m_param, X265_LOG_ERROR, "Invalid FilmGrain num_model_values\n");
+            return false;
+        }
+
+        uint16_t intervalCount = uint16_t(m_filmGrain->m_compModel[i].m_filmGrainNumIntensityIntervalMinus1) + 1;
+        m_filmGrain->m_compModel[i].intensityValues = (FilmGrainCharacteristics::CompModelIntensityValues*)malloc(sizeof(FilmGrainCharacteristics::CompModelIntensityValues) * intervalCount);
+        if (!m_filmGrain->m_compModel[i].intensityValues)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Unable to allocate FilmGrain intensity table\n");
+            return false;
+        }
+        std::memset(m_filmGrain->m_compModel[i].intensityValues, 0, sizeof(FilmGrainCharacteristics::CompModelIntensityValues) * intervalCount);
+
+        for (int j = 0; j <= m_filmGrain->m_compModel[i].m_filmGrainNumIntensityIntervalMinus1; j++)
+        {
+            if (!readBinaryOrLog(m_param, &m_filmGrain->m_compModel[i].intensityValues[j].intensityIntervalLowerBound, sizeof(uint8_t), 1, filmgrain, readError))
+                return false;
+            if (!readBinaryOrLog(m_param, &m_filmGrain->m_compModel[i].intensityValues[j].intensityIntervalUpperBound, sizeof(uint8_t), 1, filmgrain, readError))
+                return false;
+
+            m_filmGrain->m_compModel[i].intensityValues[j].compModelValue = (int*)malloc(sizeof(int) * m_filmGrain->m_compModel[i].numModelValues);
+            if (!m_filmGrain->m_compModel[i].intensityValues[j].compModelValue)
             {
-                x265_fread((char* )(&m_filmGrain->m_compModel[i].intensityValues[j].intensityIntervalLowerBound), sizeof(uint8_t), 1, filmgrain, errorMessage);
-                x265_fread((char* )(&m_filmGrain->m_compModel[i].intensityValues[j].intensityIntervalUpperBound), sizeof(uint8_t), 1, filmgrain, errorMessage);
-                m_filmGrain->m_compModel[i].intensityValues[j].compModelValue = (int* ) malloc(sizeof(int) * (m_filmGrain->m_compModel[i].numModelValues));
-                for (int k = 0; k < m_filmGrain->m_compModel[i].numModelValues; k++)
-                {
-                    x265_fread((char* )(&m_filmGrain->m_compModel[i].intensityValues[j].compModelValue[k]), sizeof(int), 1, filmgrain, errorMessage);
-                }
+                x265_log(m_param, X265_LOG_ERROR, "Unable to allocate FilmGrain model values\n");
+                return false;
+            }
+
+            for (int k = 0; k < m_filmGrain->m_compModel[i].numModelValues; k++)
+            {
+                if (!readBinaryOrLog(m_param, &m_filmGrain->m_compModel[i].intensityValues[j].compModelValue[k], sizeof(int), 1, filmgrain, readError))
+                    return false;
             }
         }
     }
+
+    return true;
 }
 
 void compute_film_grain_resolution(int width, int height,
@@ -2423,21 +2472,34 @@ void compute_film_grain_resolution(int width, int height,
     return;
 }
 
-void FrameEncoder::readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FILE* Aomfilmgrain)
+bool FrameEncoder::readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FILE* Aomfilmgrain)
 {
-    char const* errorMessage = "Error reading Aom FilmGrain characteristics\n";
-    AomFilmGrain m_afg;
-    m_afg.m_chroma_scaling_from_luma = 0;
+    static const char* readError = "Error reading Aom FilmGrain characteristics\n";
     int bitCount = 0;
+    const int maxYPoints = (int)(sizeof(m_aomFilmGrain->m_scaling_points_y) / sizeof(m_aomFilmGrain->m_scaling_points_y[0]));
+    const int maxCbPoints = (int)(sizeof(m_aomFilmGrain->m_scaling_points_cb) / sizeof(m_aomFilmGrain->m_scaling_points_cb[0]));
+    const int maxCrPoints = (int)(sizeof(m_aomFilmGrain->m_scaling_points_cr) / sizeof(m_aomFilmGrain->m_scaling_points_cr[0]));
+
+    m_aomFilmGrain->m_chroma_scaling_from_luma = 0;
     bitCount += 4; // payload_less_than_4byte_flag(1) + film_grain_param_set_idx(3)
-    x265_fread((char*)&m_aomFilmGrain->m_apply_grain, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_apply_grain, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
     bitCount++;
-    x265_fread((char*)&m_aomFilmGrain->m_grain_seed, sizeof(uint16_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=16;
-    x265_fread((char*)&m_aomFilmGrain->m_update_grain, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_grain_seed, sizeof(uint16_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 16;
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_update_grain, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
     bitCount++;
-    x265_fread((char*)&m_aomFilmGrain->m_num_y_points, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=4;
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_num_y_points, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 4;
+
+    if (m_aomFilmGrain->m_num_y_points < 0 || m_aomFilmGrain->m_num_y_points > maxYPoints)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid Aom FilmGrain luma point count\n");
+        return false;
+    }
 
     if (m_aomFilmGrain->m_num_y_points)
     {
@@ -2449,13 +2511,21 @@ void FrameEncoder::readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FIL
         {
             for (int j = 0; j < 2; j++)
             {
-                x265_fread((char*)&m_aomFilmGrain->m_scaling_points_y[i][j], sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-                bitCount+=8;
+                if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_scaling_points_y[i][j], sizeof(int32_t), 1, Aomfilmgrain, readError))
+                    return false;
+                bitCount += 8;
             }
         }
     }
-    x265_fread((char*)&m_aomFilmGrain->m_num_cb_points, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=4;
+
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_num_cb_points, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 4;
+    if (m_aomFilmGrain->m_num_cb_points < 0 || m_aomFilmGrain->m_num_cb_points > maxCbPoints)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid Aom FilmGrain cb point count\n");
+        return false;
+    }
     if (m_aomFilmGrain->m_num_cb_points)
     {
         m_aomFilmGrain->point_cb_value_increment_bits = 8;
@@ -2468,13 +2538,21 @@ void FrameEncoder::readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FIL
         {
             for (int j = 0; j < 2; j++)
             {
-                x265_fread((char*)&m_aomFilmGrain->m_scaling_points_cb[i][j], sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-                bitCount+=8;
+                if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_scaling_points_cb[i][j], sizeof(int32_t), 1, Aomfilmgrain, readError))
+                    return false;
+                bitCount += 8;
             }
         }
     }
-    x265_fread((char*)&m_aomFilmGrain->m_num_cr_points, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=4;
+
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_num_cr_points, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 4;
+    if (m_aomFilmGrain->m_num_cr_points < 0 || m_aomFilmGrain->m_num_cr_points > maxCrPoints)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid Aom FilmGrain cr point count\n");
+        return false;
+    }
     if (m_aomFilmGrain->m_num_cr_points)
     {
         m_aomFilmGrain->point_cr_value_increment_bits = 8;
@@ -2487,67 +2565,84 @@ void FrameEncoder::readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FIL
         {
             for (int j = 0; j < 2; j++)
             {
-                x265_fread((char*)&m_aomFilmGrain->m_scaling_points_cr[i][j], sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-                bitCount+=8;
+                if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_scaling_points_cr[i][j], sizeof(int32_t), 1, Aomfilmgrain, readError))
+                    return false;
+                bitCount += 8;
             }
         }
     }
-    x265_fread((char*)&m_aomFilmGrain->m_scaling_shift, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=2;
-    x265_fread((char*)&m_aomFilmGrain->m_ar_coeff_lag, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=2;
+
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_scaling_shift, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 2;
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_ar_coeff_lag, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 2;
     if (m_aomFilmGrain->m_num_y_points)
     {
         bitCount += 2;
         for (int i = 0; i < 24; i++)
         {
-            x265_fread((char*)&m_aomFilmGrain->m_ar_coeffs_y[i], sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-            bitCount+=8;
+            if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_ar_coeffs_y[i], sizeof(int32_t), 1, Aomfilmgrain, readError))
+                return false;
+            bitCount += 8;
         }
     }
-    if (m_aomFilmGrain->m_num_cb_points || m_afg.m_chroma_scaling_from_luma)
+    if (m_aomFilmGrain->m_num_cb_points || m_aomFilmGrain->m_chroma_scaling_from_luma)
     {
         bitCount += 2;
         for (int i = 0; i < 25; i++)
         {
-            x265_fread((char*)&m_aomFilmGrain->m_ar_coeffs_cb[i], sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-            bitCount+=8;
+            if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_ar_coeffs_cb[i], sizeof(int32_t), 1, Aomfilmgrain, readError))
+                return false;
+            bitCount += 8;
         }
     }
-    if (m_aomFilmGrain->m_num_cr_points || m_afg.m_chroma_scaling_from_luma)
+    if (m_aomFilmGrain->m_num_cr_points || m_aomFilmGrain->m_chroma_scaling_from_luma)
     {
         bitCount += 2;
         for (int i = 0; i < 25; i++)
         {
-            x265_fread((char*)&m_aomFilmGrain->m_ar_coeffs_cr[i], sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-            bitCount+=8;
+            if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_ar_coeffs_cr[i], sizeof(int32_t), 1, Aomfilmgrain, readError))
+                return false;
+            bitCount += 8;
         }
     }
-    x265_fread((char*)&m_aomFilmGrain->m_ar_coeff_shift, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=2;
-    x265_fread((char*)&m_aomFilmGrain->m_grain_scale_shift, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
-    bitCount+=2;
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_ar_coeff_shift, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 2;
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_grain_scale_shift, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
+    bitCount += 2;
     if (m_aomFilmGrain->m_num_cb_points)
     {
-        x265_fread((char*)&m_aomFilmGrain->m_cb_mult, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+        if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_cb_mult, sizeof(int32_t), 1, Aomfilmgrain, readError))
+            return false;
         bitCount += 8;
-        x265_fread((char*)&m_aomFilmGrain->m_cb_luma_mult, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+        if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_cb_luma_mult, sizeof(int32_t), 1, Aomfilmgrain, readError))
+            return false;
         bitCount += 8;
-        x265_fread((char*)&m_aomFilmGrain->m_cb_offset, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+        if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_cb_offset, sizeof(int32_t), 1, Aomfilmgrain, readError))
+            return false;
         bitCount += 9;
     }
     if (m_aomFilmGrain->m_num_cr_points)
     {
-        x265_fread((char*)&m_aomFilmGrain->m_cr_mult, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+        if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_cr_mult, sizeof(int32_t), 1, Aomfilmgrain, readError))
+            return false;
         bitCount += 8;
-        x265_fread((char*)&m_aomFilmGrain->m_cr_luma_mult, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+        if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_cr_luma_mult, sizeof(int32_t), 1, Aomfilmgrain, readError))
+            return false;
         bitCount += 8;
-        x265_fread((char*)&m_aomFilmGrain->m_cr_offset, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+        if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_cr_offset, sizeof(int32_t), 1, Aomfilmgrain, readError))
+            return false;
         bitCount += 9;
     }
-    x265_fread((char*)&m_aomFilmGrain->m_overlap_flag, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_overlap_flag, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
     bitCount++;
-    x265_fread((char*)&m_aomFilmGrain->m_clip_to_restricted_range, sizeof(int32_t), 1, Aomfilmgrain, errorMessage);
+    if (!readBinaryOrLog(m_param, &m_aomFilmGrain->m_clip_to_restricted_range, sizeof(int32_t), 1, Aomfilmgrain, readError))
+        return false;
     bitCount++;
 
     m_aomFilmGrain->luma_only_flag = m_aomFilmGrain->m_num_cb_points == 0 && m_aomFilmGrain->m_num_cr_points == 0;
@@ -2566,9 +2661,12 @@ void FrameEncoder::readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FIL
     m_aomFilmGrain->predict_cr_scaling_flag = 0;
     m_aomFilmGrain->m_bitDepth = m_param->internalBitDepth;
     bitCount++; // videosingnaltypepresentflag
-    if (m_frame[0]->m_encData->m_slice->m_sps->vuiParameters.videoSignalTypePresentFlag) bitCount += 4; // bit_depth_minus8(3) + cicp_info_present_flag(1)
-    if (m_frame[0]->m_encData->m_slice->m_sps->vuiParameters.colourDescriptionPresentFlag) bitCount += 25; // colourPrimaries(8) + transferCharacteristics(8) + matrixCoefficients(8)+ videoFullRangeFlag(1)
-    if (!m_aomFilmGrain->luma_only_flag) {
+    if (m_frame[0]->m_encData->m_slice->m_sps->vuiParameters.videoSignalTypePresentFlag)
+        bitCount += 4; // bit_depth_minus8(3) + cicp_info_present_flag(1)
+    if (m_frame[0]->m_encData->m_slice->m_sps->vuiParameters.colourDescriptionPresentFlag)
+        bitCount += 25; // colourPrimaries(8) + transferCharacteristics(8) + matrixCoefficients(8)+ videoFullRangeFlag(1)
+    if (!m_aomFilmGrain->luma_only_flag)
+    {
         m_aomFilmGrain->m_chroma_scaling_from_luma = 0;
         bitCount++;
     }
@@ -2577,6 +2675,8 @@ void FrameEncoder::readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FIL
     m_aomFilmGrain->payload_bits = m_aomFilmGrain->payload_size < 4 ? 2 : 8;
     bitCount += m_aomFilmGrain->payload_bits;
     m_aomFilmGrain->payload_size = (bitCount + 8 - 1) / 8;
+
+    return true;
 }
 
 #if ENABLE_LIBVMAF

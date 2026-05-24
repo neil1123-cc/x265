@@ -31,6 +31,7 @@
 #include "md5.h"
 
 #include <cstdio>
+#include <cstdlib>
 
 namespace X265_NS {
 // private namespace
@@ -84,6 +85,40 @@ class FilmGrainCharacteristics : public SEI
     {
         m_payloadType = FILM_GRAIN_CHARACTERISTICS;
         m_payloadSize = 0;
+        m_filmGrainCharacteristicsPersistenceFlag = false;
+        m_filmGrainCharacteristicsCancelFlag = false;
+        m_separateColourDescriptionPresentFlag = false;
+        m_filmGrainFullRangeFlag = false;
+        m_filmGrainModelId = 0;
+        m_blendingModeId = 0;
+        m_log2ScaleFactor = 0;
+        m_filmGrainBitDepthLumaMinus8 = 0;
+        m_filmGrainBitDepthChromaMinus8 = 0;
+        m_filmGrainColourPrimaries = 0;
+        m_filmGrainTransferCharacteristics = 0;
+        m_filmGrainMatrixCoeffs = 0;
+        for (uint8_t c = 0; c < MAX_NUM_COMPONENT; c++)
+        {
+            m_compModel[c].bPresentFlag = false;
+            m_compModel[c].numModelValues = 0;
+            m_compModel[c].m_filmGrainNumIntensityIntervalMinus1 = 0;
+            m_compModel[c].intensityValues = NULL;
+        }
+    }
+
+    ~FilmGrainCharacteristics()
+    {
+        for (uint8_t c = 0; c < MAX_NUM_COMPONENT; c++)
+        {
+            if (!m_compModel[c].intensityValues)
+                continue;
+
+            for (uint16_t interval = 0; interval <= m_compModel[c].m_filmGrainNumIntensityIntervalMinus1; interval++)
+                std::free(m_compModel[c].intensityValues[interval].compModelValue);
+
+            std::free(m_compModel[c].intensityValues);
+            m_compModel[c].intensityValues = NULL;
+        }
     }
 
     struct CompModelIntensityValues
