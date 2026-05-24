@@ -1020,6 +1020,130 @@ int Encoder::setAnalysisData(x265_analysis_data *analysis_data, int poc, uint32_
     return -1;
 }
 
+static void clearDupPictureUserSEI(x265_picture* pic)
+{
+    if (!pic || !pic->userSEI.payloads)
+        return;
+
+    for (int i = 0; i < pic->userSEI.numPayloads; i++)
+        delete[] pic->userSEI.payloads[i].payload;
+
+    delete[] pic->userSEI.payloads;
+    pic->userSEI.payloads = NULL;
+    pic->userSEI.numPayloads = 0;
+}
+
+static void clearDupPictureRpu(x265_picture* pic)
+{
+    if (!pic)
+        return;
+
+    if (pic->rpu.payload)
+        delete[] pic->rpu.payload;
+
+    pic->rpu.payload = NULL;
+    pic->rpu.payloadSize = 0;
+}
+
+static void clearDupPictureSideData(x265_picture* pic)
+{
+    clearDupPictureUserSEI(pic);
+    clearDupPictureRpu(pic);
+}
+
+static bool copyDupPictureSideData(x265_picture* dest, const x265_picture* src, x265_param* param)
+{
+    clearDupPictureSideData(dest);
+
+    if (src->userSEI.numPayloads < 0)
+    {
+        x265_log(param, X265_LOG_ERROR, "Frame duplication received an invalid user SEI payload count\n");
+        return false;
+    }
+
+    if (src->userSEI.numPayloads && !src->userSEI.payloads)
+    {
+        x265_log(param, X265_LOG_ERROR, "Frame duplication received a null user SEI payload array\n");
+        return false;
+    }
+
+    if (src->userSEI.numPayloads)
+    {
+        dest->userSEI.payloads = new (std::nothrow) x265_sei_payload[src->userSEI.numPayloads];
+        if (!dest->userSEI.payloads)
+        {
+            x265_log(param, X265_LOG_ERROR, "Unable to allocate frame duplication user SEI payload array\n");
+            return false;
+        }
+
+        dest->userSEI.numPayloads = src->userSEI.numPayloads;
+        for (int i = 0; i < dest->userSEI.numPayloads; i++)
+        {
+            dest->userSEI.payloads[i].payload = NULL;
+            dest->userSEI.payloads[i].payloadSize = 0;
+            dest->userSEI.payloads[i].payloadType = src->userSEI.payloads[i].payloadType;
+
+            if (src->userSEI.payloads[i].payloadSize < 0)
+            {
+                x265_log(param, X265_LOG_ERROR, "Frame duplication received an invalid user SEI payload size\n");
+                clearDupPictureSideData(dest);
+                return false;
+            }
+
+            if (src->userSEI.payloads[i].payloadSize && !src->userSEI.payloads[i].payload)
+            {
+                x265_log(param, X265_LOG_ERROR, "Frame duplication received a null user SEI payload\n");
+                clearDupPictureSideData(dest);
+                return false;
+            }
+
+            if (src->userSEI.payloads[i].payloadSize)
+            {
+                dest->userSEI.payloads[i].payload = new (std::nothrow) uint8_t[src->userSEI.payloads[i].payloadSize];
+                if (!dest->userSEI.payloads[i].payload)
+                {
+                    x265_log(param, X265_LOG_ERROR, "Unable to allocate frame duplication user SEI payload data\n");
+                    clearDupPictureSideData(dest);
+                    return false;
+                }
+                std::memcpy(dest->userSEI.payloads[i].payload, src->userSEI.payloads[i].payload,
+                            src->userSEI.payloads[i].payloadSize);
+                dest->userSEI.payloads[i].payloadSize = src->userSEI.payloads[i].payloadSize;
+            }
+        }
+    }
+
+    if (src->rpu.payloadSize < 0)
+    {
+        x265_log(param, X265_LOG_ERROR, "Frame duplication received an invalid Dolby Vision RPU payload size\n");
+        clearDupPictureSideData(dest);
+        return false;
+    }
+
+    if (src->rpu.payloadSize)
+    {
+        if (!src->rpu.payload)
+        {
+            x265_log(param, X265_LOG_ERROR, "Frame duplication received a null Dolby Vision RPU payload\n");
+            clearDupPictureSideData(dest);
+            return false;
+        }
+
+        dest->rpu.payload = new (std::nothrow) uint8_t[src->rpu.payloadSize];
+        if (!dest->rpu.payload)
+        {
+            x265_log(param, X265_LOG_ERROR, "Unable to allocate frame duplication Dolby Vision RPU payload buffer\n");
+            clearDupPictureSideData(dest);
+            return false;
+        }
+
+        std::memcpy(dest->rpu.payload, src->rpu.payload, src->rpu.payloadSize);
+        dest->rpu.payloadSize = src->rpu.payloadSize;
+    }
+
+    return true;
+}
+
 void Encoder::destroy()
 {
 #if ENABLE_HDR10_PLUS
@@ -1046,6 +1170,7 @@ void Encoder::destroy()
     {
         for (uint32_t i = 0; i < DUP_BUFFER; i++)
         {
+            clearDupPictureSideData(m_dupBuffer[i]->dupPic);
             X265_FREE(m_dupBuffer[i]->dupPlane);
             x265_picture_free(m_dupBuffer[i]->dupPic);
             X265_FREE(m_dupBuffer[i]);
@@ -1609,39 +1734,141 @@ bool Encoder::copyPicture(x265_picture *dest, const x265_picture *src)
         }
     }
 
-    if (!src->planes[0] || !src->framesize || !destPlaneSize || src->framesize > destPlaneSize)
+    if (src->colorSpace < X265_CSP_I400 || src->colorSpace >= X265_CSP_COUNT || src->colorSpace != m_param->internalCsp)
     {
-        x265_log(m_param, X265_LOG_ERROR, "frame duplication received invalid input frame size\n");
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication only supports encoder-matching planar input color spaces\n");
         return false;
     }
 
-    dest->poc = src->poc;
-    dest->pts = src->pts;
-    dest->userSEI = src->userSEI;
-    dest->bitDepth = src->bitDepth;
-    dest->framesize = src->framesize;
-    dest->height = src->height;
-    dest->width = src->width;
-    dest->colorSpace = src->colorSpace;
-    dest->userSEI = src->userSEI;
-    dest->rpu.payload = src->rpu.payload;
-    dest->picStruct = src->picStruct;
-    dest->stride[0] = src->stride[0];
-    dest->stride[1] = src->stride[1];
-    dest->stride[2] = src->stride[2];
-    std::memcpy(dest->planes[0], src->planes[0], src->framesize * sizeof(char));
-    dest->planes[1] = (char*)dest->planes[0] + src->stride[0] * src->height;
-    dest->planes[2] = (char*)dest->planes[1] + src->stride[1] * (src->height >> x265_cli_csps[src->colorSpace].height[1]);
-#if ENABLE_ALPHA
-    if(m_param->bEnableAlpha)
-        dest->planes[3] = (char*)dest->planes[2] + src->stride[2] * (src->height >> x265_cli_csps[src->colorSpace].height[2]);
-#endif
-    return true;
-}
+    if (src->colorSpace == X265_CSP_NV12 || src->colorSpace == X265_CSP_NV16)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication does not support semi-planar input color spaces\n");
+        return false;
+    }
 
-static bool isSupportedInputCsp(int colorSpace)
-{
-    return colorSpace >= X265_CSP_I400 && colorSpace < X265_CSP_COUNT;
+#if ENABLE_MULTIVIEW
+    if (m_param->numViews > 1 || src->format)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication does not support multiview packed input\n");
+        return false;
+    }
+#endif
+
+#if ENABLE_ALPHA
+    if (m_param->numScalableLayers > 1 || m_param->bEnableAlpha || src->planes[3])
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication does not support alpha input\n");
+        return false;
+    }
+#endif
+
+    const int bytesPerSample = src->bitDepth > 8 ? 2 : 1;
+    const int dupBytesPerSample = m_param->sourceBitDepth > 8 ? 2 : 1;
+    if (bytesPerSample > dupBytesPerSample)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication input bit depth exceeds the configured source bit depth\n");
+        return false;
+    }
+
+    if (src->width <= 0 || src->height <= 0 || src->width > (int)m_param->sourceWidth || src->height > (int)m_param->sourceHeight)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication received invalid input picture geometry\n");
+        return false;
+    }
+
+    if (src->analysisData.wt || src->analysisData.intraData || src->analysisData.interData || src->analysisData.distortionData)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication does not support externally owned analysisData buffers\n");
+        return false;
+    }
+
+    if (m_param->bUseRcStats && src->rcData)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Frame duplication does not support externally owned rcData buffers\n");
+        return false;
+    }
+
+    const x265_cli_csp& csp = x265_cli_csps[src->colorSpace];
+    const int numPlanes = csp.planes;
+    size_t requiredPlaneSize = 0;
+    for (int plane = 0; plane < numPlanes; plane++)
+    {
+        if (!src->planes[plane])
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Frame duplication received a null input plane\n");
+            return false;
+        }
+
+        int planeWidth = src->width >> csp.width[plane];
+        int planeHeight = src->height >> csp.height[plane];
+        size_t rowBytes = (size_t)planeWidth * bytesPerSample;
+
+        if (src->stride[plane] <= 0 || (size_t)src->stride[plane] < rowBytes)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Frame duplication received an invalid input plane stride\n");
+            return false;
+        }
+
+        size_t planeBytes = rowBytes * planeHeight;
+        if (planeBytes > destPlaneSize - requiredPlaneSize)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Frame duplication buffer is too small for the copied frame\n");
+            return false;
+        }
+        requiredPlaneSize += planeBytes;
+    }
+
+    char* base = (char*)dest->planes[0];
+    char* planeBase = base;
+    for (int plane = 0; plane < numPlanes; plane++)
+    {
+        int planeWidth = src->width >> csp.width[plane];
+        int planeHeight = src->height >> csp.height[plane];
+        size_t rowBytes = (size_t)planeWidth * bytesPerSample;
+
+        dest->planes[plane] = planeBase;
+        dest->stride[plane] = (int)rowBytes;
+
+        uint8_t* dstRow = (uint8_t*)planeBase;
+        uint8_t* srcRow = (uint8_t*)src->planes[plane];
+        for (int row = 0; row < planeHeight; row++)
+        {
+            std::memcpy(dstRow, srcRow, rowBytes);
+            dstRow += rowBytes;
+            srcRow += src->stride[plane];
+        }
+
+        planeBase += rowBytes * planeHeight;
+    }
+
+    for (int plane = numPlanes; plane < 4; plane++)
+    {
+        dest->planes[plane] = NULL;
+        dest->stride[plane] = 0;
+    }
+
+    dest->pts = src->pts;
+    dest->dts = src->dts;
+    dest->vbvEndFlag = src->vbvEndFlag;
+    dest->userData = src->userData;
+    dest->bitDepth = src->bitDepth;
+    dest->sliceType = src->sliceType;
+    dest->poc = src->poc;
+    dest->colorSpace = src->colorSpace;
+    dest->forceqp = src->forceqp;
+    dest->framesize = requiredPlaneSize;
+    dest->height = src->height;
+    dest->reorderedPts = src->reorderedPts;
+    dest->fieldNum = src->fieldNum;
+    dest->picStruct = src->picStruct;
+    dest->width = src->width;
+    dest->layerID = src->layerID;
+    dest->format = 0;
+
+    if (!copyDupPictureSideData(dest, src, m_param))
+        return false;
+
+    return true;
 }
 
 bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) const
@@ -1657,7 +1884,7 @@ bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) con
         return false;
     }
 
-    if (!isSupportedInputCsp(pic->colorSpace))
+    if (pic->colorSpace < X265_CSP_I400 || pic->colorSpace >= X265_CSP_COUNT)
     {
         x265_log(m_param, X265_LOG_ERROR, "Input color space (%d) is unsupported\n", pic->colorSpace);
         return false;
@@ -4795,6 +5022,22 @@ void Encoder::configure(x265_param *p)
         x265_log(p, X265_LOG_WARNING, "Frame-duplication works only with pic_struct = 0. Setting pic-struct = 0.\n");
         p->pictureStructure = 0;
     }
+
+#if ENABLE_MULTIVIEW
+    if (p->bEnableFrameDuplication && (p->numViews > 1 || p->format))
+    {
+        x265_log(p, X265_LOG_WARNING, "Frame-duplication does not support multiview packed input. Disabling frame duplication.\n");
+        p->bEnableFrameDuplication = 0;
+    }
+#endif
+
+#if ENABLE_ALPHA
+    if (p->bEnableFrameDuplication && p->numScalableLayers > 1)
+    {
+        x265_log(p, X265_LOG_WARNING, "Frame-duplication does not support alpha input. Disabling frame duplication.\n");
+        p->bEnableFrameDuplication = 0;
+    }
+#endif
 
     if (m_param->bEnableFrameDuplication && (!bIsVbv || !m_param->bEmitHRDSEI))
     {
