@@ -740,6 +740,7 @@ int Encoder::setAnalysisDataAfterZScan(x265_analysis_data *analysis_data, Frame*
             for (int j = 0; j < mbImageWidth; j++)
             {
                 int mbIndex = j + i * mbImageWidth;
+                uint8_t depth = srcIntraData->depth[mbIndex * 16];
                 ctuAddr = (j / num16x16inCUWidth + ((i / num16x16inCUWidth) * (mbImageWidth / num16x16inCUWidth)));
                 offset = ((i % num16x16inCUWidth) << 5) + ((j % num16x16inCUWidth) << 4);
                 if ((j % 4 >= 2) && m_param->maxCUSize == 64)
@@ -747,6 +748,11 @@ int Encoder::setAnalysisDataAfterZScan(x265_analysis_data *analysis_data, Frame*
                 if ((i % 4 >= 2) && m_param->maxCUSize == 64)
                     offset += (2 * 32);
                 cuPos = ctuAddr  * curFrame->m_analysisData.numPartitions + offset;
+                if (depth > 7 || !(curFrame->m_analysisData.numPartitions >> (depth * 2)))
+                {
+                    x265_log(m_param, X265_LOG_ERROR, "Invalid AVC analysis data depth\n");
+                    return -1;
+                }
                 std::memcpy(&(intraData)->depth[cuPos], &(srcIntraData)->depth[mbIndex * 16], 16);
                 std::memcpy(&(intraData)->chromaModes[cuPos], &(srcIntraData)->chromaModes[mbIndex * 16], 16);
                 std::memcpy(&(intraData)->partSizes[cuPos], &(srcIntraData)->partSizes[mbIndex * 16], 16);
@@ -770,6 +776,7 @@ int Encoder::setAnalysisDataAfterZScan(x265_analysis_data *analysis_data, Frame*
             for (int j = 0; j < mbImageWidth; j++)
             {
                 int mbIndex = j + i * mbImageWidth;
+                uint8_t depth = srcInterData->depth[mbIndex * 16];
                 ctuAddr = (j / num16x16inCUWidth + ((i / num16x16inCUWidth) * (mbImageWidth / num16x16inCUWidth)));
                 offset = ((i % num16x16inCUWidth) << 5) + ((j % num16x16inCUWidth) << 4);
                 if ((j % 4 >= 2) && m_param->maxCUSize == 64)
@@ -777,18 +784,29 @@ int Encoder::setAnalysisDataAfterZScan(x265_analysis_data *analysis_data, Frame*
                 if ((i % 4 >= 2) && m_param->maxCUSize == 64)
                     offset += (2 * 32);
                 cuPos = ctuAddr  * curFrame->m_analysisData.numPartitions + offset;
+                if (depth > 7 || !(curFrame->m_analysisData.numPartitions >> (depth * 2)))
+                {
+                    x265_log(m_param, X265_LOG_ERROR, "Invalid AVC analysis data depth\n");
+                    return -1;
+                }
                 std::memcpy(&(interData)->depth[cuPos], &(srcInterData)->depth[mbIndex * 16], 16);
                 std::memcpy(&(interData)->modes[cuPos], &(srcInterData)->modes[mbIndex * 16], 16);
 
                 std::memcpy(&(interData)->partSize[cuPos], &(srcInterData)->partSize[mbIndex * 16], 16);
 
-                int bytes = curFrame->m_analysisData.numPartitions >> ((srcInterData)->depth[mbIndex * 16] * 2);
+                int bytes = curFrame->m_analysisData.numPartitions >> (depth * 2);
                 int cuCount = 1;
                 if (bytes < 16)
                     cuCount = 4;
                 for (int cuI = 0; cuI < cuCount; cuI++)
                 {
-                    int numPU = nbPartsTable[(srcInterData)->partSize[mbIndex * 16 + cuI * bytes]];
+                    uint8_t partSize = srcInterData->partSize[mbIndex * 16 + cuI * bytes];
+                    if (partSize >= NUM_PART_SIZES)
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "Invalid AVC analysis data partition size\n");
+                        return -1;
+                    }
+                    int numPU = nbPartsTable[partSize];
                     for (int pu = 0; pu < numPU; pu++)
                     {
                         int cuOffset = cuI * bytes + pu;
@@ -819,8 +837,80 @@ int Encoder::setAnalysisDataAfterZScan(x265_analysis_data *analysis_data, Frame*
 
 int Encoder::setAnalysisData(x265_analysis_data *analysis_data, int poc, uint32_t cuBytes)
 {
+    if (!analysis_data)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid AVC analysis data pointer\n");
+        return -1;
+    }
+
     uint32_t widthInCU = (m_param->sourceWidth + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
     uint32_t heightInCU = (m_param->sourceHeight + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
+    uint32_t avcWidthInCU = (m_param->sourceWidth + 16 - 1) >> 4;
+    uint32_t avcHeightInCU = (m_param->sourceHeight + 16 - 1) >> 4;
+    uint32_t expectedCuBytes = avcWidthInCU * avcHeightInCU;
+    bool isIntraSlice = IS_X265_TYPE_I(analysis_data->sliceType);
+
+    if (analysis_data->sliceType < X265_TYPE_IDR || analysis_data->sliceType > X265_TYPE_B)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid AVC analysis data slice type\n");
+        return -1;
+    }
+
+    if (!cuBytes || cuBytes != expectedCuBytes)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Invalid AVC analysis data CU count\n");
+        return -1;
+    }
+
+    if (m_param->maxCUSize == 16)
+    {
+        if (m_param->analysisLoadReuseLevel < 2)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "AVC analysis data requires analysis-load-reuse-level >= 2 with 16x16 CTU\n");
+            return -1;
+        }
+    }
+    else if (m_param->analysisLoadReuseLevel < 7)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "AVC analysis data requires analysis-load-reuse-level >= 7 when CTU size exceeds 16x16\n");
+        return -1;
+    }
+
+    if (isIntraSlice)
+    {
+        if (!analysis_data->intraData || !analysis_data->intraData->depth || !analysis_data->intraData->modes ||
+            !analysis_data->intraData->partSizes || !analysis_data->intraData->chromaModes)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Invalid AVC intra analysis buffers\n");
+            return -1;
+        }
+    }
+    else
+    {
+        uint32_t numDir = analysis_data->sliceType == X265_TYPE_P ? 1 : 2;
+        bool needsPartSize = (m_param->maxCUSize != 16) || (m_param->analysisLoadReuseLevel > 4);
+        bool needsMotion = (m_param->maxCUSize != 16) || (m_param->analysisLoadReuseLevel >= 7);
+        if (!analysis_data->interData || !analysis_data->interData->depth || !analysis_data->interData->modes || !analysis_data->interData->sadCost)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Invalid AVC inter analysis buffers\n");
+            return -1;
+        }
+        if (needsPartSize && (!analysis_data->interData->partSize || !analysis_data->interData->mergeFlag))
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Invalid AVC inter partition buffers\n");
+            return -1;
+        }
+        if (needsMotion)
+        {
+            if (!analysis_data->interData->interDir || !analysis_data->interData->mvpIdx[0] ||
+                !analysis_data->interData->refIdx[0] || !analysis_data->interData->mv[0] ||
+                (numDir == 2 && (!analysis_data->interData->mvpIdx[1] || !analysis_data->interData->refIdx[1] || !analysis_data->interData->mv[1])))
+            {
+                x265_log(m_param, X265_LOG_ERROR, "Invalid AVC inter motion buffers\n");
+                return -1;
+            }
+        }
+    }
 
     Frame* curFrame = m_dpb->m_picList.getPOC(poc, 0);
     if (curFrame != NULL)
@@ -831,19 +921,23 @@ int Encoder::setAnalysisData(x265_analysis_data *analysis_data, int poc, uint32_
         x265_alloc_analysis_data(m_param, &curFrame->m_analysisData);
         if (m_param->maxCUSize == 16)
         {
-            if (analysis_data->sliceType == X265_TYPE_IDR || analysis_data->sliceType == X265_TYPE_I)
+            if (isIntraSlice)
             {
                 curFrame->m_analysisData.sliceType = X265_TYPE_I;
-                if (m_param->analysisLoadReuseLevel < 2)
-                    return -1;
-
                 curFrame->m_analysisData.numPartitions = m_param->num4x4Partitions;
                 size_t count = 0;
                 x265_analysis_intra_data * currIntraData = curFrame->m_analysisData.intraData;
                 x265_analysis_intra_data * intraData = analysis_data->intraData;
                 for (uint32_t d = 0; d < cuBytes; d++)
                 {
-                    int bytes = curFrame->m_analysisData.numPartitions >> ((intraData)->depth[d] * 2);
+                    uint8_t depth = intraData->depth[d];
+                    int bytes;
+                    if (depth > 7 || !(bytes = curFrame->m_analysisData.numPartitions >> (depth * 2)) ||
+                        count + bytes > (size_t)(curFrame->m_analysisData.numPartitions * curFrame->m_analysisData.numCUsInFrame))
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "Invalid AVC intra analysis depth\n");
+                        return -1;
+                    }
                     std::memset(&(currIntraData)->depth[count], (intraData)->depth[d], bytes);
                     std::memset(&(currIntraData)->chromaModes[count], (intraData)->chromaModes[d], bytes);
                     std::memset(&(currIntraData)->partSizes[count], (intraData)->partSizes[d], bytes);
@@ -855,26 +949,43 @@ int Encoder::setAnalysisData(x265_analysis_data *analysis_data, int poc, uint32_
             else
             {
                 uint32_t numDir = analysis_data->sliceType == X265_TYPE_P ? 1 : 2;
-                if (m_param->analysisLoadReuseLevel < 2)
-                    return -1;
-
                 curFrame->m_analysisData.numPartitions = m_param->num4x4Partitions;
                 size_t count = 0;
                 x265_analysis_inter_data * currInterData = curFrame->m_analysisData.interData;
                 x265_analysis_inter_data * interData = analysis_data->interData;
                 for (uint32_t d = 0; d < cuBytes; d++)
                 {
-                    int bytes = curFrame->m_analysisData.numPartitions >> ((interData)->depth[d] * 2);
+                    uint8_t depth = interData->depth[d];
+                    int bytes;
+                    if (depth > 7 || !(bytes = curFrame->m_analysisData.numPartitions >> (depth * 2)) ||
+                        count + bytes > (size_t)(curFrame->m_analysisData.numPartitions * curFrame->m_analysisData.numCUsInFrame))
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "Invalid AVC inter analysis depth\n");
+                        return -1;
+                    }
                     std::memset(&(currInterData)->depth[count], (interData)->depth[d], bytes);
                     std::memset(&(currInterData)->modes[count], (interData)->modes[d], bytes);
                     std::memcpy(&(currInterData)->sadCost[count], &(analysis_data->interData)->sadCost[d], bytes);
                     if (m_param->analysisLoadReuseLevel > 4)
                     {
+                        if ((interData)->partSize[d] >= NUM_PART_SIZES)
+                        {
+                            x265_log(m_param, X265_LOG_ERROR, "Invalid AVC inter analysis partition size\n");
+                            return -1;
+                        }
                         std::memset(&(currInterData)->partSize[count], (interData)->partSize[d], bytes);
                         int numPU = nbPartsTable[(interData)->partSize[d]];
                         for (int pu = 0; pu < numPU; pu++)
                         {
-                            if (pu) d++;
+                            if (pu)
+                            {
+                                if (d + 1 >= cuBytes)
+                                {
+                                    x265_log(m_param, X265_LOG_ERROR, "Invalid AVC inter analysis PU layout\n");
+                                    return -1;
+                                }
+                                d++;
+                            }
                             (currInterData)->mergeFlag[count + pu] = (interData)->mergeFlag[d];
                             if (m_param->analysisLoadReuseLevel >= 7)
                             {

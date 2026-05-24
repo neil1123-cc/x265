@@ -2630,6 +2630,7 @@ int x265_get_ref_frame_list(x265_encoder *encoder, x265_picyuv**, x265_picyuv**,
 
 /* x265_set_analysis_data:
  *     set the analysis data. The incoming analysis_data structure is assumed to be AVC-sized blocks.
+ *     cuBytes must match the number of 16x16 AVC blocks in the frame.
  *     returns negative on error, 0 access unit were output. */
 int x265_set_analysis_data(x265_encoder *encoder, x265_analysis_data *analysis_data, int poc, uint32_t cuBytes);
 

@@ -804,7 +804,7 @@ int x265_get_ref_frame_list(x265_encoder *enc, x265_picyuv** l0, x265_picyuv** l
 
 int x265_set_analysis_data(x265_encoder *enc, x265_analysis_data *analysis_data, int poc, uint32_t cuBytes)
 {
-    if (!enc)
+    if (!enc || !analysis_data)
         return -1;
 
     Encoder *encoder = static_cast<Encoder*>(enc);
