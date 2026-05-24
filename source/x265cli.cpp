@@ -40,6 +40,22 @@
 namespace X265_NS {
 #endif
 
+    static bool copyCLIString(char* dst, size_t dstSize, const char* src, const char* context)
+    {
+        if (!dst || !dstSize || !src)
+            return false;
+
+        size_t length = std::strlen(src);
+        if (length >= dstSize)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "%s exceeds supported length\n", context);
+            return false;
+        }
+
+        std::memcpy(dst, src, length + 1);
+        return true;
+    }
+
     static void printVersion(x265_param *param, const x265_api* api)
     {
         x265_log(param, X265_LOG_INFO, "HEVC encoder version %s\n", api->version_str);
@@ -857,7 +873,11 @@ namespace X265_NS {
                 OPT("no-progress") this->bProgress = false;
                 OPT("stylish") this->param->bStylish = true;
                 OPT("output") outputfn = optarg;
-                OPT("input") std::strncpy(inputfn[0] , optarg, 1024);
+                OPT("input")
+                {
+                    if (!copyCLIString(inputfn[0], 1024, optarg, "Input filename"))
+                        return true;
+                }
                 OPT("recon") reconfn[0] = optarg;
                 OPT("input-depth") inputBitDepth = (uint32_t)x265_atoi(optarg, bError);
                 OPT("vf") this->vf = optarg;
@@ -937,12 +957,18 @@ namespace X265_NS {
 
 #if !ENABLE_MULTIVIEW
             if (optind < argc && !(*inputfn[0]))
-                std::strncpy(inputfn[0], argv[optind++], 1024);
+            {
+                if (!copyCLIString(inputfn[0], 1024, argv[optind++], "Input filename"))
+                    return true;
+            }
 #else
         if (!this->multiViewConfig)
         {
             if (optind < argc && !(*inputfn[0]))
-                std::strncpy(inputfn[0], argv[optind++], 1024);
+            {
+                if (!copyCLIString(inputfn[0], 1024, argv[optind++], "Input filename"))
+                    return true;
+            }
         }
 #endif
         if (optind < argc && !outputfn)
@@ -1550,7 +1576,18 @@ namespace X265_NS {
                         if (0);
                         OPT("input")
                         {
-                            std::strncpy(fn[numInput++], optarg, 1024);
+                            if (numInput >= MAX_VIEWS)
+                            {
+                                x265_log(NULL, X265_LOG_ERROR, "too many multiview input files\n");
+                                bInvalid = true;
+                                break;
+                            }
+                            if (!copyCLIString(fn[numInput], 1024, optarg, "Multiview input filename"))
+                            {
+                                bInvalid = true;
+                                break;
+                            }
+                            numInput++;
                         }
 
                     }

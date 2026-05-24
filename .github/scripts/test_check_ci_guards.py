@@ -290,6 +290,20 @@ jobs:
             ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 "$output" > "$count"
             grep -q 'nb_read_frames=2' "$count"
           done
+      - name: CLI Long Input Smoke (All CLI)
+        shell: bash
+        run: |
+          long_input="$(python -c "print('a' * 1100)")"
+          if build/all/x265.exe --input "$long_input" --input-res 96x96 --fps 1 --frames 1 --output smoke_cli_long_input.hevc > smoke_cli_long_input.log 2>&1; then
+            echo "CLI long --input smoke unexpectedly succeeded"
+            exit 1
+          fi
+          grep -Fq 'Input filename exceeds supported length' smoke_cli_long_input.log
+          if build/all/x265.exe "$long_input" -o smoke_cli_long_positional.hevc --input-res 96x96 --fps 1 --frames 1 > smoke_cli_long_positional.log 2>&1; then
+            echo "CLI long positional-input smoke unexpectedly succeeded"
+            exit 1
+          fi
+          grep -Fq 'Input filename exceeds supported length' smoke_cli_long_positional.log
       - name: QPFile Smoke (All CLI)
         shell: bash
         run: |
@@ -1023,6 +1037,18 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q \'nb_read_frames=2\' "$count"', 'grep -q \'nb_read_frames=1\' "$count"')
         expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: grep -q \'nb_read_frames=2\'')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'Input filename exceeds supported length' smoke_cli_long_input.log", "grep -Fq 'supported length' smoke_cli_long_input.log")
+        expect_fail(run_checker(repo), 'CLI long-input smoke must require oversized --input error log')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'Input filename exceeds supported length' smoke_cli_long_positional.log", "grep -Fq 'supported length' smoke_cli_long_positional.log")
+        expect_fail(run_checker(repo), 'CLI long-input smoke must require oversized positional-input error log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

@@ -100,6 +100,8 @@ REQUIRED_BUILD_SNIPPETS = (
     'ninja -C build/cxx20-gcc-compile-commands-12bit x265-static',
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all',
     'ninja -C build/cxx20-gcc-compile-commands-all cli',
+    "grep -Fq 'Input filename exceeds supported length' smoke_cli_long_input.log",
+    "grep -Fq 'Input filename exceeds supported length' smoke_cli_long_positional.log",
 )
 REQUIRED_BUILD_PROFILING_SNIPPETS = (
     'validate-guardrails:',
@@ -1023,6 +1025,32 @@ def validate_mkv_smoke(repo_root):
         if required not in active_lines:
             fail(message, build)
     print('MKV smoke guard validated')
+
+
+def validate_cli_long_input_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'CLI Long Input Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'CLI Long Input Smoke (All CLI)'))
+
+    required_active = {
+        'long_input="$(python -c "print(\'a\' * 1100)")"': 'CLI long-input smoke must synthesize oversized input path',
+        'if build/all/x265.exe --input "$long_input" --input-res 96x96 --fps 1 --frames 1 --output smoke_cli_long_input.hevc > smoke_cli_long_input.log 2>&1; then': 'CLI long-input smoke must actively require oversized --input failure',
+        'echo "CLI long --input smoke unexpectedly succeeded"': 'CLI long-input smoke must report unexpected --input success',
+        'grep -Fq \'Input filename exceeds supported length\' smoke_cli_long_input.log': 'CLI long-input smoke must require oversized --input error log',
+        'if build/all/x265.exe "$long_input" -o smoke_cli_long_positional.hevc --input-res 96x96 --fps 1 --frames 1 > smoke_cli_long_positional.log 2>&1; then': 'CLI long-input smoke must actively require oversized positional-input failure',
+        'echo "CLI long positional-input smoke unexpectedly succeeded"': 'CLI long-input smoke must report unexpected positional-input success',
+        'grep -Fq \'Input filename exceeds supported length\' smoke_cli_long_positional.log': 'CLI long-input smoke must require oversized positional-input error log',
+    }
+    for required, message in required_active.items():
+        if required not in active_lines:
+            fail(message, build)
+    print('CLI long-input smoke guard validated')
 
 
 def validate_lavf_smoke(repo_root):
@@ -2104,6 +2132,7 @@ def main():
         validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
         validate_threaded_me_stress_smoke(repo_root)
+        validate_cli_long_input_smoke(repo_root)
         validate_mkv_smoke(repo_root)
         validate_lavf_smoke(repo_root)
         validate_qpfile_smoke(repo_root)

@@ -1329,6 +1329,21 @@ jobs:
         grep -q "width=160" smoke_raw_probe.txt
         grep -q "height=90" smoke_raw_probe.txt
 
+    - name: CLI Long Input Smoke (All CLI)
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        long_input="$(python -c "print('a' * 1100)")"
+        if build/all/x265.exe --input "$long_input" --input-res 96x96 --fps 1 --frames 1 --output smoke_cli_long_input.hevc > smoke_cli_long_input.log 2>&1; then
+          echo "CLI long --input smoke unexpectedly succeeded"
+          exit 1
+        fi
+        grep -Fq 'Input filename exceeds supported length' smoke_cli_long_input.log
+        if build/all/x265.exe "$long_input" -o smoke_cli_long_positional.hevc --input-res 96x96 --fps 1 --frames 1 > smoke_cli_long_positional.log 2>&1; then
+          echo "CLI long positional-input smoke unexpectedly succeeded"
+          exit 1
+        fi
+        grep -Fq 'Input filename exceeds supported length' smoke_cli_long_positional.log
+
     - name: MKV Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |
