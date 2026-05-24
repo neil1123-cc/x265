@@ -174,6 +174,10 @@ jobs:
           test -s build/cxx20-warning-scan/smoke_zimg.hevc
           grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log
           grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log
+          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:crop(0,0,-0,-0)" --output build/cxx20-warning-scan/smoke_zimg_bypass.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg_bypass.log
+          test -s build/cxx20-warning-scan/smoke_zimg_bypass.hevc
+          grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log
+          grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg_bypass.log
 
           configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
             -DENABLE_CLI=ON \

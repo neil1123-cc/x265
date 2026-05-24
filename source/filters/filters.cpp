@@ -43,13 +43,13 @@ bool Filter::parseFilterString(char* paramString, std::vector<Filter *>* filters
         char fParams[1024];
         int length;
         // Scan to find column sign
-        while(p[0] != ':' && p[0] != '/' && p < end) p++;
+        while (p < end && p[0] != ':' && p[0] != '/') p++;
         length = p - begin;
         fName[length] = 0;
         std::strncpy(fName, begin, length);
         p = begin = p + 1;
 
-        while(p[0] != '/' && p < end) p++;
+        while (p < end && p[0] != '/') p++;
         length = p - begin;
         fParams[length] = 0;
         std::strncpy(fParams, begin, length);

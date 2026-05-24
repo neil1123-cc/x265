@@ -65,6 +65,7 @@ ZimgFilter::ZimgFilter(char* paramString)
     rWidth = rHeight = 0;
     resizer = -1;
     param1 = param2 = 0.0;
+    xp = nullptr;
     bFail = false;
     graph = nullptr;
     planes_all = nullptr;
@@ -81,14 +82,14 @@ ZimgFilter::ZimgFilter(char* paramString)
         char pValue[1024];
         int length;
         // Scan (
-        while (p[0] != '(' && p < end) p++;
+        while (p < end && p[0] != '(') p++;
         length = p - begin;
         pName[length] = 0;
         std::strncpy(pName, begin, length);
         p = begin = p + 1;
 
         // Scan )
-        while (p[0] != ')' && p < end) p++;
+        while (p < end && p[0] != ')') p++;
         length = p - begin;
         pValue[length] = 0;
         std::strncpy(pValue, begin, length);
@@ -137,6 +138,7 @@ ZimgFilter::ZimgFilter(char* paramString)
 
 void ZimgFilter::setParam(x265_param* xParam)
 {
+    xp = xParam;
     bool doCrop = cLeft != 0 || cRight != 0 || cTop != 0 || cBottom != 0;
     bool doResize = rWidth != 0 || rHeight != 0;
     byPass = !doCrop && !doResize;
@@ -145,7 +147,6 @@ void ZimgFilter::setParam(x265_param* xParam)
         general_log(xp, "zimg", X265_LOG_INFO, "Nothing to do. Bypassing\n");
         return;
     }
-    xp = xParam;
     sWidth = xp->sourceWidth;
     sHeight = xp->sourceHeight;
     general_log(xp, "zimg", X265_LOG_INFO, "Input: %dx%d\n", sWidth, sHeight);

@@ -95,6 +95,10 @@ jobs:
           test -s build/cxx20-warning-scan/smoke_zimg.hevc
           grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log
           grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log
+          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:crop(0,0,-0,-0)" --output build/cxx20-warning-scan/smoke_zimg_bypass.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg_bypass.log
+          test -s build/cxx20-warning-scan/smoke_zimg_bypass.hevc
+          grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log
+          grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg_bypass.log
           configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
             -DHIGH_BIT_DEPTH=ON \
             -DMAIN12=ON
@@ -1146,32 +1150,52 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--vf "zimg:lanczos(64,64)"', '# --vf "zimg:lanczos(64,64)"')
-        expect_fail(run_checker(repo), 'missing ZIMG smoke value for --vf')
+        replace_text(
+            repo / '.github' / 'workflows' / 'build.yml',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+            '# build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+        )
+        expect_fail(run_checker(repo), 'expected exactly two ZIMG x265 commands, found 1')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv', 'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/wrong.yuv')
+        replace_text(
+            repo / '.github' / 'workflows' / 'build.yml',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/wrong.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+        )
         expect_fail(run_checker(repo), 'ZIMG smoke --input must be build/cxx20-warning-scan/smoke_zimg.yuv, got build/cxx20-warning-scan/wrong.yuv')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--input-res 96x96', '--input-res 128x128')
+        replace_text(
+            repo / '.github' / 'workflows' / 'build.yml',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 128x128 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+        )
         expect_fail(run_checker(repo), 'ZIMG smoke --input-res must be 96x96, got 128x128')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--frames 1', '--frames 2')
+        replace_text(
+            repo / '.github' / 'workflows' / 'build.yml',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 2 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+        )
         expect_fail(run_checker(repo), 'ZIMG smoke --frames must be 1, got 2')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
-        replace_text(repo / '.github' / 'workflows' / 'build.yml', '--output build/cxx20-warning-scan/smoke_zimg.hevc', '--output build/cxx20-warning-scan/wrong.hevc')
-        expect_fail(run_checker(repo), 'ZIMG smoke --output must be build/cxx20-warning-scan/smoke_zimg.hevc, got build/cxx20-warning-scan/wrong.hevc')
+        replace_text(
+            repo / '.github' / 'workflows' / 'build.yml',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+            'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/wrong.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
+        )
+        expect_fail(run_checker(repo), 'missing ZIMG resize smoke command')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1183,7 +1207,19 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log", "grep -Fq 'encoded' build/cxx20-warning-scan/smoke_zimg.log")
-        expect_fail(run_checker(repo), 'ZIMG smoke must require encoded-frame log')
+        expect_fail(run_checker(repo), 'C++20 warning scan must actively require ZIMG encoded-frame smoke log')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'test -s build/cxx20-warning-scan/smoke_zimg_bypass.hevc', '# test -s build/cxx20-warning-scan/smoke_zimg_bypass.hevc')
+        expect_fail(run_checker(repo), 'ZIMG bypass smoke must require non-empty HEVC output')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log", "grep -Fq 'Nothing to do' build/cxx20-warning-scan/smoke_zimg_bypass.log")
+        expect_fail(run_checker(repo), 'ZIMG bypass smoke must require expected log line')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

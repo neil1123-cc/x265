@@ -88,6 +88,8 @@ REQUIRED_BUILD_SNIPPETS = (
     '--vf "zimg:lanczos(64,64)"',
     "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log",
     "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log",
+    '--vf "zimg:crop(0,0,-0,-0)"',
+    "grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log",
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit',
     'ninja -C build/cxx20-gcc-compile-commands-12bit x265-static',
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all',
@@ -1559,34 +1561,60 @@ def validate_zimg_smoke(repo_root):
 
     script = blocks[0]
     active_lines = shell_active_lines(script)
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_zimg' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one ZIMG x265 command, found {len(command_lines)}', build)
+    command_lines = [line for line in active_lines if 'build/cxx20-warning-scan/x265.exe' in line and 'smoke_zimg' in line]
+    if len(command_lines) != 2:
+        fail(f'expected exactly two ZIMG x265 commands, found {len(command_lines)}', build)
 
-    command = command_lines[0]
-    before_pipe = command.split('|', 1)[0].strip()
-    try:
-        tokens = shlex.split(before_pipe)
-    except ValueError as exc:
-        fail(f'could not parse ZIMG smoke command: {exc}', build)
+    def validate_zimg_command(command, expected_options, output_check, log_check, log_path, context):
+        before_pipe = command.split('|', 1)[0].strip()
+        try:
+            tokens = shlex.split(before_pipe)
+        except ValueError as exc:
+            fail(f'could not parse {context}: {exc}', build)
 
-    args = [token for token in tokens if token not in ('2>&1',)]
-    if not args or args[0] != 'build/cxx20-warning-scan/x265.exe':
-        actual = args[0] if args else '<empty>'
-        fail(f'ZIMG smoke must run build/cxx20-warning-scan/x265.exe, got {actual}', build)
-    for option, expected in ZIMG_SMOKE_OPTIONS:
-        option_value(args, option, expected, build, 'ZIMG smoke')
+        args = [token for token in tokens if token not in ('2>&1',)]
+        if not args or args[0] != 'build/cxx20-warning-scan/x265.exe':
+            actual = args[0] if args else '<empty>'
+            fail(f'{context} must run build/cxx20-warning-scan/x265.exe, got {actual}', build)
+        for option, expected in expected_options:
+            option_value(args, option, expected, build, context)
+        if output_check not in active_lines:
+            fail(f'{context} must require non-empty HEVC output', build)
+        if log_check not in active_lines:
+            fail(f'{context} must require expected log line', build)
+        if f'tee {log_path}' not in command:
+            fail(f'{context} must capture x265 log to {log_path}', build)
 
-    active_required = {
-        'test -s build/cxx20-warning-scan/smoke_zimg.hevc': 'ZIMG smoke must require non-empty HEVC output',
-        "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log": 'ZIMG smoke must require resize log',
-        "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log": 'ZIMG smoke must require encoded-frame log',
-    }
-    for required, message in active_required.items():
-        if required not in active_lines:
-            fail(message, build)
-    if 'tee build/cxx20-warning-scan/smoke_zimg.log' not in command:
-        fail('ZIMG smoke must capture x265 log to build/cxx20-warning-scan/smoke_zimg.log', build)
+    resize_command = next((line for line in command_lines if 'smoke_zimg.hevc' in line), None)
+    bypass_command = next((line for line in command_lines if 'smoke_zimg_bypass.hevc' in line), None)
+    if resize_command is None:
+        fail('missing ZIMG resize smoke command', build)
+    if bypass_command is None:
+        fail('missing ZIMG bypass smoke command', build)
+
+    validate_zimg_command(
+        resize_command,
+        ZIMG_SMOKE_OPTIONS,
+        'test -s build/cxx20-warning-scan/smoke_zimg.hevc',
+        "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log",
+        'build/cxx20-warning-scan/smoke_zimg.log',
+        'ZIMG smoke',
+    )
+    validate_zimg_command(
+        bypass_command,
+        (
+            ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
+            ('--input-res', '96x96'),
+            ('--fps', '1'),
+            ('--frames', '1'),
+            ('--vf', 'zimg:crop(0,0,-0,-0)'),
+            ('--output', 'build/cxx20-warning-scan/smoke_zimg_bypass.hevc'),
+        ),
+        'test -s build/cxx20-warning-scan/smoke_zimg_bypass.hevc',
+        "grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log",
+        'build/cxx20-warning-scan/smoke_zimg_bypass.log',
+        'ZIMG bypass smoke',
+    )
     print('ZIMG smoke guard validated')
 
 
