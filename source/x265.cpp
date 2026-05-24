@@ -129,8 +129,8 @@ static bool checkAbrLadder(int argc, char **argv, FILE **abrConfig)
         if (!std::strcmp(long_options[long_options_index].name, "abr-ladder"))
         {
             *abrConfig = x265_fopen(optarg, "rb");
-            if (!abrConfig)
-                x265_log_file(NULL, X265_LOG_ERROR, "%s abr-ladder config file not found or error in opening zone file\n", optarg);
+            if (!*abrConfig)
+                x265_log_file(NULL, X265_LOG_ERROR, "%s abr-ladder config file not found or error in opening config file\n", optarg);
             return true;
         }
     }
@@ -335,6 +335,9 @@ int main(int argc, char **argv)
     uint32_t numEncodes = 1;
     FILE *abrConfig = NULL;
     bool isAbrLadder = checkAbrLadder(argc, argv, &abrConfig);
+
+    if (isAbrLadder && !abrConfig)
+        std::exit(1);
 
     if (isAbrLadder)
     {

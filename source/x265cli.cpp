@@ -1210,7 +1210,7 @@ namespace X265_NS {
         }
         const char *str = std::strrchr(info[0].filename, '.');
 
-        if (!std::strcmp(str, ".y4m"))
+        if (str && !std::strcmp(str, ".y4m"))
         {
             x265_log(param, X265_LOG_ERROR, "VMAF supports YUV file format only.\n");
             return true;
