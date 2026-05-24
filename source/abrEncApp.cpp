@@ -656,7 +656,8 @@ ret:
             uint32_t nal;
             int16_t *errorBuf = nullptr;
             bool bDolbyVisionRPU = false;
-            uint8_t *rpuPayload = nullptr;
+            uint8_t *rpuPayloads[MAX_VIEWS] = { nullptr };
+            uint8_t *fieldRpuPayloads[2] = { nullptr, nullptr };
             int inputPicNum = 1;
             x265_picture picField1, picField2;
             x265_analysis_data* analysisInfo = (x265_analysis_data*)(&pic_out[0].analysisData);
@@ -697,12 +698,36 @@ ret:
                     api->picture_init(m_param, &pic_orig[view]);
             }
 
-            if (m_param->dolbyProfile && m_cliopt.dolbyVisionRpu && pic_in[0])
+            if (m_param->dolbyProfile && m_cliopt.dolbyVisionRpu)
             {
-                rpuPayload = X265_MALLOC(uint8_t, 1024);
-                pic_in[0]->rpu.payload = rpuPayload;
-                if (pic_in[0]->rpu.payload)
-                    bDolbyVisionRPU = true;
+                if (m_param->bField && m_param->interlaceMode)
+                {
+                    fieldRpuPayloads[0] = X265_MALLOC(uint8_t, 1024);
+                    fieldRpuPayloads[1] = X265_MALLOC(uint8_t, 1024);
+                    if (!fieldRpuPayloads[0] || !fieldRpuPayloads[1])
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "Unable to allocate Dolby Vision RPU payload buffers for field input\n");
+                        m_ret = 4;
+                        goto fail;
+                    }
+                    picField1.rpu.payload = fieldRpuPayloads[0];
+                    picField2.rpu.payload = fieldRpuPayloads[1];
+                }
+                else
+                {
+                    for (int view = 0; view < m_param->numViews - !!m_param->format; view++)
+                    {
+                        rpuPayloads[view] = X265_MALLOC(uint8_t, 1024);
+                        if (!rpuPayloads[view])
+                        {
+                            x265_log(m_param, X265_LOG_ERROR, "Unable to allocate Dolby Vision RPU payload buffer for view %d\n", view);
+                            m_ret = 4;
+                            goto fail;
+                        }
+                        pic_in[view]->rpu.payload = rpuPayloads[view];
+                    }
+                }
+                bDolbyVisionRPU = true;
             }
 
             if (m_cliopt.bDither)
@@ -1003,7 +1028,10 @@ ret:
             }
 
             X265_FREE(errorBuf);
-            X265_FREE(rpuPayload);
+            for (int view = 0; view < MAX_VIEWS; view++)
+                X265_FREE(rpuPayloads[view]);
+            X265_FREE(fieldRpuPayloads[0]);
+            X265_FREE(fieldRpuPayloads[1]);
 
             m_threadActive.store(false);
             m_parent->m_numActiveEncodes.decr();

@@ -1350,6 +1350,12 @@ namespace X265_NS {
     * and fill the rpu field of the input picture */
     int CLIOptions::rpuParser(x265_picture * pic)
     {
+        if (!pic || !pic->rpu.payload)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "Dolby Vision RPU parser requires a preallocated payload buffer\n");
+            return 1;
+        }
+
         uint8_t byteVal;
         uint32_t code = 0;
         int bytesRead = 0;
