@@ -497,6 +497,13 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                 inputData->cbExt = nullptr;
                 inputData->crExt = nullptr;
 
+                if (pic_in->rpu.payloadSize < 0)
+                {
+                    x265_log(encoder->m_param, X265_LOG_ERROR, "SVT HEVC encoder: invalid Dolby Vision RPU payload size\n");
+                    numEncoded = -1;
+                    goto fail;
+                }
+
                 if (pic_in->rpu.payloadSize)
                 {
                     if (!pic_in->rpu.payload)
@@ -531,7 +538,12 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                 }
                 else
                 {
-                    inputData->dolbyVisionRpu.payload = nullptr;
+                    if (inputData->dolbyVisionRpu.payload)
+                    {
+                        X265_FREE(inputData->dolbyVisionRpu.payload);
+                        inputData->dolbyVisionRpu.payload = nullptr;
+                        encoder->m_svtAppData->dolbyVisionRpuCapacity = 0;
+                    }
                     inputData->dolbyVisionRpu.payloadSize = 0;
                 }
 
