@@ -6266,25 +6266,55 @@ void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
     char line[1024];
     while (std::fgets(line, sizeof(line), m_naluFile))
     {
-        int poc = std::atoi(std::strtok(line, " "));
-        char *prefix = std::strtok(NULL, " ");
-        int nalType = std::atoi(std::strtok(NULL, "/"));
-        int payloadType = std::atoi(std::strtok(NULL, " "));
-        char *base64Encode = std::strtok(NULL, "\n");
+        char* pocToken = std::strtok(line, " ");
+        char* prefix = std::strtok(NULL, " ");
+        char* nalTypeToken = std::strtok(NULL, "/");
+        char* payloadTypeToken = std::strtok(NULL, " ");
+        char* base64Encode = std::strtok(NULL, "\n");
+        if (!pocToken || !prefix || !nalTypeToken || !payloadTypeToken || !base64Encode)
+        {
+            x265_log(m_param, X265_LOG_WARNING, "Skipping malformed SEI input line in nalu file\n");
+            continue;
+        }
+        int poc = std::atoi(pocToken);
+        int nalType = std::atoi(nalTypeToken);
+        int payloadType = std::atoi(payloadTypeToken);
         int base64EncodeLength = (int)std::strlen(base64Encode);
+        if (base64EncodeLength <= 0 || (base64EncodeLength % 4))
+        {
+            x265_log(m_param, X265_LOG_WARNING, "Skipping malformed base64 SEI payload for frame %d\n", poc);
+            continue;
+        }
         char* decodedString;
-        decodedString = (char*)std::malloc(sizeof(char) * (base64EncodeLength));
+        decodedString = (char*)std::malloc(sizeof(char) * (base64EncodeLength + 1));
+        if (!decodedString)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Unable to allocate memory for SEI decode buffer\n");
+            break;
+        }
         char *base64Decode = SEI::base64Decode(base64Encode, base64EncodeLength, decodedString);
+        int decodedSize = (base64EncodeLength / 4) * 3;
+        if (base64EncodeLength >= 1 && base64Encode[base64EncodeLength - 1] == '=')
+            --decodedSize;
+        if (base64EncodeLength >= 2 && base64Encode[base64EncodeLength - 2] == '=')
+            --decodedSize;
+        if (decodedSize <= 0)
+        {
+            x265_log(m_param, X265_LOG_WARNING, "Skipping empty SEI payload for frame %d\n", poc);
+            std::free(decodedString);
+            continue;
+        }
         if (nalType == NAL_UNIT_PREFIX_SEI && (!std::strcmp(prefix, "PREFIX")))
         {
             int currentPOC = curPoc;
             if (currentPOC == poc)
             {
-                seiMsg.payloadSize = (base64EncodeLength / 4) * 3;
+                seiMsg.payloadSize = decodedSize;
                 seiMsg.payload = (uint8_t*)x265_malloc(sizeof(uint8_t) * seiMsg.payloadSize);
                 if (!seiMsg.payload)
                 {
                     x265_log(m_param, X265_LOG_ERROR, "Unable to allocate memory for SEI payload\n");
+                    std::free(decodedString);
                     break;
                 }
                 if (payloadType == 4)
@@ -6294,6 +6324,7 @@ void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
                 else
                 {
                     x265_log(m_param, X265_LOG_WARNING, "Unsupported SEI payload Type for frame %d\n", poc);
+                    std::free(decodedString);
                     break;
                 }
                 std::memcpy(seiMsg.payload, base64Decode, seiMsg.payloadSize);
@@ -6304,6 +6335,7 @@ void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
         else
         {
             x265_log(m_param, X265_LOG_WARNING, "SEI message for frame %d is not inserted. Will support only PREFIX SEI messages.\n", poc);
+            std::free(decodedString);
             break;
         }
         if (base64Decode)

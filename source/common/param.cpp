@@ -2417,13 +2417,21 @@ void x265_print_params(x265_param* param)
 char *x265_param2string(x265_param* p, int padx, int pady)
 {
     char *buf, *s;
-    size_t bufSize = 4000 + p->rc.zoneCount * 64;
+    size_t bufSize = 4001 + p->rc.zoneCount * 64;
     if (strlen(p->numaPools))
         bufSize += strlen(p->numaPools);
     if (strlen(p->masteringDisplayColorVolume))
         bufSize += strlen(p->masteringDisplayColorVolume);
     if (strlen(p->videoSignalTypePreset))
         bufSize += strlen(p->videoSignalTypePreset);
+    if (p->logfn)
+        bufSize += strlen(p->logfn);
+    if (p->pgfn)
+        bufSize += strlen(p->pgfn);
+    if (p->filmGrain)
+        bufSize += strlen(p->filmGrain);
+    if (p->aomFilmGrain)
+        bufSize += strlen(p->aomFilmGrain);
 
     buf = s = X265_MALLOC(char, bufSize);
     if (!buf)
