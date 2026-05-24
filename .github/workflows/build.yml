@@ -1371,6 +1371,22 @@ jobs:
         ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
         grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
 
+    - name: Threaded ME Stress Smoke (All CLI)
+      if: matrix.target_cpu == 'x86-64'
+      run: |
+        ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 2 -pix_fmt yuv420p smoke_threaded_me_stress.y4m
+        for iteration in $(seq 1 12); do
+          output="smoke_threaded_me_stress_${iteration}.hevc"
+          log="smoke_threaded_me_stress_${iteration}.log"
+          count="smoke_threaded_me_stress_${iteration}_count.txt"
+          build/all/x265.exe --input smoke_threaded_me_stress.y4m --input-res 160x90 --fps 24 --frames 2 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output "$output" 2>&1 | tee "$log"
+          test -s "$output"
+          grep -Fq 'frame threads / pool features       : 1 / threaded-me' "$log"
+          ! grep -Fq 'disabling --threaded-me' "$log"
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 "$output" > "$count"
+          grep -q 'nb_read_frames=2' "$count"
+        done
+
     - name: QPFile Smoke (All CLI)
       if: matrix.target_cpu == 'x86-64'
       run: |

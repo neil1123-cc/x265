@@ -57,6 +57,10 @@ REQUIRED_BUILD_SNIPPETS = (
     "! grep -Fq 'disabling --threaded-me'",
     'test -s smoke_threaded_me.hevc',
     "grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt",
+    'ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 2 -pix_fmt yuv420p smoke_threaded_me_stress.y4m',
+    'for iteration in $(seq 1 12); do',
+    '--input-res 160x90 --fps 24 --frames 2 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress',
+    "grep -q 'nb_read_frames=2'",
     'test -s smoke_gop.gop',
     'test -s smoke_gop.options',
     'test -s smoke_gop.headers',
@@ -180,6 +184,25 @@ TME_SMOKE_OPTIONS = (
 TME_GENERATOR_OPTIONS = (
     ('-i', 'testsrc2=size=160x90:rate=24'),
     ('-frames:v', '16'),
+    ('-pix_fmt', 'yuv420p'),
+)
+TME_STRESS_FLAGS = (
+    '--threaded-me',
+    '--no-wpp',
+    '--no-progress',
+)
+TME_STRESS_OPTIONS = (
+    ('--input', 'smoke_threaded_me_stress.y4m'),
+    ('--input-res', '160x90'),
+    ('--fps', '24'),
+    ('--frames', '2'),
+    ('--preset', 'medium'),
+    ('--pools', '32'),
+    ('--frame-threads', '1'),
+)
+TME_STRESS_GENERATOR_OPTIONS = (
+    ('-i', 'testsrc2=size=160x90:rate=24'),
+    ('-frames:v', '2'),
     ('-pix_fmt', 'yuv420p'),
 )
 MKV_SMOKE_OPTIONS = (
@@ -814,12 +837,15 @@ def validate_pgo_consume_helper(repo_root):
 
 def validate_threaded_me_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    blocks = [block for path, line, block in collect_run_blocks(build) if 'smoke_threaded_me' in block]
-    if len(blocks) != 1:
-        fail(f'expected exactly one Threaded ME smoke run block, found {len(blocks)}', build)
-
-    script = blocks[0]
-    active_lines = shell_active_lines(script)
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'Threaded ME Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    script = required_run(step, build, 'Threaded ME Smoke (All CLI)')
+    active_lines = shell_active_logical_lines(script)
     generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_threaded_me.y4m' in line]
     if len(generator_lines) != 1:
         fail(f'expected exactly one Threaded ME input generator command, found {len(generator_lines)}', build)
@@ -872,6 +898,77 @@ def validate_threaded_me_smoke(repo_root):
     if len(ffprobe_lines) != 1 or ' -count_frames ' not in f' {ffprobe_lines[0]} ':
         fail('Threaded ME smoke must count frames from smoke_threaded_me.hevc', build)
     print('Threaded ME smoke guard validated')
+
+
+def validate_threaded_me_stress_smoke(repo_root):
+    build = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    step = named_step(
+        workflow_steps(parsed, build, 'build'),
+        'Threaded ME Stress Smoke (All CLI)',
+        build,
+        job_name='build',
+    )
+    active_lines = shell_active_logical_lines(required_run(step, build, 'Threaded ME Stress Smoke (All CLI)'))
+
+    generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_threaded_me_stress.y4m' in line]
+    if len(generator_lines) != 1:
+        fail(f'expected exactly one Threaded ME stress input generator command, found {len(generator_lines)}', build)
+    try:
+        generator_args = shlex.split(generator_lines[0])
+    except ValueError as exc:
+        fail(f'could not parse Threaded ME stress input generator command: {exc}', build)
+    for option, expected in TME_STRESS_GENERATOR_OPTIONS:
+        option_value(generator_args, option, expected, build, 'Threaded ME stress input generator')
+    if generator_args[-1] != 'smoke_threaded_me_stress.y4m':
+        fail(f'Threaded ME stress input generator must write smoke_threaded_me_stress.y4m, got {generator_args[-1]}', build)
+
+    required_active = {
+        'for iteration in $(seq 1 12); do': 'Threaded ME stress smoke must run a 12-iteration loop',
+        'output="smoke_threaded_me_stress_${iteration}.hevc"': 'Threaded ME stress smoke must derive per-iteration output path',
+        'log="smoke_threaded_me_stress_${iteration}.log"': 'Threaded ME stress smoke must derive per-iteration log path',
+        'count="smoke_threaded_me_stress_${iteration}_count.txt"': 'Threaded ME stress smoke must derive per-iteration frame-count path',
+        'test -s "$output"': 'Threaded ME stress smoke must require non-empty per-iteration HEVC output',
+        'grep -Fq \'frame threads / pool features       : 1 / threaded-me\' "$log"': 'Threaded ME stress smoke must require enabled threaded-me log each iteration',
+        '! grep -Fq \'disabling --threaded-me\' "$log"': 'Threaded ME stress smoke must reject disabled threaded-me log each iteration',
+        'grep -q \'nb_read_frames=2\' "$count"': 'Threaded ME stress smoke must require 2 decoded frames each iteration',
+        'done': 'Threaded ME stress smoke must close the iteration loop',
+    }
+    for required, message in required_active.items():
+        if required not in active_lines:
+            fail(message, build)
+
+    command_lines = [
+        line for line in active_lines
+        if 'build/all/x265.exe' in line and 'smoke_threaded_me_stress.y4m' in line
+    ]
+    if len(command_lines) != 1:
+        fail(f'expected exactly one Threaded ME stress x265 command, found {len(command_lines)}', build)
+    command = command_lines[0]
+    before_pipe = command.split('|', 1)[0].strip()
+    try:
+        tokens = shlex.split(before_pipe)
+    except ValueError as exc:
+        fail(f'could not parse Threaded ME stress smoke command: {exc}', build)
+
+    args = [token for token in tokens if token not in ('2>&1',)]
+    if not args or args[0] != 'build/all/x265.exe':
+        actual = args[0] if args else '<empty>'
+        fail(f'Threaded ME stress smoke must run build/all/x265.exe, got {actual}', build)
+    for expected in TME_STRESS_FLAGS:
+        if expected not in args:
+            fail(f'missing Threaded ME stress smoke argument: {expected}', build)
+    for option, expected in TME_STRESS_OPTIONS:
+        option_value(args, option, expected, build, 'Threaded ME stress smoke')
+    if '--output' not in args or args[args.index('--output') + 1] != '$output':
+        fail('Threaded ME stress smoke --output must target $output', build)
+    if 'tee "$log"' not in command:
+        fail('Threaded ME stress smoke must capture x265 log to $log', build)
+
+    ffprobe_lines = [line for line in active_lines if 'ffprobe ' in line and '"$output" > "$count"' in line]
+    if len(ffprobe_lines) != 1 or ' -count_frames ' not in f' {ffprobe_lines[0]} ':
+        fail('Threaded ME stress smoke must count frames from $output into $count', build)
+    print('Threaded ME stress smoke guard validated')
 
 
 def validate_mkv_smoke(repo_root):
@@ -1900,11 +1997,12 @@ def build_step_requirements():
         ('build', 'Get Latest Tag', REQUIRED_BUILD_SNIPPETS[9:10]),
         ('build', 'Compile X265', REQUIRED_BUILD_SNIPPETS[10:16]),
         ('build', 'Threaded ME Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[21:28]),
-        ('build', 'GOP Output Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[28:39]),
-        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[39:41] + REQUIRED_BUILD_SNIPPETS[44:52]),
-        ('cxx20-warning-scan', 'Run C++20 CLI and dependency warning scans', REQUIRED_BUILD_SNIPPETS[85:91]),
-        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[84:85]),
-        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[41:44] + REQUIRED_BUILD_SNIPPETS[91:]),
+        ('build', 'Threaded ME Stress Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[28:32]),
+        ('build', 'GOP Output Smoke (All CLI)', REQUIRED_BUILD_SNIPPETS[32:43]),
+        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[43:45] + REQUIRED_BUILD_SNIPPETS[49:57]),
+        ('cxx20-warning-scan', 'Run C++20 CLI and dependency warning scans', REQUIRED_BUILD_SNIPPETS[57:67]),
+        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[56:57]),
+        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', REQUIRED_BUILD_SNIPPETS[16:21] + REQUIRED_BUILD_SNIPPETS[67:71]),
     )
 
 
@@ -2005,6 +2103,7 @@ def main():
         validate_warning_scan_dependencies(repo_root)
         validate_pgo_consume_helper(repo_root)
         validate_threaded_me_smoke(repo_root)
+        validate_threaded_me_stress_smoke(repo_root)
         validate_mkv_smoke(repo_root)
         validate_lavf_smoke(repo_root)
         validate_qpfile_smoke(repo_root)

@@ -275,6 +275,21 @@ jobs:
           ! grep -Fq 'disabling --threaded-me' smoke_threaded_me_log.txt
           ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 smoke_threaded_me.hevc > smoke_threaded_me_count.txt
           grep -q 'nb_read_frames=16' smoke_threaded_me_count.txt
+      - name: Threaded ME Stress Smoke (All CLI)
+        shell: bash
+        run: |
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=160x90:rate=24 -frames:v 2 -pix_fmt yuv420p smoke_threaded_me_stress.y4m
+          for iteration in $(seq 1 12); do
+            output="smoke_threaded_me_stress_${iteration}.hevc"
+            log="smoke_threaded_me_stress_${iteration}.log"
+            count="smoke_threaded_me_stress_${iteration}_count.txt"
+            build/all/x265.exe --input smoke_threaded_me_stress.y4m --input-res 160x90 --fps 24 --frames 2 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output "$output" 2>&1 | tee "$log"
+            test -s "$output"
+            grep -Fq 'frame threads / pool features       : 1 / threaded-me' "$log"
+            ! grep -Fq 'disabling --threaded-me' "$log"
+            ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1 "$output" > "$count"
+            grep -q 'nb_read_frames=2' "$count"
+          done
       - name: QPFile Smoke (All CLI)
         shell: bash
         run: |
@@ -994,6 +1009,24 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'for iteration in $(seq 1 12); do', 'for iteration in $(seq 1 1); do')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: for iteration in $(seq 1 12); do')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'build/all/x265.exe --input smoke_threaded_me_stress.y4m --input-res 160x90 --fps 24 --frames 2 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress --output "$output" 2>&1 | tee "$log"', 'build/all/x265.exe --input smoke_threaded_me_stress.y4m --input-res 160x90 --fps 24 --frames 2 --preset medium --pools 32 --frame-threads 1 --no-wpp --no-progress --output "$output" 2>&1 | tee "$log"')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --input-res 160x90 --fps 24 --frames 2 --preset medium --threaded-me --pools 32 --frame-threads 1 --no-wpp --no-progress')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', 'grep -q \'nb_read_frames=2\' "$count"', 'grep -q \'nb_read_frames=1\' "$count"')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: grep -q \'nb_read_frames=2\'')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50', 'echo skip-all-8b-pgo-consume')
         expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50')
 
@@ -1031,7 +1064,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib', 'echo skip-clang-12bit-lib-shape')
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively configure all 12-bit lib')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1043,7 +1076,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands')
-        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check 12-bit compile commands')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1055,25 +1088,25 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '--required-file-substring=source/common/winxp.cpp')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7')
+        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively require Win7 winxp.cpp macro')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '--required-file-substring=source/common/winxp.cpp')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP')
+        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively reject WinXP winxp.cpp macro')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-file-substring=source/common/winxp.cpp', '--required-file-substring=source/common/winxp.cpp')
-        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --forbidden-file-substring=source/common/winxp.cpp')
+        expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively reject winxp.cpp')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all', 'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit')
-        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively check all-bit-depth compile commands')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1157,7 +1190,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG', '--required-file-substring=source/filters/zimgfilter.cpp')
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively require ENABLE_ZIMG on zimgfilter.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1167,7 +1200,7 @@ def main():
             'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
             '# build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
         )
-        expect_fail(run_checker(repo), 'expected exactly two ZIMG x265 commands, found 1')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --vf "zimg:lanczos(64,64)"')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1219,7 +1252,7 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log", "grep -Fq 'encoded' build/cxx20-warning-scan/smoke_zimg.log")
-        expect_fail(run_checker(repo), 'C++20 warning scan must actively require ZIMG encoded-frame smoke log')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: grep -Fq \'encoded 1 frames\' build/cxx20-warning-scan/smoke_zimg.log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1231,19 +1264,19 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log", "grep -Fq 'Nothing to do' build/cxx20-warning-scan/smoke_zimg_bypass.log")
-        expect_fail(run_checker(repo), 'ZIMG bypass smoke must require expected log line')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: grep -Fq \'zimg [info]: Nothing to do. Bypassing\' build/cxx20-warning-scan/smoke_zimg_bypass.log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'Filter parameters exceeds supported length' build/cxx20-warning-scan/smoke_zimg_longparam.log", "grep -Fq 'supported length' build/cxx20-warning-scan/smoke_zimg_longparam.log")
-        expect_fail(run_checker(repo), 'ZIMG smoke must require long-parameter error log')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: grep -Fq \'Filter parameters exceeds supported length\' build/cxx20-warning-scan/smoke_zimg_longparam.log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'Filter name exceeds supported length' build/cxx20-warning-scan/smoke_filter_longname.log", "grep -Fq 'supported length' build/cxx20-warning-scan/smoke_filter_longname.log")
-        expect_fail(run_checker(repo), 'ZIMG smoke must require long-name error log')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: grep -Fq \'Filter name exceeds supported length\' build/cxx20-warning-scan/smoke_filter_longname.log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
