@@ -376,6 +376,7 @@ public:
     double ComputePSNR(x265_picture *firstPic, x265_picture *secPic, x265_param *param);
 
     bool copyPicture(x265_picture *dest, const x265_picture *src);
+    bool validateInputPicture(const x265_picture* pic, bool isBaseView) const;
 
     void initRefIdx();
     void analyseRefIdx(int *numRefIdx);

@@ -1639,6 +1639,88 @@ bool Encoder::copyPicture(x265_picture *dest, const x265_picture *src)
     return true;
 }
 
+static bool isSupportedInputCsp(int colorSpace)
+{
+    return colorSpace >= X265_CSP_I400 && colorSpace < X265_CSP_COUNT;
+}
+
+bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) const
+{
+    (void)isBaseView;
+
+    if (!pic)
+        return false;
+
+    if (pic->bitDepth < 8 || pic->bitDepth > 16)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Input bit depth (%d) must be between 8 and 16\n", pic->bitDepth);
+        return false;
+    }
+
+    if (!isSupportedInputCsp(pic->colorSpace))
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Input color space (%d) is unsupported\n", pic->colorSpace);
+        return false;
+    }
+
+    if (pic->colorSpace != m_param->internalCsp)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Input color space (%d) must match encoder internal color space (%d)\n",
+                 pic->colorSpace, m_param->internalCsp);
+        return false;
+    }
+
+    if (pic->quantOffsets)
+    {
+        x265_log(m_param, X265_LOG_ERROR,
+                 "x265_picture.quantOffsets is unsupported because the public API does not expose a verifiable buffer length\n");
+        return false;
+    }
+
+    const int bytesPerSample = pic->bitDepth > 8 ? 2 : 1;
+    const int numPlanes = m_param->internalCsp == X265_CSP_I400 ? 1 : 3;
+    const x265_cli_csp& csp = x265_cli_csps[pic->colorSpace];
+
+    for (int plane = 0; plane < numPlanes; plane++)
+    {
+        if (!pic->planes[plane])
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input plane %d is null\n", plane);
+            return false;
+        }
+
+        if (pic->stride[plane] <= 0)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input stride %d must be positive\n", plane);
+            return false;
+        }
+
+        int planeWidth = m_param->sourceWidth >> csp.width[plane];
+        int minStrideBytes = planeWidth * bytesPerSample;
+        if (pic->stride[plane] < minStrideBytes)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input stride %d is smaller than the minimum row size\n", plane);
+            return false;
+        }
+
+        if (bytesPerSample == 2 && (pic->stride[plane] & 1))
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input stride %d must be 2-byte aligned for high bit depth input\n", plane);
+            return false;
+        }
+    }
+
+#if ENABLE_ALPHA
+    if (!isBaseView && m_param->bEnableAlpha && !pic->planes[3])
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Input alpha plane is null\n");
+        return false;
+    }
+#endif
+
+    return true;
+}
+
 bool Encoder::isFilterThisframe(uint8_t sliceTypeConfig, int curSliceType)
 {
     uint8_t newSliceType = 0;
@@ -1720,17 +1802,15 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
                 m_latestParam->forceFlush = 0;
             }
 
-            if (pic_in->bitDepth < 8 || pic_in->bitDepth > 16)
+            for (int view = 0; view < m_param->numViews; view++)
             {
-                x265_log(m_param, X265_LOG_ERROR, "Input bit depth (%d) must be between 8 and 16\n",
-                         pic_in->bitDepth);
-                return -1;
+                if (!validateInputPicture(pic_in + view, view == 0))
+                    return -1;
             }
 
-            if (pic_in->quantOffsets)
+            if (!m_param->bCopyPicToFrame)
             {
-                x265_log(m_param, X265_LOG_ERROR,
-                         "x265_picture.quantOffsets is unsupported because the public API does not expose a verifiable buffer length\n");
+                x265_log(m_param, X265_LOG_ERROR, "Public API input requires copy-pic to remain enabled\n");
                 return -1;
             }
         }
