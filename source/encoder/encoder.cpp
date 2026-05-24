@@ -1692,6 +1692,13 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
                          pic_in->bitDepth);
                 return -1;
             }
+
+            if (pic_in->quantOffsets)
+            {
+                x265_log(m_param, X265_LOG_ERROR,
+                         "x265_picture.quantOffsets is unsupported because the public API does not expose a verifiable buffer length\n");
+                return -1;
+            }
         }
 
         if (m_param->bEnableFrameDuplication)
@@ -1965,12 +1972,9 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
 
         if (inputPic[0]->quantOffsets != NULL)
         {
-            int cuCount;
-            if (m_param->rc.qgSize == 8)
-                cuCount = inFrame[0]->m_lowres.maxBlocksInRowFullRes * inFrame[0]->m_lowres.maxBlocksInColFullRes;
-            else
-                cuCount = inFrame[0]->m_lowres.maxBlocksInRow * inFrame[0]->m_lowres.maxBlocksInCol;
-            std::memcpy(inFrame[0]->m_quantOffsets, inputPic[0]->quantOffsets, cuCount * sizeof(float));
+            x265_log(m_param, X265_LOG_ERROR,
+                     "x265_picture.quantOffsets is unsupported because the public API does not expose a verifiable buffer length\n");
+            return -1;
         }
 
         if (m_pocLast == 0)

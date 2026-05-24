@@ -471,7 +471,9 @@ typedef struct x265_picture
      * These are added on top of the decisions made by rateControl.
      * Adaptive quantization must be enabled to use this feature. These quantizer
      * offsets should be given for each 16x16 block (8x8 block, when qg-size is 8).
-     * Behavior if quant offsets differ between encoding passes is undefined. */
+     * Current public API builds reject non-NULL quantOffsets because no buffer
+     * length is exposed, so the encoder cannot verify caller-provided storage
+     * before copying it. */
     float            *quantOffsets;
 
     /* Frame level statistics */

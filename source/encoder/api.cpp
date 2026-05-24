@@ -427,6 +427,13 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
     Encoder *encoder = static_cast<Encoder*>(enc);
     int numEncoded;
 
+    if (pic_in && pic_in->quantOffsets)
+    {
+        x265_log(encoder->m_param, X265_LOG_ERROR,
+                 "x265_picture.quantOffsets is unsupported because the public API does not expose a verifiable buffer length\n");
+        return -1;
+    }
+
 #ifdef SVT_HEVC
     EB_ERRORTYPE return_error;
     if (encoder->m_param->bEnableSvtHevc)
