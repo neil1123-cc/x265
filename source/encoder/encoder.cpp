@@ -215,6 +215,7 @@ void Encoder::create()
             x265_picture_init(p, m_dupBuffer[i]->dupPic);
             m_dupBuffer[i]->dupPlane = NULL;
             m_dupBuffer[i]->dupPlane = X265_MALLOC(char, framesize);
+            m_dupBuffer[i]->dupPlaneSize = framesize;
             m_dupBuffer[i]->dupPic->planes[0] = m_dupBuffer[i]->dupPlane;
             m_dupBuffer[i]->bOccupied = false;
             m_dupBuffer[i]->bDup = false;
@@ -1408,8 +1409,27 @@ double Encoder::ComputePSNR(x265_picture *firstPic, x265_picture *secPic, x265_p
     return psnrWeight = (psnrY * 6 + psnrU + psnrV) / 8;
 }
 
-void Encoder::copyPicture(x265_picture *dest, const x265_picture *src)
+bool Encoder::copyPicture(x265_picture *dest, const x265_picture *src)
 {
+    if (!dest || !src || !dest->planes[0])
+        return false;
+
+    size_t destPlaneSize = 0;
+    for (uint32_t i = 0; i < DUP_BUFFER; i++)
+    {
+        if (m_dupBuffer[i] && m_dupBuffer[i]->dupPic == dest)
+        {
+            destPlaneSize = m_dupBuffer[i]->dupPlaneSize;
+            break;
+        }
+    }
+
+    if (!src->planes[0] || !src->framesize || !destPlaneSize || src->framesize > destPlaneSize)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "frame duplication received invalid input frame size\n");
+        return false;
+    }
+
     dest->poc = src->poc;
     dest->pts = src->pts;
     dest->userSEI = src->userSEI;
@@ -1431,6 +1451,7 @@ void Encoder::copyPicture(x265_picture *dest, const x265_picture *src)
     if(m_param->bEnableAlpha)
         dest->planes[3] = (char*)dest->planes[2] + src->stride[2] * (src->height >> x265_cli_csps[src->colorSpace].height[2]);
 #endif
+    return true;
 }
 
 bool Encoder::isFilterThisframe(uint8_t sliceTypeConfig, int curSliceType)
@@ -1530,14 +1551,16 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
             {
                 if (!m_dupBuffer[0]->bOccupied)
                 {
-                    copyPicture(m_dupBuffer[0]->dupPic, pic_in);
+                    if (!copyPicture(m_dupBuffer[0]->dupPic, pic_in))
+                        return -1;
                     m_dupBuffer[0]->bOccupied = true;
                     written++;
                     return 0;
                 }
                 else if (!m_dupBuffer[1]->bOccupied)
                 {
-                    copyPicture(m_dupBuffer[1]->dupPic, pic_in);
+                    if (!copyPicture(m_dupBuffer[1]->dupPic, pic_in))
+                        return -1;
                     m_dupBuffer[1]->bOccupied = true;
                     written++;
                 }
@@ -1886,7 +1909,8 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
                 m_dupBuffer[0]->bOccupied = m_dupBuffer[1]->bOccupied = false;
             else
             {
-                copyPicture(m_dupBuffer[0]->dupPic, m_dupBuffer[1]->dupPic);
+                if (!copyPicture(m_dupBuffer[0]->dupPic, m_dupBuffer[1]->dupPic))
+                    return -1;
                 m_dupBuffer[1]->bOccupied = false;
             }
         }

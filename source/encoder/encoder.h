@@ -56,6 +56,7 @@ typedef struct SvtAppContext
 
     // Buffer Pools
     EB_BUFFERHEADERTYPE*       inputPictureBuffer;
+    size_t                     dolbyVisionRpuCapacity;
     uint64_t                   byteCount;
     uint64_t                   outFrameCount;
 
@@ -154,6 +155,7 @@ struct AdaptiveFrameDuplication
 {
     x265_picture* dupPic;
     char* dupPlane;
+    size_t dupPlaneSize;
 
     //Flag to denote the availability of the picture buffer.
     bool bOccupied;
@@ -373,7 +375,7 @@ public:
 
     double ComputePSNR(x265_picture *firstPic, x265_picture *secPic, x265_param *param);
 
-    void copyPicture(x265_picture *dest, const x265_picture *src);
+    bool copyPicture(x265_picture *dest, const x265_picture *src);
 
     void initRefIdx();
     void analyseRefIdx(int *numRefIdx);

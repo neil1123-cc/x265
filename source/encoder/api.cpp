@@ -462,8 +462,33 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
 
                 if (pic_in->rpu.payloadSize)
                 {
-                    inputData->dolbyVisionRpu.payload = X265_MALLOC(uint8_t, 1024);
-                    memcpy(inputData->dolbyVisionRpu.payload, pic_in->rpu.payload, pic_in->rpu.payloadSize);
+                    if (!pic_in->rpu.payload)
+                    {
+                        x265_log(encoder->m_param, X265_LOG_ERROR, "SVT HEVC encoder: Dolby Vision RPU payload is null for non-zero payload size\n");
+                        numEncoded = -1;
+                        goto fail;
+                    }
+
+                    size_t payloadSize = (size_t)pic_in->rpu.payloadSize;
+                    if (inputData->dolbyVisionRpu.payload && encoder->m_svtAppData->dolbyVisionRpuCapacity < payloadSize)
+                    {
+                        X265_FREE(inputData->dolbyVisionRpu.payload);
+                        inputData->dolbyVisionRpu.payload = nullptr;
+                        encoder->m_svtAppData->dolbyVisionRpuCapacity = 0;
+                    }
+
+                    if (!inputData->dolbyVisionRpu.payload)
+                    {
+                        inputData->dolbyVisionRpu.payload = X265_MALLOC(uint8_t, payloadSize);
+                        if (!inputData->dolbyVisionRpu.payload)
+                        {
+                            x265_log(encoder->m_param, X265_LOG_ERROR, "SVT HEVC encoder: unable to allocate Dolby Vision RPU payload buffer\n");
+                            numEncoded = -1;
+                            goto fail;
+                        }
+                        encoder->m_svtAppData->dolbyVisionRpuCapacity = payloadSize;
+                    }
+                    memcpy(inputData->dolbyVisionRpu.payload, pic_in->rpu.payload, payloadSize);
                     inputData->dolbyVisionRpu.payloadSize = pic_in->rpu.payloadSize;
                     inputData->dolbyVisionRpu.payloadType = NAL_UNIT_UNSPECIFIED;
                 }
@@ -2324,6 +2349,7 @@ void svt_initialise_app_context(x265_encoder *enc)
     //Initialise Application Context
     encoder->m_svtAppData = (SvtAppContext*)x265_malloc(sizeof(SvtAppContext));
     encoder->m_svtAppData->svtHevcParams = (EB_H265_ENC_CONFIGURATION*)x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+    encoder->m_svtAppData->dolbyVisionRpuCapacity = 0;
     encoder->m_svtAppData->byteCount = 0;
     encoder->m_svtAppData->outFrameCount = 0;
 }

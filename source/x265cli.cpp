@@ -1176,6 +1176,12 @@ namespace X265_NS {
                 char* temp = new char[std::strlen(reconfn[0]) + 1];
                 std::strcpy(temp, reconfn[0]);
                 const char* token = std::strtok(temp, ".");
+                if (!token || !*token)
+                {
+                    delete[] temp;
+                    x265_log(param, X265_LOG_ERROR, "recon file name must include a non-empty base name for alpha or multiview output\n");
+                    return true;
+                }
                 for (int view = 0; view < param->numLayers; view++)
                 {
                     char* buf = new char[std::strlen(temp) + 7];
