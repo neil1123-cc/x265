@@ -379,8 +379,12 @@ bool RateControl::initCUTreeSharedMem()
         itemCnt *= GOP_CNT_CU_TREE;
 
         char shrname[MAX_SHR_NAME_LEN] = { 0 };
-        strcpy(shrname, m_param->rc.sharedMemName);
-        strcat(shrname, CUTREE_SHARED_MEM_NAME);
+        int written = std::snprintf(shrname, sizeof(shrname), "%s%s", m_param->rc.sharedMemName, CUTREE_SHARED_MEM_NAME);
+        if (written < 0 || written >= (int)sizeof(shrname))
+        {
+            x265_log(m_param, X265_LOG_ERROR, "shared memory name exceeds supported length\n");
+            return false;
+        }
 
         if (!m_cutreeShrMem->init(itemSize, itemCnt, shrname))
         {
@@ -3469,6 +3473,11 @@ void RateControl::splitdeltaPOC(char deltapoc[], RateControlEntry *rce)
         length = (int)(buf - src);
         if (length != 0)
         {
+            if (length >= (int)sizeof(tmpStr))
+            {
+                x265_log(m_param, X265_LOG_ERROR, "RPS deltaPOC entry exceeds supported length\n");
+                return;
+            }
             std::strncpy(tmpStr, src, length);
             rce->rpsData.deltaPOC[idx] = std::atoi(tmpStr);
             idx++;
@@ -3492,6 +3501,11 @@ void RateControl::splitbUsed(char bused[], RateControlEntry *rce)
         length = (int)(buf - src);
         if (length != 0)
         {
+            if (length >= (int)sizeof(tmpStr))
+            {
+                x265_log(m_param, X265_LOG_ERROR, "RPS bused entry exceeds supported length\n");
+                return;
+            }
             std::strncpy(tmpStr, src, length);
             rce->rpsData.bUsed[idx] = std::atoi(tmpStr) > 0;
             idx++;
