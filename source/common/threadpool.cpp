@@ -388,7 +388,7 @@ static void distributeThreadsForTme(
 
 ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isThreadsReserved)
 {
-    enum { MAX_NODE_NUM = 127 };
+    enum { MAX_NODE_NUM = 64 };
     int cpusPerNode[MAX_NODE_NUM + 1];
     int threadsPerPool[MAX_NODE_NUM + 2];
     uint64_t nodeMaskPerPool[MAX_NODE_NUM + 2];
@@ -443,7 +443,8 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 || HAVE_LIBNUMA
     if (!std::strlen(p->numaPools) || (std::strcmp(p->numaPools, "NULL") == 0 || std::strcmp(p->numaPools, "*") == 0 || std::strcmp(p->numaPools, "") == 0))
     {
-         char poolString[50] = "";
+         char poolString[X265_MAX_STRING_SIZE] = "";
+         size_t poolLen = 0;
          for (int i = 0; i < numNumaNodes; i++)
          {
              char nextCount[10] = "";
@@ -451,7 +452,13 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
                  std::snprintf(nextCount, sizeof(nextCount), ",%d", cpusPerNode[i]);
              else
                    std::snprintf(nextCount, sizeof(nextCount), "%d", cpusPerNode[i]);
-             std::strcat(poolString, nextCount);
+             int written = std::snprintf(poolString + poolLen, sizeof(poolString) - poolLen, "%s", nextCount);
+             if (written < 0 || (size_t)written >= sizeof(poolString) - poolLen)
+             {
+                 x265_log(p, X265_LOG_ERROR, "Auto-generated NUMA pool string exceeds supported length\n");
+                 return nullptr;
+             }
+             poolLen += (size_t)written;
          }
          x265_param_parse(p, "pools", poolString);
      }
@@ -618,7 +625,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
                 int len = 0;
                 for (int j = 0; j < 64; j++)
                     if ((nodeMaskPerPool[node] >> j) & 1)
-                        len += std::snprintf(nodesstr + len, sizeof(nodesstr) - len, ",%d", j);
+                        len += std::snprintf(nodesstr + len, 64 * std::strlen(",63") + 1 - len, ",%d", j);
                 x265_log(p, X265_LOG_INFO, "Thread pool %d using %d threads on numa nodes %s\n", i, numThreads, nodesstr + 1);
                 delete[] nodesstr;
             }
@@ -793,7 +800,7 @@ int ThreadPool::getNumaNodeCount()
 int ThreadPool::getCpuCount()
 {
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7
-    enum { MAX_NODE_NUM = 127 };
+    enum { MAX_NODE_NUM = 64 };
     int cpus = 0;
     int numNumaNodes = X265_MIN(getNumaNodeCount(), MAX_NODE_NUM);
     GROUP_AFFINITY groupAffinity;
