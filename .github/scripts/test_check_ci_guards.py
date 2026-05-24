@@ -99,6 +99,18 @@ jobs:
           test -s build/cxx20-warning-scan/smoke_zimg_bypass.hevc
           grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log
           grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg_bypass.log
+          long_zimg_vf="$(python -c "print('zimg:lanczos(' + '1' * 1100 + ')')")"
+          if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_zimg_vf" --output build/cxx20-warning-scan/smoke_zimg_longparam.hevc > build/cxx20-warning-scan/smoke_zimg_longparam.log 2>&1; then
+            echo "ZIMG long-parameter smoke unexpectedly succeeded"
+            exit 1
+          fi
+          grep -Fq 'Filter parameters exceeds supported length' build/cxx20-warning-scan/smoke_zimg_longparam.log
+          long_filter_name_vf="$(python -c "print('a' * 1100 + ':x')")"
+          if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_filter_name_vf" --output build/cxx20-warning-scan/smoke_filter_longname.hevc > build/cxx20-warning-scan/smoke_filter_longname.log 2>&1; then
+            echo "Filter long-name smoke unexpectedly succeeded"
+            exit 1
+          fi
+          grep -Fq 'Filter name exceeds supported length' build/cxx20-warning-scan/smoke_filter_longname.log
           configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
             -DHIGH_BIT_DEPTH=ON \
             -DMAIN12=ON
@@ -1195,7 +1207,7 @@ def main():
             'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
             'build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/wrong.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log',
         )
-        expect_fail(run_checker(repo), 'missing ZIMG resize smoke command')
+        expect_fail(run_checker(repo), 'expected exactly two ZIMG x265 commands, found 1')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -1220,6 +1232,18 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log", "grep -Fq 'Nothing to do' build/cxx20-warning-scan/smoke_zimg_bypass.log")
         expect_fail(run_checker(repo), 'ZIMG bypass smoke must require expected log line')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'Filter parameters exceeds supported length' build/cxx20-warning-scan/smoke_zimg_longparam.log", "grep -Fq 'supported length' build/cxx20-warning-scan/smoke_zimg_longparam.log")
+        expect_fail(run_checker(repo), 'ZIMG smoke must require long-parameter error log')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'workflows' / 'build.yml', "grep -Fq 'Filter name exceeds supported length' build/cxx20-warning-scan/smoke_filter_longname.log", "grep -Fq 'supported length' build/cxx20-warning-scan/smoke_filter_longname.log")
+        expect_fail(run_checker(repo), 'ZIMG smoke must require long-name error log')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

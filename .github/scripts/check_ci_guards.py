@@ -90,6 +90,8 @@ REQUIRED_BUILD_SNIPPETS = (
     "grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log",
     '--vf "zimg:crop(0,0,-0,-0)"',
     "grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log",
+    "grep -Fq 'Filter parameters exceeds supported length' build/cxx20-warning-scan/smoke_zimg_longparam.log",
+    "grep -Fq 'Filter name exceeds supported length' build/cxx20-warning-scan/smoke_filter_longname.log",
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-12bit',
     'ninja -C build/cxx20-gcc-compile-commands-12bit x265-static',
     'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands-all',
@@ -1561,7 +1563,14 @@ def validate_zimg_smoke(repo_root):
 
     script = blocks[0]
     active_lines = shell_active_lines(script)
-    command_lines = [line for line in active_lines if 'build/cxx20-warning-scan/x265.exe' in line and 'smoke_zimg' in line]
+    command_lines = [
+        line for line in active_lines
+        if 'build/cxx20-warning-scan/x265.exe' in line
+        and (
+            'smoke_zimg.hevc' in line
+            or 'smoke_zimg_bypass.hevc' in line
+        )
+    ]
     if len(command_lines) != 2:
         fail(f'expected exactly two ZIMG x265 commands, found {len(command_lines)}', build)
 
@@ -1615,6 +1624,19 @@ def validate_zimg_smoke(repo_root):
         'build/cxx20-warning-scan/smoke_zimg_bypass.log',
         'ZIMG bypass smoke',
     )
+
+    for required, message in {
+        'long_zimg_vf="$(python -c "print(\'zimg:lanczos(\' + \'1\' * 1100 + \')\')")"': 'ZIMG smoke must synthesize long-parameter vf input',
+        'if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_zimg_vf" --output build/cxx20-warning-scan/smoke_zimg_longparam.hevc > build/cxx20-warning-scan/smoke_zimg_longparam.log 2>&1; then': 'ZIMG smoke must actively require long-parameter failure',
+        'echo "ZIMG long-parameter smoke unexpectedly succeeded"': 'ZIMG smoke must report unexpected long-parameter success',
+        'grep -Fq \'Filter parameters exceeds supported length\' build/cxx20-warning-scan/smoke_zimg_longparam.log': 'ZIMG smoke must require long-parameter error log',
+        'long_filter_name_vf="$(python -c "print(\'a\' * 1100 + \':x\')")"': 'ZIMG smoke must synthesize long filter-name vf input',
+        'if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_filter_name_vf" --output build/cxx20-warning-scan/smoke_filter_longname.hevc > build/cxx20-warning-scan/smoke_filter_longname.log 2>&1; then': 'ZIMG smoke must actively require long filter-name failure',
+        'echo "Filter long-name smoke unexpectedly succeeded"': 'ZIMG smoke must report unexpected long-name success',
+        'grep -Fq \'Filter name exceeds supported length\' build/cxx20-warning-scan/smoke_filter_longname.log': 'ZIMG smoke must require long-name error log',
+    }.items():
+        if required not in active_lines:
+            fail(message, build)
     print('ZIMG smoke guard validated')
 
 

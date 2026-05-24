@@ -35,6 +35,25 @@ using namespace X265_NS;
 
 const char* Resizers[] = {"point", "bilinear", "bicubic", "spline16", "spline36", "lanczos"};
 
+namespace {
+
+bool copyZimgSegment(char* dst, size_t dstSize, const char* begin, const char* end, const char* context)
+{
+    size_t length = static_cast<size_t>(end - begin);
+    if (length >= dstSize)
+    {
+        general_log(NULL, "zimg", X265_LOG_ERROR, "%s exceeds supported length\n", context);
+        return false;
+    }
+
+    if (length)
+        std::memcpy(dst, begin, length);
+    dst[length] = 0;
+    return true;
+}
+
+}
+
 uint32_t mod4(uint32_t size)
 {
     if (size % 4 == 0)
@@ -80,20 +99,37 @@ ZimgFilter::ZimgFilter(char* paramString)
     {
         char pName[1024];
         char pValue[1024];
-        int length;
         // Scan (
         while (p < end && p[0] != '(') p++;
-        length = p - begin;
-        pName[length] = 0;
-        std::strncpy(pName, begin, length);
-        p = begin = p + 1;
+        if (!copyZimgSegment(pName, sizeof(pName), begin, p, "Filter keyword"))
+        {
+            bFail = true;
+            return;
+        }
+        if (p >= end || p[0] != '(')
+        {
+            general_log(NULL, "zimg", X265_LOG_ERROR, "Filter keyword %s missing parameter list\n", pName);
+            bFail = true;
+            return;
+        }
+        p++;
+        begin = p;
 
         // Scan )
         while (p < end && p[0] != ')') p++;
-        length = p - begin;
-        pValue[length] = 0;
-        std::strncpy(pValue, begin, length);
-        p = begin = p + 1;
+        if (!copyZimgSegment(pValue, sizeof(pValue), begin, p, "Filter parameters"))
+        {
+            bFail = true;
+            return;
+        }
+        if (p >= end || p[0] != ')')
+        {
+            general_log(NULL, "zimg", X265_LOG_ERROR, "Filter keyword %s missing closing ')'\n", pName);
+            bFail = true;
+            return;
+        }
+        p++;
+        begin = p;
 
         if (!pName[0])
             continue;
