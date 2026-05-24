@@ -225,12 +225,17 @@ typedef int16_t  coeff_t;      // transform coefficient
 #define X265_LOWRES_CU_SIZE   8
 #define X265_LOWRES_CU_BITS   3
 
-#define X265_MALLOC(type, count)    (type*)x265_malloc(sizeof(type) * (count))
-#define X265_FREE(ptr)              x265_free(ptr)
+namespace X265_NS {
+void*    x265_malloc(size_t size);
+void     x265_free(void *ptr);
+}
+
+#define X265_MALLOC(type, count)    (type*)X265_NS::x265_malloc(sizeof(type) * (count))
+#define X265_FREE(ptr)              X265_NS::x265_free(ptr)
 
 static inline char *strcatFilename(const char *input, const char *suffix)
 {
-    char *output = (char*)std::malloc(std::strlen(input) + std::strlen(suffix) + 1);
+    char *output = X265_MALLOC(char, std::strlen(input) + std::strlen(suffix) + 1);
     if (!output)
     {
         std::fprintf(stderr, "x265: unable to allocate memory for filename\n");
@@ -240,10 +245,10 @@ static inline char *strcatFilename(const char *input, const char *suffix)
     std::strcat(output, suffix);
     return output;
 }
-#define X265_FREE_ZERO(ptr)         { x265_free(ptr); (ptr) = nullptr; }
+#define X265_FREE_ZERO(ptr)         { X265_NS::x265_free(ptr); (ptr) = nullptr; }
 #define CHECKED_MALLOC(var, type, count) \
     { \
-        var = (type*)x265_malloc(sizeof(type) * (count)); \
+        var = (type*)X265_NS::x265_malloc(sizeof(type) * (count)); \
         if (!var) \
         { \
             x265_log(NULL, X265_LOG_ERROR, "malloc of size %llu failed\n", sizeof(type) * (count)); \
@@ -252,7 +257,7 @@ static inline char *strcatFilename(const char *input, const char *suffix)
     }
 #define CHECKED_MALLOC_ZERO(var, type, count) \
     { \
-        var = (type*)x265_malloc(sizeof(type) * (count)); \
+        var = (type*)X265_NS::x265_malloc(sizeof(type) * (count)); \
         if (var) \
             std::memset((void*)var, 0, sizeof(type) * (count)); \
         else \
@@ -477,8 +482,6 @@ double   x265_qScale2qp(double qScale);
 double   x265_qp2qScale(double qp);
 uint32_t x265_picturePlaneSize(int csp, int width, int height, int plane);
 
-void*    x265_malloc(size_t size);
-void     x265_free(void *ptr);
 char*    x265_slurp_file(const char *filename);
 
 /* located in primitives.cpp */

@@ -2032,6 +2032,8 @@ int x265_check_params(x265_param* param)
         "Invalid analysis save refine level. Value must be between 1 and 10 (inclusive)");
     CHECK(strlen(param->analysisLoad) && (param->analysisLoadReuseLevel < 0 || param->analysisLoadReuseLevel > 10),
         "Invalid analysis load refine level. Value must be between 1 and 10 (inclusive)");
+    CHECK(param->bAnalysisType == AVC_INFO && (strlen(param->analysisSave) || strlen(param->analysisLoad)),
+        "AVC analysis refinement expects API-supplied analysis data and cannot be combined with analysis save/load files");
     CHECK(strlen(param->analysisLoad) && (param->mvRefine < 1 || param->mvRefine > 3),
         "Invalid mv refinement level. Value must be between 1 and 3 (inclusive)");
     CHECK(param->scaleFactor > 2, "Invalid scale-factor. Supports factor <= 2");
