@@ -2154,6 +2154,7 @@ int x265_check_params(x265_param* param)
 #endif
 #if ENABLE_MULTIVIEW
     CHECK((param->numViews > 2), "Multi-View Encoding currently support only 2 views");
+    CHECK((param->format < 0 || param->format > 2), "Multi-View input format must be 0 (normal), 1 (side-by-side), or 2 (over-under)");
     if (param->numViews > 1)
     {
         CHECK(param->internalBitDepth != 8, "BitDepthConstraint must be 8 for Multiview main profile");
@@ -2161,6 +2162,8 @@ int x265_check_params(x265_param* param)
         CHECK(strlen(param->analysisSave) || strlen(param->analysisLoad), "Multiview encode doesnot support analysis save and load feature");
         CHECK(param->isAbrLadderEnable, "Multiview encode and Abr-Ladder feature can't be enabled together");
     }
+#else
+    CHECK(param->format, "Multi-View input format is unsupported in this build");
 #endif
 #if ENABLE_SCC_EXT
     bool checkValid = false;

@@ -385,7 +385,7 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
                     std::memcpy(aPixel, aChar, width * sizeof(pixel));
 
                     aPixel += m_stride;
-                    aChar += pic.stride[0] / sizeof(*aChar);
+                    aChar += pic.stride[3] / sizeof(*aChar);
                 }
 
                 pixel* uPixel = m_picOrg[1];
@@ -418,12 +418,12 @@ void PicYuv::copyFromPicture(const x265_picture& pic, const x265_param& param, i
                 if (pic.bitDepth > X265_DEPTH)
                 {
                     /* shift right and mask pixels to final size */
-                    primitives.planecopy_sp(yShort, pic.stride[0] / sizeof(*yShort), yPixel, m_stride, width, height, shift, mask);
+                    primitives.planecopy_sp(yShort, pic.stride[3] / sizeof(*yShort), yPixel, m_stride, width, height, shift, mask);
                 }
                 else /* Case for (pic.bitDepth <= X265_DEPTH) */
                 {
                     /* shift left and mask pixels to final size */
-                    primitives.planecopy_sp_shl(yShort, pic.stride[0] / sizeof(*yShort), yPixel, m_stride, width, height, shift, mask);
+                    primitives.planecopy_sp_shl(yShort, pic.stride[3] / sizeof(*yShort), yPixel, m_stride, width, height, shift, mask);
                 }
 
                 if (param.internalCsp != X265_CSP_I400)

@@ -1897,6 +1897,20 @@ bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) con
         return false;
     }
 
+#if ENABLE_MULTIVIEW
+    if (pic->format < 0 || pic->format > 2)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Input multiview format (%d) is unsupported\n", pic->format);
+        return false;
+    }
+#else
+    if (pic->format)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "Input multiview format (%d) is unsupported in this build\n", pic->format);
+        return false;
+    }
+#endif
+
     if (pic->quantOffsets)
     {
         x265_log(m_param, X265_LOG_ERROR,
@@ -1938,10 +1952,32 @@ bool Encoder::validateInputPicture(const x265_picture* pic, bool isBaseView) con
     }
 
 #if ENABLE_ALPHA
-    if (!isBaseView && m_param->bEnableAlpha && !pic->planes[3])
+    if (!isBaseView && m_param->bEnableAlpha)
     {
-        x265_log(m_param, X265_LOG_ERROR, "Input alpha plane is null\n");
-        return false;
+        if (!pic->planes[3])
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input alpha plane is null\n");
+            return false;
+        }
+
+        if (pic->stride[3] <= 0)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input alpha stride must be positive\n");
+            return false;
+        }
+
+        int minAlphaStrideBytes = m_param->sourceWidth * bytesPerSample;
+        if (pic->stride[3] < minAlphaStrideBytes)
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input alpha stride is smaller than the minimum row size\n");
+            return false;
+        }
+
+        if (bytesPerSample == 2 && (pic->stride[3] & 1))
+        {
+            x265_log(m_param, X265_LOG_ERROR, "Input alpha stride must be 2-byte aligned for high bit depth input\n");
+            return false;
+        }
     }
 #endif
 
