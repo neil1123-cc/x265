@@ -3477,61 +3477,60 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
         {
             x265_log(param, X265_LOG_ERROR, "unable to allocate memory for SVT pools option\n");
             bError = true;
-            break;
-        }
-        char *temp1, *temp2;
-        int count = 0;
-
-        for (temp1 = strstr(pools, ","); temp1 != NULL; temp1 = strstr(temp2, ","))
-        {
-            temp2 = ++temp1;
-            count++;
-        }
-
-        if (count > 1)
-            x265_log(param, X265_LOG_WARNING, "SVT-HEVC Encoder supports pools option only upto 2 sockets \n");
-        else if (count == 1)
-        {
-            temp1 = strtok(pools, ",");
-            temp2 = strtok(NULL, ",");
-            if (!temp1 || !temp2)
-            {
-                x265_log(param, X265_LOG_ERROR, "Invalid pools option %s\n", value);
-                free(pools);
-                bError = true;
-                break;
-            }
-
-            if (!strcmp(temp1, "+"))
-            {
-                if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = -1;
-                else if (!strcmp(temp2, "-")) svtHevcParam->targetSocket = 0;
-                else svtHevcParam->targetSocket = -1;
-            }
-            else if (!strcmp(temp1, "-"))
-            {
-                if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = 1;
-                else if (!strcmp(temp2, "-")) x265_log(param, X265_LOG_ERROR, "Shouldn't exclude both sockets for pools option %s \n", pools);
-                else if (!strcmp(temp2, "*")) svtHevcParam->targetSocket = 1;
-                else
-                {
-                    svtHevcParam->targetSocket = 1;
-                    svtHevcParam->logicalProcessors = atoi(temp2);
-                }
-            }
-            else svtHevcParam->targetSocket = -1;
         }
         else
         {
-            temp1 = pools;
-            if (!strcmp(temp1, "*")) svtHevcParam->targetSocket = -1;
+            char *temp1, *temp2;
+            int count = 0;
+
+            for (temp1 = strstr(pools, ","); temp1 != NULL; temp1 = strstr(temp2, ","))
+            {
+                temp2 = ++temp1;
+                count++;
+            }
+
+            if (count > 1)
+                x265_log(param, X265_LOG_WARNING, "SVT-HEVC Encoder supports pools option only upto 2 sockets \n");
+            else if (count == 1)
+            {
+                temp1 = strtok(pools, ",");
+                temp2 = strtok(NULL, ",");
+                if (!temp1 || !temp2)
+                {
+                    x265_log(param, X265_LOG_ERROR, "Invalid pools option %s\n", value);
+                    bError = true;
+                }
+                else if (!strcmp(temp1, "+"))
+                {
+                    if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = -1;
+                    else if (!strcmp(temp2, "-")) svtHevcParam->targetSocket = 0;
+                    else svtHevcParam->targetSocket = -1;
+                }
+                else if (!strcmp(temp1, "-"))
+                {
+                    if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = 1;
+                    else if (!strcmp(temp2, "-")) x265_log(param, X265_LOG_ERROR, "Shouldn't exclude both sockets for pools option %s \n", pools);
+                    else if (!strcmp(temp2, "*")) svtHevcParam->targetSocket = 1;
+                    else
+                    {
+                        svtHevcParam->targetSocket = 1;
+                        svtHevcParam->logicalProcessors = atoi(temp2);
+                    }
+                }
+                else svtHevcParam->targetSocket = -1;
+            }
             else
             {
-                svtHevcParam->targetSocket = 0;
-                svtHevcParam->logicalProcessors = atoi(temp1);
+                temp1 = pools;
+                if (!strcmp(temp1, "*")) svtHevcParam->targetSocket = -1;
+                else
+                {
+                    svtHevcParam->targetSocket = 0;
+                    svtHevcParam->logicalProcessors = atoi(temp1);
+                }
             }
+            free(pools);
         }
-        free(pools);
     }
     OPT("high-tier") svtHevcParam->tier = x265_atobool(value, bError);
     OPT("qpmin") svtHevcParam->minQpAllowed = atoi(value);

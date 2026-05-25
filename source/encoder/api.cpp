@@ -57,6 +57,39 @@ const x265_api* x265_api_query(int bitDepth, int apiVersion, int* err);
 }
 #endif
 
+#ifdef SVT_HEVC
+namespace X265_NS {
+static void svt_release_app_context(Encoder* encoder);
+static bool svt_copy_output_to_nal(Encoder* encoder, const EB_BUFFERHEADERTYPE* outputPtr)
+{
+    if (!outputPtr || !outputPtr->pBuffer)
+        return false;
+
+    NALList& nalList = encoder->m_nalList;
+    if (outputPtr->nFilledLen > nalList.m_allocSize)
+    {
+        uint8_t* buffer = X265_MALLOC(uint8_t, outputPtr->nFilledLen);
+        if (!buffer)
+        {
+            x265_log(encoder->m_param, X265_LOG_ERROR, "SVT HEVC encoder: unable to allocate output NAL buffer\n");
+            return false;
+        }
+        X265_FREE(nalList.m_buffer);
+        nalList.m_buffer = buffer;
+        nalList.m_allocSize = outputPtr->nFilledLen;
+    }
+
+    memcpy(nalList.m_buffer, outputPtr->pBuffer, outputPtr->nFilledLen);
+    nalList.m_numNal = 1;
+    nalList.m_occupancy = outputPtr->nFilledLen;
+    nalList.m_nal[0].type = NAL_UNIT_UNSPECIFIED;
+    nalList.m_nal[0].payload = nalList.m_buffer;
+    nalList.m_nal[0].sizeBytes = outputPtr->nFilledLen;
+    return true;
+}
+}
+#endif
+
 #if EXPORT_C_API
 /* these functions are exported as C functions (default) */
 using namespace X265_NS;
@@ -72,9 +105,6 @@ static const char* summaryCSVHeader =
     "I count, I ave-QP, I kbps, I-PSNR Y, I-PSNR U, I-PSNR V, I-SSIM (dB), "
     "P count, P ave-QP, P kbps, P-PSNR Y, P-PSNR U, P-PSNR V, P-SSIM (dB), "
     "B count, B ave-QP, B kbps, B-PSNR Y, B-PSNR U, B-PSNR V, B-SSIM (dB), ";
-#ifdef SVT_HEVC
-static void svt_release_app_context(Encoder* encoder);
-#endif
 x265_encoder *x265_encoder_open(x265_param *p)
 {
     if (!p)
@@ -267,14 +297,16 @@ int x265_encoder_headers(x265_encoder *enc, x265_nal **pp_nal, uint32_t *pi_nal)
                 return -1;
             }
 
-            //Copy data from output packet to NAL
-            encoder->m_nalList.m_nal[0].payload = outputPtr->pBuffer;
-            encoder->m_nalList.m_nal[0].sizeBytes = outputPtr->nFilledLen;
+            if (!svt_copy_output_to_nal(encoder, outputPtr))
+            {
+                EbH265ReleaseOutBuffer(&outputPtr);
+                encoder->m_aborted = true;
+                return -1;
+            }
             *pp_nal = &encoder->m_nalList.m_nal[0];
             *pi_nal = 1;
             encoder->m_svtAppData->byteCount += outputPtr->nFilledLen;
 
-            // Release the output buffer
             EbH265ReleaseOutBuffer(&outputPtr);
 
             return pp_nal[0]->sizeBytes;
@@ -530,6 +562,14 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                     }
 
                     size_t payloadSize = (size_t)pic_in->rpu.payloadSize;
+#if X265_SVT_HEVC_RPU_PAYLOAD_ARRAY
+                    if (payloadSize > sizeof(inputData->dolbyVisionRpu.payload))
+                    {
+                        x265_log(encoder->m_param, X265_LOG_ERROR, "SVT HEVC encoder: Dolby Vision RPU payload exceeds SVT payload buffer\n");
+                        numEncoded = -1;
+                        goto fail;
+                    }
+#else
                     if (inputData->dolbyVisionRpu.payload && encoder->m_svtAppData->dolbyVisionRpuCapacity < payloadSize)
                     {
                         X265_FREE(inputData->dolbyVisionRpu.payload);
@@ -548,18 +588,21 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                         }
                         encoder->m_svtAppData->dolbyVisionRpuCapacity = payloadSize;
                     }
+#endif
                     memcpy(inputData->dolbyVisionRpu.payload, pic_in->rpu.payload, payloadSize);
                     inputData->dolbyVisionRpu.payloadSize = pic_in->rpu.payloadSize;
                     inputData->dolbyVisionRpu.payloadType = NAL_UNIT_UNSPECIFIED;
                 }
                 else
                 {
+#if !X265_SVT_HEVC_RPU_PAYLOAD_ARRAY
                     if (inputData->dolbyVisionRpu.payload)
                     {
                         X265_FREE(inputData->dolbyVisionRpu.payload);
                         inputData->dolbyVisionRpu.payload = nullptr;
                         encoder->m_svtAppData->dolbyVisionRpuCapacity = 0;
                     }
+#endif
                     inputData->dolbyVisionRpu.payloadSize = 0;
                 }
 
@@ -614,18 +657,21 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
             {
                 if (outputStreamPtr->pBuffer)
                 {
-                    //Copy data from output packet to NAL
-                    encoder->m_nalList.m_nal[0].payload = outputStreamPtr->pBuffer;
-                    encoder->m_nalList.m_nal[0].sizeBytes = outputStreamPtr->nFilledLen;
+                    if (!svt_copy_output_to_nal(encoder, outputStreamPtr))
+                    {
+                        EbH265ReleaseOutBuffer(&outputStreamPtr);
+                        numEncoded = -1;
+                        goto fail;
+                    }
                     encoder->m_svtAppData->byteCount += outputStreamPtr->nFilledLen;
                     *pp_nal = &encoder->m_nalList.m_nal[0];
                     *pi_nal = 1;
                     numEncoded = 0;
                     codedNal = 1;
+                    EbH265ReleaseOutBuffer(&outputStreamPtr);
                     return numEncoded;
                 }
 
-                // Release the output buffer
                 EbH265ReleaseOutBuffer(&outputStreamPtr);
             }
         }
@@ -649,9 +695,12 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
         {
             if (outputPtr->pBuffer)
             {
-                //Copy data from output packet to NAL
-                encoder->m_nalList.m_nal[0].payload = outputPtr->pBuffer;
-                encoder->m_nalList.m_nal[0].sizeBytes = outputPtr->nFilledLen;
+                if (!svt_copy_output_to_nal(encoder, outputPtr))
+                {
+                    EbH265ReleaseOutBuffer(&outputPtr);
+                    numEncoded = -1;
+                    goto fail;
+                }
                 encoder->m_svtAppData->byteCount += outputPtr->nFilledLen;
                 encoder->m_svtAppData->outFrameCount++;
                 *pp_nal = &encoder->m_nalList.m_nal[0];
@@ -661,7 +710,6 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
 
             eofReached = outputPtr->nFlags & EB_BUFFERFLAG_EOS;
 
-            // Release the output buffer
             EbH265ReleaseOutBuffer(&outputPtr);
         }
         else if (pi_nal)
@@ -810,12 +858,7 @@ void x265_encoder_close(x265_encoder *enc)
             }
 
             svt_print_summary(enc);
-            EB_H265_ENC_INPUT *inputData = (EB_H265_ENC_INPUT*)encoder->m_svtAppData->inputPictureBuffer->pBuffer;
-            if (inputData->dolbyVisionRpu.payload) X265_FREE(inputData->dolbyVisionRpu.payload);
-
-            X265_FREE(inputData);
-            X265_FREE(encoder->m_svtAppData->inputPictureBuffer);
-            X265_FREE(encoder->m_svtAppData->svtHevcParams);
+            svt_release_app_context(encoder);
             encoder->stopJobs();
             encoder->destroy();
             delete encoder;
@@ -2417,7 +2460,9 @@ static void svt_release_app_context(Encoder* encoder)
         EB_H265_ENC_INPUT* inputData = (EB_H265_ENC_INPUT*)encoder->m_svtAppData->inputPictureBuffer->pBuffer;
         if (inputData)
         {
+#if !X265_SVT_HEVC_RPU_PAYLOAD_ARRAY
             X265_FREE(inputData->dolbyVisionRpu.payload);
+#endif
             X265_FREE(inputData);
         }
         X265_FREE(encoder->m_svtAppData->inputPictureBuffer);
@@ -2476,7 +2521,9 @@ bool svt_initialise_input_buffer(x265_encoder *enc)
     }
 
     EB_H265_ENC_INPUT *inputData = (EB_H265_ENC_INPUT*)inputPtr->pBuffer;
+#if !X265_SVT_HEVC_RPU_PAYLOAD_ARRAY
     inputData->dolbyVisionRpu.payload = nullptr;
+#endif
     inputData->dolbyVisionRpu.payloadSize = 0;
 
     inputPtr->nSize = sizeof(EB_BUFFERHEADERTYPE);

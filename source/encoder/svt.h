@@ -30,6 +30,20 @@
 #include "EbApi.h"
 #include "EbErrorCodes.h"
 
+#ifndef SVT_CHECK_VERSION
+#define SVT_CHECK_VERSION(major, minor, patch) \
+    (SVT_VERSION_MAJOR > (major) || \
+     (SVT_VERSION_MAJOR == (major) && SVT_VERSION_MINOR > (minor)) || \
+     (SVT_VERSION_MAJOR == (major) && SVT_VERSION_MINOR == (minor) && \
+      SVT_VERSION_PATCHLEVEL >= (patch)))
+#endif
+
+#if SVT_CHECK_VERSION(1, 5, 0)
+#define X265_SVT_HEVC_RPU_PAYLOAD_ARRAY 1
+#else
+#define X265_SVT_HEVC_RPU_PAYLOAD_ARRAY 0
+#endif
+
 namespace X265_NS {
 
 #define INPUT_SIZE_576p_TH     0x90000    // 0.58 Million
