@@ -347,6 +347,7 @@ runs:
           test -f "$file"
         done
         echo "Validated L-SMASH patch targets: ${{ inputs.lsmash-patch-check-paths }}"
+        git -c core.autocrlf=false reset --hard HEAD
         git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}
         git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
         git diff --check -- ${{ inputs.lsmash-patch-check-paths }}

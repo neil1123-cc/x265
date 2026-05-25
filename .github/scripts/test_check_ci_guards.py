@@ -796,6 +796,7 @@ runs:
       shell: msys2 {0}
       run: |
         key: lsmash-${{ inputs.lsmash-repository }}-${{ inputs.lsmash-ref }}-${{ inputs.lsmash-cache-suffix }}
+        git -c core.autocrlf=false reset --hard HEAD
         git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}
         git apply --ignore-whitespace ${{ inputs.lsmash-patch-path }}
         git diff --check -- ${{ inputs.lsmash-patch-check-paths }}
@@ -963,6 +964,12 @@ def main():
         write_repo(repo)
         replace_text(repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml', 'c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o', 'c++ -O2 --std=gnu++20 --std=gnu++17 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
         expect_fail(run_checker(repo), 'missing required setup-windows-deps guard snippet: c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        write_repo(repo)
+        replace_text(repo / '.github' / 'actions' / 'setup-windows-deps' / 'action.yml', 'git -c core.autocrlf=false reset --hard HEAD\n        git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}', 'git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}')
+        expect_fail(run_checker(repo), 'missing required setup-windows-deps guard snippet: git -c core.autocrlf=false reset --hard HEAD')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

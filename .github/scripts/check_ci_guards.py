@@ -161,6 +161,7 @@ REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS = (
     '/clang64/bin/*|/usr/bin/*) ;;',
     'lsmash=${{ inputs.lsmash-repository }}@${{ inputs.lsmash-ref }} suffix=${{ inputs.lsmash-cache-suffix }} patch=${{ inputs.lsmash-patch-path }}',
     'gop_muxer=${{ inputs.gop-muxer-repository }}@${{ inputs.gop-muxer-ref }} suffix=${{ inputs.gop-muxer-cache-suffix }} patch=${{ inputs.gop-muxer-patch-path }}',
+    'git -c core.autocrlf=false reset --hard HEAD',
     'git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}',
     "grep -Fq \"LSMASH_4CC( 'h', 'v', 'c', 'C' )\" codecs/hevc.c",
     "grep -Fq 'lsmash_isom_box_type_value' core/box.c",
@@ -2133,8 +2134,8 @@ def validate_required_snippets(repo_root):
     windows_deps_path = repo_root / WINDOWS_DEPS_ACTION
     for step_name, required_items in (
         ('Verify MSYS2 Toolchain', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[:5]),
-        ('Compile L-SMASH', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[5:8]),
-        ('Compile GOP muxer', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[8:]),
+        ('Compile L-SMASH', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[5:9]),
+        ('Compile GOP muxer', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[9:]),
     ):
         step = named_step(action_steps(windows_deps, windows_deps_path), step_name, windows_deps_path)
         script = required_run(step, windows_deps_path, step_name)
