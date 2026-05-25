@@ -336,7 +336,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           tokens = ' '.join(f'--bitrate {100 + i}' for i in range(260))
-          Path('smoke_zonefile_oversized.txt').write_text('0 ' + tokens + '\\n', encoding='utf-8')
+          Path('smoke_zonefile_oversized.txt').write_text('0 ' + tokens + '\\\\n', encoding='utf-8')
           PY
           if build/all/x265.exe --input smoke_zonefile.y4m --input-res 160x90 --fps 24 --frames 12 --bitrate 400 --zonefile smoke_zonefile_oversized.txt --output smoke_zonefile_oversized.hevc > smoke_zonefile_oversized.log 2>&1; then
             echo "Zonefile oversized-argument smoke unexpectedly succeeded"
@@ -1136,19 +1136,19 @@ def main():
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7', '--required-file-substring=source/common/winxp.cpp')
-        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively require Win7 winxp.cpp macro')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --required-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WIN7')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP', '--required-file-substring=source/common/winxp.cpp')
-        expect_fail(run_checker(repo), 'Windows GCC diagnostics must actively reject WinXP winxp.cpp macro')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --forbidden-file-flag=source/common/winxp.cpp=-D_WIN32_WINNT=_WIN32_WINNT_WINXP')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         write_repo(repo)
         replace_text(repo / '.github' / 'workflows' / 'build.yml', '--forbidden-file-substring=source/common/winxp.cpp', '--required-file-substring=source/common/winxp.cpp')
-        expect_fail(run_checker(repo), 'Linux GCC diagnostics must actively reject winxp.cpp')
+        expect_fail(run_checker(repo), 'missing required Build workflow guard snippet: --forbidden-file-substring=source/common/winxp.cpp')
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
