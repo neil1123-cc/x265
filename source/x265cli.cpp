@@ -40,6 +40,8 @@
 namespace X265_NS {
 #endif
 
+    static const int CONFIG_LINE_BUFFER_SIZE = 4096;
+
     static bool copyCLIString(char* dst, size_t dstSize, const char* src, const char* context)
     {
         if (!dst || !dstSize || !src)
@@ -1303,7 +1305,7 @@ namespace X265_NS {
 
     bool CLIOptions::parseZoneFile()
     {
-        char line[256];
+        char line[CONFIG_LINE_BUFFER_SIZE];
         char* argLine;
         param->rc.zonefileCount = 0;
 
@@ -1315,7 +1317,13 @@ namespace X265_NS {
 
         std::rewind(zoneFile);
         char **args = (char**)alloca(256 * sizeof(char *));
-        param->rc.zones = x265_zone_alloc(param->rc.zonefileCount, 1);;
+        param->rc.zones = x265_zone_alloc(param->rc.zonefileCount, 1);
+        if (!param->rc.zones)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "Unable to allocate zone file entries\n");
+            param->rc.zonefileCount = 0;
+            return false;
+        }
         for (int i = 0; i < param->rc.zonefileCount; i++)
         {
             param->rc.zones[i].startFrame = -1;
@@ -1331,12 +1339,16 @@ namespace X265_NS {
                 if (!start)
                 {
                     x265_log(NULL, X265_LOG_ERROR, "Missing zone file arguments at entry %d\n", i);
+                    x265_zone_free(param);
                     return false;
                 }
                 start++;
                 param->rc.zones[i].startFrame = std::atoi(argLine);
                 if (!validateConfigArgCapacity(start, "Zone file entry"))
+                {
+                    x265_zone_free(param);
                     return false;
+                }
                 int argCount = 0;
                 // Adding a dummy string to avoid file parsing error
                 args[argCount++] = (char *)"x265";
@@ -1421,7 +1433,7 @@ namespace X265_NS {
 
     bool CLIOptions::parseScenecutAwareQpConfig()
     {
-        char line[256];
+        char line[CONFIG_LINE_BUFFER_SIZE];
         char* argLine;
         std::rewind(scenecutAwareQpConfig);
         while (std::fgets(line, sizeof(line), scenecutAwareQpConfig))
@@ -1553,7 +1565,7 @@ namespace X265_NS {
 #if ENABLE_MULTIVIEW
     bool CLIOptions::parseMultiViewConfig(char** fn)
     {
-        char line[256];
+        char line[CONFIG_LINE_BUFFER_SIZE];
         char* argLine;
         std::rewind(multiViewConfig);
         int linenum = 0;

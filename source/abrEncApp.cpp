@@ -271,9 +271,11 @@ namespace X265_NS {
         {
             if (!m_cliopt.parseZoneFile())
             {
-                x265_log(nullptr, X265_LOG_ERROR, "Unable to parse zonefile in %s\n");
+                x265_log(nullptr, X265_LOG_ERROR, "Unable to parse zonefile\n");
                 std::fclose(m_cliopt.zoneFile);
                 m_cliopt.zoneFile = nullptr;
+                m_ret = 1;
+                return -1;
             }
         }
 

@@ -265,8 +265,6 @@ static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint32_t numEnc
         if (cliopt[i].parse(argc++, argv))
         {
             cliopt[i].destroy();
-            if (cliopt[i].api)
-                cliopt[i].api->param_free(cliopt[i].param);
             std::exit(1);
         }
         i++;
@@ -363,8 +361,6 @@ int main(int argc, char **argv)
     else if (cliopt[0].parse(argc, argv))
     {
         cliopt[0].destroy();
-        if (cliopt[0].api)
-            cliopt[0].api->param_free(cliopt[0].param);
         std::exit(1);
     }
 
