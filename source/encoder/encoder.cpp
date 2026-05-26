@@ -126,6 +126,40 @@ static const char* defaultAnalysisFileName = "x265_analysis.dat";
 
 using namespace X265_NS;
 
+static x265_zone* preserveNoResetZonefileZones(x265_param* dst, x265_param* src, int& zonefileCount)
+{
+    zonefileCount = 0;
+    if (dst && src && dst->rc.zones && dst->rc.zonefileCount && !dst->bResetZoneConfig &&
+        src->rc.zonefileCount == dst->rc.zonefileCount && !src->bResetZoneConfig)
+    {
+        zonefileCount = dst->rc.zonefileCount;
+        return dst->rc.zones;
+    }
+
+    return NULL;
+}
+
+static void restoreNoResetZonefileZones(x265_param* dst, x265_zone* zones, int zonefileCount)
+{
+    if (!zones)
+        return;
+
+    dst->rc.zones = zones;
+    dst->rc.zoneCount = 0;
+    dst->rc.zonefileCount = zonefileCount;
+}
+
+static void copyLatestParamToActiveParam(Encoder* encoder)
+{
+    x265_param* dst = encoder->m_paramBase[0];
+    x265_param* src = encoder->m_latestParam;
+    int zonefileCount = 0;
+    x265_zone* zones = preserveNoResetZonefileZones(dst, src, zonefileCount);
+    x265_copy_params(dst, src);
+    restoreNoResetZonefileZones(dst, zones, zonefileCount);
+    encoder->m_param = dst;
+}
+
 Encoder::Encoder()
 {
     m_aborted = false;
@@ -2879,7 +2913,7 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
             if (frameEnc[0]->m_reconfigureRc)
             {
                 if (m_reconfigureRc)
-                    x265_copy_params(m_param, m_latestParam);
+                    copyLatestParamToActiveParam(this);
                 else if (m_param->bConfigRCFrame)
                 {
                     m_rateControl->m_bRcReConfig = true;
@@ -2910,7 +2944,7 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
                 /* Safe to copy m_latestParam to Encoder::m_param, encoder reconfigure complete */
                 for (int frameEncId = 0; frameEncId < m_param->frameNumThreads; frameEncId++)
                     m_frameEncoder[frameEncId]->m_reconfigure = false;
-                x265_copy_params(m_param, m_latestParam);
+                copyLatestParamToActiveParam(this);
                 m_reconfigure = false;
             }
 

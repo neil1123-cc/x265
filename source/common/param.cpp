@@ -2028,6 +2028,10 @@ int x265_check_params(x265_param* param)
           "Constant QP is incompatible with 2pass");
     CHECK(param->rc.bStrictCbr && (param->rc.bitrate <= 0 || param->rc.vbvBufferSize <=0),
           "Strict-cbr cannot be applied without specifying both target bitrate and vbv bufsize");
+    CHECK(!param->bResetZoneConfig && !param->rc.zonefileCount,
+          "Zone reconfiguration without RC reset requires configured zonefile state");
+    CHECK(param->rc.zonefileCount && !param->bResetZoneConfig && !param->reconfigWindowSize,
+          "Zonefile reconfiguration without RC reset requires a non-zero reconfig window size");
     CHECK(strlen(param->analysisSave) && (param->analysisSaveReuseLevel < 0 || param->analysisSaveReuseLevel > 10),
         "Invalid analysis save refine level. Value must be between 1 and 10 (inclusive)");
     CHECK(strlen(param->analysisLoad) && (param->analysisLoadReuseLevel < 0 || param->analysisLoadReuseLevel > 10),
@@ -3117,14 +3121,20 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     dst->bNoResetZoneConfig = src->bNoResetZoneConfig;
     dst->decoderVbvMaxRate = src->decoderVbvMaxRate;
 
-    if (src->rc.zonefileCount && src->rc.zones && src->bResetZoneConfig)
+    if (src->rc.zonefileCount)
     {
-        for (int i = 0; i < src->rc.zonefileCount; i++)
+        dst->rc.zoneCount = 0;
+        if (src->rc.zones && src->bResetZoneConfig)
         {
-            dst->rc.zones[i].startFrame = src->rc.zones[i].startFrame;
-            dst->rc.zones[0].keyframeMax = src->rc.zones[0].keyframeMax;
-            memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+            for (int i = 0; i < src->rc.zonefileCount; i++)
+            {
+                dst->rc.zones[i].startFrame = src->rc.zones[i].startFrame;
+                dst->rc.zones[0].keyframeMax = src->rc.zones[0].keyframeMax;
+                memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+            }
         }
+        else
+            dst->rc.zones = NULL;
     }
     else if (src->rc.zoneCount && src->rc.zones)
     {

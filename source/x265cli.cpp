@@ -1316,6 +1316,9 @@ namespace X265_NS {
         }
 
         std::rewind(zoneFile);
+        if (!param->rc.zonefileCount)
+            return true;
+
         char **args = (char**)alloca(256 * sizeof(char *));
         param->rc.zones = x265_zone_alloc(param->rc.zonefileCount, 1);
         if (!param->rc.zones)

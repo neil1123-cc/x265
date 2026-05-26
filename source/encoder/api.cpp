@@ -136,15 +136,56 @@ x265_encoder *x265_encoder_open(x265_param *p)
     if(param) PARAM_NS::x265_param_default(param);
     if(latestParam) PARAM_NS::x265_param_default(latestParam);
     if(zoneParam) PARAM_NS::x265_param_default(zoneParam);
-  
+
+    int zoneAllocCount = 0;
+    bool zoneAllocIsZoneFile = false;
+
     if (!param || !latestParam || !zoneParam)
         goto fail;
-    if (p->rc.zoneCount || p->rc.zonefileCount)
+    if (p->rc.zonefileCount)
     {
-        int zoneCount = p->rc.zonefileCount ? p->rc.zonefileCount : p->rc.zoneCount;
-        param->rc.zones = x265_zone_alloc(zoneCount, !!p->rc.zonefileCount);
-        latestParam->rc.zones = x265_zone_alloc(zoneCount, !!p->rc.zonefileCount);
-        zoneParam->rc.zones = x265_zone_alloc(zoneCount, !!p->rc.zonefileCount);
+        if (p->bResetZoneConfig)
+        {
+            if (!p->rc.zones)
+            {
+                x265_log(p, X265_LOG_ERROR, "Zone file configuration requires allocated zone entries\n");
+                goto fail;
+            }
+            for (int i = 0; i < p->rc.zonefileCount; i++)
+            {
+                if (!p->rc.zones[i].zoneParam)
+                {
+                    x265_log(p, X265_LOG_ERROR, "Zone file entry requires a non-null zoneParam\n");
+                    goto fail;
+                }
+            }
+            zoneAllocCount = p->rc.zonefileCount;
+            zoneAllocIsZoneFile = true;
+        }
+    }
+    else if (p->rc.zoneCount)
+    {
+        if (!p->rc.zones)
+        {
+            x265_log(p, X265_LOG_ERROR, "Zone configuration requires allocated zone entries\n");
+            goto fail;
+        }
+        zoneAllocCount = p->rc.zoneCount;
+    }
+
+    if (zoneAllocCount)
+    {
+        param->rc.zoneCount = zoneAllocIsZoneFile ? 0 : p->rc.zoneCount;
+        param->rc.zonefileCount = zoneAllocIsZoneFile ? p->rc.zonefileCount : 0;
+        latestParam->rc.zoneCount = param->rc.zoneCount;
+        latestParam->rc.zonefileCount = param->rc.zonefileCount;
+        zoneParam->rc.zoneCount = param->rc.zoneCount;
+        zoneParam->rc.zonefileCount = param->rc.zonefileCount;
+        param->rc.zones = x265_zone_alloc(zoneAllocCount, zoneAllocIsZoneFile);
+        latestParam->rc.zones = x265_zone_alloc(zoneAllocCount, zoneAllocIsZoneFile);
+        zoneParam->rc.zones = x265_zone_alloc(zoneAllocCount, zoneAllocIsZoneFile);
+        if (!param->rc.zones || !latestParam->rc.zones || !zoneParam->rc.zones)
+            goto fail;
     }
 
     x265_copy_params(param, p);
@@ -228,19 +269,22 @@ x265_encoder *x265_encoder_open(x265_param *p)
         goto fail;
     }
 
-    encoder->create();
-    p->frameNumThreads = encoder->m_param->frameNumThreads;
-
-    if (!param->bResetZoneConfig)
+    if (!param->bResetZoneConfig && param->rc.zonefileCount)
     {
-        // TODO: Memory pointer broken if both (p->rc.zoneCount || p->rc.zonefileCount) and (!param->bResetZoneConfig)
         param->rc.zones = x265_zone_alloc(param->rc.zonefileCount, 1);
+        if (!param->rc.zones)
+            goto fail;
         for (int i = 0; i < param->rc.zonefileCount; i++)
         {
             memcpy(param->rc.zones[i].zoneParam, param, sizeof(x265_param));
             param->rc.zones[i].relativeComplexity = X265_MALLOC(double, param->reconfigWindowSize);
+            if (!param->rc.zones[i].relativeComplexity)
+                goto fail;
         }
     }
+
+    encoder->create();
+    p->frameNumThreads = encoder->m_param->frameNumThreads;
 
     x265_copy_params(zoneParam, param);
     for (int i = 0; i < param->rc.zonefileCount; i++)
@@ -272,10 +316,10 @@ fail:
 #ifdef SVT_HEVC
     svt_release_app_context(encoder);
 #endif
-    delete encoder;
     PARAM_NS::x265_param_free(param);
     PARAM_NS::x265_param_free(latestParam);
     PARAM_NS::x265_param_free(zoneParam);
+    delete encoder;
     return nullptr;
 }
 
@@ -359,10 +403,12 @@ int x265_encoder_reconfig(x265_encoder* enc, x265_param* param_in)
     bool isReconfigureRc = encoder->isReconfigureRc(encoder->m_latestParam, param_in);
     if ((encoder->m_reconfigure && !isReconfigureRc) || (encoder->m_reconfigureRc && isReconfigureRc)) /* Reconfigure in progress */
         return 1;
-    if (encoder->m_latestParam->rc.zoneCount || encoder->m_latestParam->rc.zonefileCount)
+    if (encoder->m_latestParam->rc.zoneCount || (encoder->m_latestParam->rc.zonefileCount && encoder->m_latestParam->bResetZoneConfig))
     {
         int zoneCount = encoder->m_latestParam->rc.zonefileCount ? encoder->m_latestParam->rc.zonefileCount : encoder->m_latestParam->rc.zoneCount;
         save.rc.zones = x265_zone_alloc(zoneCount, !!encoder->m_latestParam->rc.zonefileCount);
+        if (!save.rc.zones)
+            return -1;
     }
     x265_copy_params(&save, encoder->m_latestParam);
     int ret = encoder->reconfigureParam(encoder->m_latestParam, param_in);
@@ -430,10 +476,11 @@ int x265_encoder_reconfig_zone(x265_encoder* enc, x265_zone* zone_in)
         return -1;
 
     Encoder* encoder = static_cast<Encoder*>(enc);
-    if (!encoder->m_param->rc.zonefileCount || !encoder->m_param->rc.zones ||
+    x265_param* activeParam = encoder->m_paramBase[0];
+    if (!activeParam->rc.zonefileCount || !activeParam->rc.zones ||
         !encoder->zoneReadCount || !encoder->zoneWriteCount)
     {
-        x265_log(encoder->m_param, X265_LOG_ERROR, "Zone reconfiguration requires configured zonefile state\n");
+        x265_log(activeParam, X265_LOG_ERROR, "Zone reconfiguration requires configured zonefile state\n");
         return -1;
     }
 
@@ -443,19 +490,19 @@ int x265_encoder_reconfig_zone(x265_encoder* enc, x265_zone* zone_in)
         return -1;
     }
 
-    if (encoder->m_param->reconfigWindowSize && !zone_in->relativeComplexity)
+    if (activeParam->reconfigWindowSize && !zone_in->relativeComplexity)
     {
-        x265_log(encoder->m_param, X265_LOG_ERROR, "Zone reconfiguration requires relativeComplexity for non-zero reconfig window size\n");
+        x265_log(activeParam, X265_LOG_ERROR, "Zone reconfiguration requires relativeComplexity for non-zero reconfig window size\n");
         return -1;
     }
 
     int read = encoder->zoneReadCount[encoder->m_zoneIndex].get();
     int write = encoder->zoneWriteCount[encoder->m_zoneIndex].get();
 
-    x265_zone* zone = &(encoder->m_param->rc).zones[encoder->m_zoneIndex];
-    if (!zone || !zone->zoneParam || (encoder->m_param->reconfigWindowSize && !zone->relativeComplexity))
+    x265_zone* zone = &(activeParam->rc).zones[encoder->m_zoneIndex];
+    if (!zone || !zone->zoneParam || (activeParam->reconfigWindowSize && !zone->relativeComplexity))
     {
-        x265_log(encoder->m_param, X265_LOG_ERROR, "Zone reconfiguration state is incomplete\n");
+        x265_log(activeParam, X265_LOG_ERROR, "Zone reconfiguration state is incomplete\n");
         return -1;
     }
     x265_param* zoneParam = zone->zoneParam;
@@ -468,11 +515,11 @@ int x265_encoder_reconfig_zone(x265_encoder* enc, x265_zone* zone_in)
     zone->startFrame = zone_in->startFrame;
     zoneParam->rc.bitrate = zone_in->zoneParam->rc.bitrate;
     zoneParam->rc.vbvMaxBitrate = zone_in->zoneParam->rc.vbvMaxBitrate;
-    memcpy(zone->relativeComplexity, zone_in->relativeComplexity, sizeof(double) * encoder->m_param->reconfigWindowSize);
-    
+    memcpy(zone->relativeComplexity, zone_in->relativeComplexity, sizeof(double) * activeParam->reconfigWindowSize);
+
     encoder->zoneWriteCount[encoder->m_zoneIndex].incr();
     encoder->m_zoneIndex++;
-    encoder->m_zoneIndex %= encoder->m_param->rc.zonefileCount;
+    encoder->m_zoneIndex %= activeParam->rc.zonefileCount;
 
     return 0;
 }
@@ -1165,24 +1212,48 @@ void x265_picture_free(x265_picture *p)
 
 x265_zone *x265_zone_alloc(int zoneCount, int isZoneFile)
 {
+    if (zoneCount <= 0)
+        return nullptr;
+
     x265_zone* zone = (x265_zone*)x265_malloc(sizeof(x265_zone) * zoneCount);
-    if (isZoneFile) {
+    if (!zone)
+        return nullptr;
+
+    std::memset(zone, 0, sizeof(x265_zone) * zoneCount);
+    if (isZoneFile)
+    {
         for (int i = 0; i < zoneCount; i++)
+        {
             zone[i].zoneParam = (x265_param*)x265_malloc(sizeof(x265_param));
+            if (!zone[i].zoneParam)
+            {
+                for (int j = 0; j < i; j++)
+                    x265_free(zone[j].zoneParam);
+                x265_free(zone);
+                return nullptr;
+            }
+        }
     }
     return zone;
 }
 
 void x265_zone_free(x265_param *param)
 {
-    if (param && param->rc.zones && (param->rc.zoneCount || param->rc.zonefileCount))
+    if (!param)
+        return;
+
+    if (param->rc.zones)
     {
         for (int i = 0; i < param->rc.zonefileCount; i++)
+        {
+            x265_free(param->rc.zones[i].relativeComplexity);
             x265_free(param->rc.zones[i].zoneParam);
-        param->rc.zonefileCount = 0;
-        param->rc.zoneCount = 0;
+        }
         x265_free(param->rc.zones);
     }
+    param->rc.zones = nullptr;
+    param->rc.zonefileCount = 0;
+    param->rc.zoneCount = 0;
 }
 
 static const x265_api libapi =
