@@ -264,6 +264,12 @@ namespace X265_NS {
                     x265_log(m_param, X265_LOG_ERROR, "\n MALLOC failure in Scaler");
                     result = 4;
                 }
+                else if (!m_scaler->m_initOk)
+                {
+                    result = 4;
+                    m_ret = 4;
+                    return -1;
+                }
             }
         }
         m_param->isAbrLadderEnable = m_parent->m_numEncodes > 1;
@@ -1065,6 +1071,7 @@ ret:
         m_threadActive.store(false);
         m_scaleFrameSize = 0;
         m_filterManager = nullptr;
+        m_initOk = true;
         m_threadId = threadId;
         m_threadTotal = threadNum;
 
@@ -1081,7 +1088,13 @@ ret:
         if (src->m_height != dst->m_height || src->m_width != dst->m_width)
         {
             m_filterManager = new ScalerFilterManager;
-            m_filterManager->init(4, m_srcFormat, m_dstFormat);
+            if (!m_filterManager || m_filterManager->init(4, m_srcFormat, m_dstFormat) < 0)
+            {
+                x265_log(m_parentEnc ? m_parentEnc->m_param : nullptr, X265_LOG_ERROR, "Unable to initialize ABR ladder scaler\n");
+                m_initOk = false;
+                delete m_filterManager;
+                m_filterManager = nullptr;
+            }
         }
     }
 

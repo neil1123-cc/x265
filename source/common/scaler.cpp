@@ -516,6 +516,11 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
     m_bitDepth = dstVideoDesc->m_inputDepth;
 
     m_algorithmFlags = algorithmFlags;
+    if (m_bitDepth != 8 && m_bitDepth != 10)
+    {
+        x265_log(NULL, X265_LOG_ERROR, "scaler: unsupported bit depth %d for ABR ladder scaling\n", m_bitDepth);
+        return -1;
+    }
     lumXInc = (((int64_t)srcW << 16) + (dstW >> 1)) / dstW;
     lumYInc = (((int64_t)srcH << 16) + (dstH >> 1)) / dstH;
 
@@ -562,7 +567,13 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
     if (srcCsp != dstCsp)
     {
         x265_log(NULL, X265_LOG_ERROR, "wrong, source csp != destination csp \n");
-        return false;
+        return -1;
+    }
+
+    if (x265_cli_csps[srcCsp].planes <= 1)
+    {
+        x265_log(NULL, X265_LOG_ERROR, "scaler: monochrome ABR ladder scaling is unsupported\n");
+        return -1;
     }
 
     lumXInc = (((int64_t)srcW << 16) + (dstW >> 1)) / dstW;
@@ -591,7 +602,8 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
         getLocalPos(m_crSrcVSubSample, srcVCrPos), getLocalPos(m_crDstVSubSample, dstVCrPos));
 
     // init slice, must after filter initialization
-    initScalerSlice();
+    if (initScalerSlice() < 0)
+        return -1;
 
     // set slice
     m_ScalerFilters[0]->setSlice(m_slices[0], m_slices[1]);

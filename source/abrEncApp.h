@@ -126,6 +126,7 @@ namespace X265_NS {
         ThreadSafeInteger m_scaledWriteCnt;
         VideoDesc* m_srcFormat;
         VideoDesc* m_dstFormat;
+        bool m_initOk;
         std::atomic<bool> m_threadActive;
         ScalerFilterManager* m_filterManager;
 
