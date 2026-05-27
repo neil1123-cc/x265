@@ -107,6 +107,21 @@ static EB_H265_ENC_CONFIGURATION* ensureSvtHevcParam(x265_param* param)
 
     return (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
 }
+
+static bool copySvtHevcParamStorage(x265_param* dst, const x265_param* src)
+{
+    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst);
+    EB_H265_ENC_CONFIGURATION* srcSvtParam = src ? (EB_H265_ENC_CONFIGURATION*)src->svtHevcParam : NULL;
+    if (!dstSvtParam)
+        return false;
+
+    if (srcSvtParam)
+        memcpy(dstSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
+    else
+        memset(dstSvtParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+
+    return true;
+}
 #endif
 
 x265_param *x265_param_alloc()
@@ -3149,7 +3164,14 @@ void x265_copy_params(x265_param* dst, x265_param* src)
             {
                 dst->rc.zones[i].startFrame = src->rc.zones[i].startFrame;
                 dst->rc.zones[0].keyframeMax = src->rc.zones[0].keyframeMax;
+#ifdef SVT_HEVC
+                void* dstZoneSvtHevcParam = dst->rc.zones[i].zoneParam->svtHevcParam;
                 memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+                dst->rc.zones[i].zoneParam->svtHevcParam = dstZoneSvtHevcParam;
+                copySvtHevcParamStorage(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam);
+#else
+                memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+#endif
             }
         }
         else
@@ -3314,15 +3336,7 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     if (strlen(src->videoSignalTypePreset)) snprintf(dst->videoSignalTypePreset, X265_MAX_STRING_SIZE, "%s", src->videoSignalTypePreset);
     else dst->videoSignalTypePreset[0] = 0;
 #ifdef SVT_HEVC
-    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst);
-    EB_H265_ENC_CONFIGURATION* srcSvtParam = src ? (EB_H265_ENC_CONFIGURATION*)src->svtHevcParam : NULL;
-    if (dstSvtParam)
-    {
-        if (srcSvtParam)
-            memcpy(dstSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
-        else
-            memset(dstSvtParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
-    }
+    copySvtHevcParamStorage(dst, src);
 #endif
     /* Film grain */
     dst->filmGrain = src->filmGrain;
@@ -3450,7 +3464,12 @@ void svt_param_default(x265_param* param)
 
 int svt_set_preset(x265_param* param, const char* preset)
 {
-    EB_H265_ENC_CONFIGURATION* svtHevcParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    EB_H265_ENC_CONFIGURATION* svtHevcParam = ensureSvtHevcParam(param);
+    if (!svtHevcParam)
+    {
+        x265_log(param, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+        return -1;
+    }
     
     if (preset)
     {
@@ -3474,7 +3493,12 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
     bool bError = false;
 #define OPT(STR) else if (!strcmp(name, STR))
 
-    EB_H265_ENC_CONFIGURATION* svtHevcParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    EB_H265_ENC_CONFIGURATION* svtHevcParam = ensureSvtHevcParam(param);
+    if (!svtHevcParam)
+    {
+        x265_log(param, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+        return X265_PARAM_BAD_VALUE;
+    }
     if (0);
     OPT("input-res")  bError |= sscanf(value, "%dx%d", &svtHevcParam->sourceWidth, &svtHevcParam->sourceHeight) != 2;
     OPT("input-depth") svtHevcParam->encoderBitDepth = atoi(value);

@@ -1077,6 +1077,11 @@ namespace X265_NS {
         if (svtEnabled)
         {
             EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+            if (!svtParam)
+            {
+                x265_log(param, X265_LOG_ERROR, "SVT-HEVC encoder: Missing parameter storage\n");
+                return true;
+            }
             param->sourceWidth = svtParam->sourceWidth;
             param->sourceHeight = svtParam->sourceHeight;
             param->fpsNum = svtParam->frameRateNumerator;
@@ -1153,6 +1158,11 @@ namespace X265_NS {
         if (svtEnabled)
         {
             EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+            if (!svtParam)
+            {
+                x265_log(param, X265_LOG_ERROR, "SVT-HEVC encoder: Missing parameter storage\n");
+                return true;
+            }
             svtParam->sourceWidth = param->sourceWidth;
             svtParam->sourceHeight = param->sourceHeight;
             svtParam->frameRateNumerator = param->fpsNum;
