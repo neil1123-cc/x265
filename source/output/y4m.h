@@ -42,7 +42,7 @@ protected:
 
     int colorSpace;
 
-    uint32_t frameSize;
+    uint64_t frameSize;
 
     int inputDepth;
 

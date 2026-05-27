@@ -27,6 +27,24 @@
 
 using namespace X265_NS;
 
+namespace {
+bool addPlanePixelsToFrameSize(uint64_t& frameSize, int width, int height, int csp)
+{
+    for (int i = 0; i < x265_cli_csps[csp].planes; i++)
+    {
+        uint64_t planeWidth = (uint64_t)(width >> x265_cli_csps[csp].width[i]);
+        uint64_t planeHeight = (uint64_t)(height >> x265_cli_csps[csp].height[i]);
+        uint64_t planeSize = planeWidth * planeHeight;
+        if (planeWidth && planeSize / planeWidth != planeHeight)
+            return false;
+        if (UINT64_MAX - frameSize < planeSize)
+            return false;
+        frameSize += planeSize;
+    }
+    return true;
+}
+}
+
 Y4MOutput::Y4MOutput(const char* filename, int w, int h, uint32_t bitdepth, uint32_t fpsNum, uint32_t fpsDenom, int csp, int inputdepth)
     : width(w)
     , height(h)
@@ -39,6 +57,7 @@ Y4MOutput::Y4MOutput(const char* filename, int w, int h, uint32_t bitdepth, uint
     if (width <= 0 || height <= 0)
     {
         buf = nullptr;
+        header = 0;
         return;
     }
     buf = new char[width];
@@ -57,8 +76,12 @@ Y4MOutput::Y4MOutput(const char* filename, int w, int h, uint32_t bitdepth, uint
         header = ofs.tellp();
     }
 
-    for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)
-        frameSize += (uint32_t)((width >> x265_cli_csps[colorSpace].width[i]) * (height >> x265_cli_csps[colorSpace].height[i]));
+    if (!addPlanePixelsToFrameSize(frameSize, width, height, colorSpace))
+    {
+        delete [] buf;
+        buf = nullptr;
+        ofs.setstate(std::ios::failbit);
+    }
 }
 
 Y4MOutput::~Y4MOutput()

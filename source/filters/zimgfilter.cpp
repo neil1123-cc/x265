@@ -323,7 +323,14 @@ void ZimgFilter::processFrame(x265_picture& picture)
         dst_format.pixel_range = xp->vui.bEnableVideoFullRangeFlag ? ZIMG_RANGE_FULL : ZIMG_RANGE_LIMITED;
 
         framesize = 0;
-        auto stride_all = round_up_64(rWidth * pixelSize);
+        size_t strideInput = (size_t)rWidth * (size_t)pixelSize;
+        if (rWidth <= 0 || rHeight <= 0 || strideInput > UINT32_MAX)
+        {
+            general_log(NULL, "zimg", X265_LOG_ERROR, "Init: invalid resize buffer geometry\n");
+            bFail = true;
+            return;
+        }
+        auto stride_all = round_up_64((uint32_t)strideInput);
         size_t planeBytes = 0;
         size_t totalPlaneBytes = 0;
         if (rWidth <= 0 || rHeight <= 0 ||
@@ -347,7 +354,14 @@ void ZimgFilter::processFrame(x265_picture& picture)
         {
             int w = rWidth  >> x265_cli_csps[csp].width[i];
             int h = rHeight >> x265_cli_csps[csp].height[i];
-            stride[i] = round_up_64(w * pixelSize);
+            size_t planeStrideInput = (size_t)w * (size_t)pixelSize;
+            if (w < 0 || h < 0 || planeStrideInput > UINT32_MAX)
+            {
+                general_log(NULL, "zimg", X265_LOG_ERROR, "Init: invalid plane geometry\n");
+                bFail = true;
+                return;
+            }
+            stride[i] = round_up_64((uint32_t)planeStrideInput);
             planes[i] = planes_ptr;
             planes_ptr += h * stride[i];
             framesize += h * stride[i];
