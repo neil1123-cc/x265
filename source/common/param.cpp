@@ -128,6 +128,8 @@ static void finalizeZoneParamCopy(x265_param* zoneParam, const x265_param* src)
     if (!zoneParam)
         return;
 
+    zoneParam->logfn = NULL;
+    zoneParam->pgfn = NULL;
     zoneParam->rc.zones = NULL;
     zoneParam->rc.zoneCount = 0;
     zoneParam->rc.zonefileCount = 0;
