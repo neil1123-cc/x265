@@ -630,7 +630,16 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
             {
                 EB_BUFFERHEADERTYPE *inputPtr = encoder->m_svtAppData->inputPictureBuffer;
 
-                if (pic_in->framesize) inputPtr->nFilledLen = (uint32_t)pic_in->framesize;
+                if (pic_in->framesize)
+                {
+                    if (pic_in->framesize > UINT32_MAX)
+                    {
+                        x265_log(encoder->m_param, X265_LOG_ERROR, "SVT HEVC encoder: input frame size exceeds supported range\n");
+                        numEncoded = -1;
+                        goto fail;
+                    }
+                    inputPtr->nFilledLen = (uint32_t)pic_in->framesize;
+                }
                 inputPtr->nFlags = 0;
                 inputPtr->pts = pic_in->pts;
                 inputPtr->dts = pic_in->dts;
