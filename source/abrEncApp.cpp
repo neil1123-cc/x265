@@ -626,6 +626,9 @@ ret:
             x265_vmaf_data* vmafdata = m_cliopt.vmafData;
 #endif
             std::memcpy(&m_parent->m_param[m_id], m_param, sizeof(x265_param));
+#ifdef SVT_HEVC
+            m_parent->m_param[m_id].svtHevcParam = nullptr;
+#endif
             /* This allows muxers to modify bitstream format */
             m_cliopt.output->setParam(m_param);
             if (m_cliopt.output->isFail())

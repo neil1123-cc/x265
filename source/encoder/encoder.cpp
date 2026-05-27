@@ -4409,6 +4409,7 @@ void Encoder::initPPS(PPS *pps)
 
 void Encoder::configureZone(x265_param *p, x265_param *zone)
 {
+    void* zoneSvtHevcParam = zone->svtHevcParam;
     if (m_param->bResetZoneConfig)
     {
         p->maxNumReferences = zone->maxNumReferences;
@@ -4461,6 +4462,18 @@ void Encoder::configureZone(x265_param *p, x265_param *zone)
         p->radl = zone->radl;
     }
     std::memcpy(zone, p, sizeof(x265_param));
+    zone->svtHevcParam = zoneSvtHevcParam;
+#ifdef SVT_HEVC
+    if (zoneSvtHevcParam)
+    {
+        EB_H265_ENC_CONFIGURATION* zoneSvtParam = (EB_H265_ENC_CONFIGURATION*)zoneSvtHevcParam;
+        EB_H265_ENC_CONFIGURATION* srcSvtParam = (EB_H265_ENC_CONFIGURATION*)p->svtHevcParam;
+        if (srcSvtParam)
+            std::memcpy(zoneSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
+        else
+            std::memset(zoneSvtParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+    }
+#endif
 }
 
 void Encoder::configureDolbyVisionParams(x265_param* p)
