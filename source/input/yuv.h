@@ -47,7 +47,7 @@ protected:
 
     uint32_t depth;
 
-    uint32_t framesize;
+    size_t framesize;
 
     bool alphaAvailable;
 

@@ -63,9 +63,15 @@ YUVInput::YUVInput(InputFileInfo& info, bool alpha, int format)
     framesize = 0;
     for (int i = 0; i < x265_cli_csps[colorSpace].planes + alphaAvailable; i++)
     {
-        int32_t w = (width * (format == 1 ? 2 : 1)) >> x265_cli_csps[colorSpace].width[i];
-        uint32_t h = (height * (format == 2 ? 2 : 1)) >> x265_cli_csps[colorSpace].height[i];
-        framesize += w * h * pixelbytes;
+        size_t w = (size_t)((width * (format == 1 ? 2 : 1)) >> x265_cli_csps[colorSpace].width[i]);
+        size_t h = (size_t)((height * (format == 2 ? 2 : 1)) >> x265_cli_csps[colorSpace].height[i]);
+        size_t planeBytes = w * h * pixelbytes;
+        if (!w || !h || planeBytes / pixelbytes / h != w || framesize > SIZE_MAX - planeBytes)
+        {
+            x265_log(NULL, X265_LOG_ERROR, "yuv: frame size exceeds supported range\n");
+            return;
+        }
+        framesize += planeBytes;
     }
 
     if (width == 0 || height == 0 || info.fpsNum == 0 || info.fpsDenom == 0)
