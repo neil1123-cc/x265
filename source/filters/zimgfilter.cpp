@@ -37,6 +37,21 @@ const char* Resizers[] = {"point", "bilinear", "bicubic", "spline16", "spline36"
 
 namespace {
 
+bool mulOverflowSizeT(size_t a, size_t b, size_t& out)
+{
+    if (!a || !b)
+    {
+        out = 0;
+        return false;
+    }
+
+    if (a > SIZE_MAX / b)
+        return true;
+
+    out = a * b;
+    return false;
+}
+
 bool copyZimgSegment(char* dst, size_t dstSize, const char* begin, const char* end, const char* context)
 {
     size_t length = static_cast<size_t>(end - begin);
@@ -309,8 +324,24 @@ void ZimgFilter::processFrame(x265_picture& picture)
 
         framesize = 0;
         auto stride_all = round_up_64(rWidth * pixelSize);
-        planes_all = x265_malloc(rHeight * stride_all * x265_cli_csps[csp].planes);
+        size_t planeBytes = 0;
+        size_t totalPlaneBytes = 0;
+        if (rWidth <= 0 || rHeight <= 0 ||
+            mulOverflowSizeT((size_t)rHeight, (size_t)stride_all, planeBytes) ||
+            mulOverflowSizeT(planeBytes, (size_t)x265_cli_csps[csp].planes, totalPlaneBytes))
+        {
+            general_log(NULL, "zimg", X265_LOG_ERROR, "Init: invalid resize buffer geometry\n");
+            bFail = true;
+            return;
+        }
+        planes_all = x265_malloc(totalPlaneBytes);
         char * planes_ptr = reinterpret_cast<char *>(planes_all);
+        if (!planes_all)
+        {
+            general_log(NULL, "zimg", X265_LOG_ERROR, "Init: error allocating memory for resize buffer\n");
+            bFail = true;
+            return;
+        }
         // Create buffer for resize
         for (int i = 0; i < x265_cli_csps[csp].planes; i++)
         {

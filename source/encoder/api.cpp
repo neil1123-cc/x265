@@ -2196,6 +2196,12 @@ int compute_vmaf(double* vmaf_score, char* fmt, int width, int height, int bitde
 {
 	int err = 0;
 
+    if (width <= 0 || height <= 0)
+    {
+        printf("problem allocating picture memory\n");
+        return -1;
+    }
+
 	VmafConfiguration cfg = {
 		.log_level = VMAF_LOG_LEVEL_INFO,
 		.n_threads = static_cast<unsigned int>(n_thread),
@@ -2225,10 +2231,25 @@ int compute_vmaf(double* vmaf_score, char* fmt, int width, int height, int bitde
 	VmafModel *model = nullptr;
 	VmafModelCollection *model_collection = nullptr;
 
-    int stride = width * sizeof(float);
-    float *ref_data = new float[height * stride];
-    float *main_data = new float[height * stride];
-    float *temp_data = new float[height * stride];
+    size_t rowValues = (size_t)width;
+    size_t rowBytes = rowValues * sizeof(float);
+    if (rowBytes / sizeof(float) != rowValues)
+    {
+        printf("problem allocating picture memory\n");
+        return -1;
+    }
+
+    size_t totalValues = (size_t)height * rowValues;
+    if (rowValues && totalValues / rowValues != (size_t)height)
+    {
+        printf("problem allocating picture memory\n");
+        return -1;
+    }
+
+    int stride = (int)rowBytes;
+    float *ref_data = new (std::nothrow) float[totalValues];
+    float *main_data = new (std::nothrow) float[totalValues];
+    float *temp_data = new (std::nothrow) float[totalValues];
     enum VmafOutputFormat output_fmt = log_fmt_map(log_fmt);
 
 	err = vmaf_model_load_from_path(&model, &model_cfg, model_path);

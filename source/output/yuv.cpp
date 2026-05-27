@@ -36,6 +36,11 @@ YUVOutput::YUVOutput(const char *filename, int w, int h, uint32_t d, int csp, in
     , inputDepth(inputdepth)
 {
     ofs.open(filename, std::ios::binary | std::ios::out);
+    if (width <= 0 || height <= 0)
+    {
+        buf = nullptr;
+        return;
+    }
     buf = new char[width];
 
     for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)

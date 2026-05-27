@@ -36,6 +36,11 @@ Y4MOutput::Y4MOutput(const char* filename, int w, int h, uint32_t bitdepth, uint
     , inputDepth(inputdepth)
 {
     ofs.open(filename, std::ios::binary | std::ios::out);
+    if (width <= 0 || height <= 0)
+    {
+        buf = nullptr;
+        return;
+    }
     buf = new char[width];
 
     const char *cf = (csp >= X265_CSP_I444) ? "444" : (csp >= X265_CSP_I422) ? "422" : "420";
