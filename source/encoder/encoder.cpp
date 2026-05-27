@@ -56,6 +56,32 @@
 namespace X265_NS {
 const char g_sliceTypeToChar[] = {'B', 'P', 'I'};
 
+namespace {
+bool addAnalysisRecordBytes(uint32_t& total, uint32_t add)
+{
+    if (UINT32_MAX - total < add)
+        return false;
+    total += add;
+    return true;
+}
+
+bool addAnalysisRecordProduct(uint32_t& total, uint32_t a, uint32_t b, uint32_t scale = 1)
+{
+    uint64_t add = (uint64_t)a * (uint64_t)b * (uint64_t)scale;
+    if (add > UINT32_MAX)
+        return false;
+    return addAnalysisRecordBytes(total, (uint32_t)add);
+}
+
+bool validateAnalysisDepthRun(uint32_t numPartitions, uint32_t depth, uint32_t count, uint32_t capacity, uint32_t& bytes)
+{
+    if (depth > 7)
+        return false;
+    bytes = numPartitions >> (depth * 2);
+    return bytes && count <= capacity && bytes <= capacity - count;
+}
+}
+
 /* Dolby Vision profile specific settings */
 typedef struct
 {
@@ -5487,8 +5513,19 @@ void Encoder::readAnalysisFile(x265_analysis_data* analysis, int curPoc, const x
     uint32_t widthInCU = (m_param->sourceWidth + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
     uint32_t heightInCU = (m_param->sourceHeight + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
     uint32_t numCUsInFrame = widthInCU * heightInCU;
+    uint32_t currentNumPartitions = m_param->num4x4Partitions;
+    uint32_t maxDepthEntries = numCUsInFrame * currentNumPartitions;
     analysis->numCUsInFrame = numCUsInFrame;
     analysis->numCuInHeight = heightInCU;
+
+    if (!analysis->numPartitions || analysis->numPartitions > currentNumPartitions ||
+        !numCUsLoad || numCUsLoad > numCUsInFrame || depthBytes > maxDepthEntries)
+    {
+        x265_log(NULL, X265_LOG_ERROR, "Error reading analysis data. Invalid record dimensions\n");
+        x265_free_analysis_data(m_param, analysis);
+        m_aborted = true;
+        return;
+    }
 
     if (m_param->bDisableLookahead)
     {
@@ -5915,9 +5952,20 @@ void Encoder::readAnalysisFile(x265_analysis_data* analysis, int curPoc, const x
         if (m_param->rc.cuTree) { X265_FREAD(cuQPBuf, sizeof(int8_t), depthBytes, m_analysisFileIn, intraPic->cuQPOff); }
 
         uint32_t count = 0;
+        uint32_t maxDepthEntries = analysis->numCUsInFrame * analysis->numPartitions;
         for (uint32_t d = 0; d < depthBytes; d++)
         {
-            int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
+            uint32_t bytes = 0;
+            if (!validateAnalysisDepthRun(analysis->numPartitions, depthBuf[d], count, maxDepthEntries, bytes))
+            {
+                x265_log(NULL, X265_LOG_ERROR, "Error reading analysis data. Invalid intra depth run\n");
+                X265_FREE(tempBuf);
+                if (m_param->rc.cuTree)
+                    X265_FREE(cuQPBuf);
+                x265_free_analysis_data(m_param, analysis);
+                m_aborted = true;
+                return;
+            }
             int numCTUCopied = 1;
             if (!depthBuf[d]) //copy data of one 64x64 to four scaled 64x64 CTUs.
             {
@@ -6027,9 +6075,29 @@ void Encoder::readAnalysisFile(x265_analysis_data* analysis, int curPoc, const x
 
         uint32_t count = 0;
         cuLoc.switchCondition = 0;
+        uint32_t maxDepthEntries = analysis->numCUsInFrame * analysis->numPartitions;
         for (uint32_t d = 0; d < depthBytes; d++)
         {
-            int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
+            uint32_t bytes = 0;
+            if (!validateAnalysisDepthRun(analysis->numPartitions, depthBuf[d], count, maxDepthEntries, bytes))
+            {
+                x265_log(NULL, X265_LOG_ERROR, "Error reading analysis data. Invalid inter depth run\n");
+                X265_FREE(tempBuf);
+                if (m_param->rc.cuTree)
+                    X265_FREE(cuQPBuf);
+                if (m_param->analysisLoadReuseLevel == 10)
+                {
+                    for (uint32_t i = 0; i < numDir; i++)
+                    {
+                        X265_FREE(mvpIdx[i]);
+                        X265_FREE(refIdx[i]);
+                        X265_FREE(mv[i]);
+                    }
+                }
+                x265_free_analysis_data(m_param, analysis);
+                m_aborted = true;
+                return;
+            }
             bool isScaledMaxCUSize = false;
             int numCTUCopied = 1;
             int writeDepth = depthBuf[d];
@@ -6469,7 +6537,16 @@ void Encoder::readAnalysisFile(x265_analysis_data* analysis, int curPoc, int sli
     size_t count = 0;
     for (uint32_t d = 0; d < depthBytes; d++)
     {
-        int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
+        uint32_t bytes = 0;
+        if (!validateAnalysisDepthRun(analysis->numPartitions, depthBuf[d], (uint32_t)count,
+                                      analysis->numCUsInFrame * analysis->numPartitions, bytes))
+        {
+            x265_log(NULL, X265_LOG_ERROR, "Error reading analysis 2 pass data. Invalid depth run\n");
+            X265_FREE(tempBuf);
+            x265_free_analysis_data(m_param, analysis);
+            m_aborted = true;
+            return;
+        }
         if (IS_X265_TYPE_I(sliceType))
             std::memset(&intraData->depth[count], depthBuf[d], bytes);
         else
@@ -6577,19 +6654,23 @@ void Encoder::writeAnalysisFile(x265_analysis_data* analysis, FrameData &curEncD
     }
 
     /* calculate frameRecordSize */
-    analysis->frameRecordSize = sizeof(analysis->frameRecordSize) + sizeof(depthBytes) + sizeof(analysis->poc) + sizeof(analysis->sliceType) +
-                      sizeof(analysis->numCUsInFrame) + sizeof(analysis->numPartitions) + sizeof(analysis->bScenecut) + sizeof(analysis->satdCost);
+    analysis->frameRecordSize = 0;
+    if (!addAnalysisRecordBytes(analysis->frameRecordSize, (uint32_t)(sizeof(analysis->frameRecordSize) + sizeof(depthBytes) + sizeof(analysis->poc) +
+        sizeof(analysis->sliceType) + sizeof(analysis->numCUsInFrame) + sizeof(analysis->numPartitions) + sizeof(analysis->bScenecut) + sizeof(analysis->satdCost))))
+        goto frameRecordSizeFail;
     if (analysis->sliceType > X265_TYPE_I)
     {
         numDir = (analysis->sliceType == X265_TYPE_P) ? 1 : 2;
         numPlanes = m_param->internalCsp == X265_CSP_I400 ? 1 : 3;
-        analysis->frameRecordSize += sizeof(WeightParam) * numPlanes * numDir;
+        if (!addAnalysisRecordProduct(analysis->frameRecordSize, (uint32_t)numPlanes, (uint32_t)numDir, (uint32_t)sizeof(WeightParam)))
+            goto frameRecordSizeFail;
     }
 
     if (m_param->ctuDistortionRefine == CTU_DISTORTION_INTERNAL)
     {
         copyDistortionData(analysis, curEncData);
-        analysis->frameRecordSize += analysis->numCUsInFrame * sizeof(sse_t);
+        if (!addAnalysisRecordProduct(analysis->frameRecordSize, analysis->numCUsInFrame, (uint32_t)sizeof(sse_t)))
+            goto frameRecordSizeFail;
     }
 
     if (m_param->analysisSaveReuseLevel > 1)
@@ -6687,30 +6768,54 @@ void Encoder::writeAnalysisFile(x265_analysis_data* analysis, FrameData &curEncD
         }
 
         if ((analysis->sliceType == X265_TYPE_IDR || analysis->sliceType == X265_TYPE_I) && m_param->rc.cuTree)
-            analysis->frameRecordSize += sizeof(uint8_t)* analysis->numCUsInFrame * analysis->numPartitions + depthBytes * 3 + (sizeof(int8_t) * depthBytes);
+        {
+            if (!addAnalysisRecordProduct(analysis->frameRecordSize, analysis->numCUsInFrame, analysis->numPartitions, (uint32_t)sizeof(uint8_t)) ||
+                !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, 3) ||
+                !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)sizeof(int8_t)))
+                goto frameRecordSizeFail;
+        }
         else if (analysis->sliceType == X265_TYPE_IDR || analysis->sliceType == X265_TYPE_I)
-            analysis->frameRecordSize += sizeof(uint8_t)* analysis->numCUsInFrame * analysis->numPartitions + depthBytes * 3;
+        {
+            if (!addAnalysisRecordProduct(analysis->frameRecordSize, analysis->numCUsInFrame, analysis->numPartitions, (uint32_t)sizeof(uint8_t)) ||
+                !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, 3))
+                goto frameRecordSizeFail;
+        }
         else
         {
             /* Add sizeof depth, modes, partSize, cuQPOffset, mergeFlag */
-            analysis->frameRecordSize += depthBytes * 2;
+            if (!addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, 2))
+                goto frameRecordSizeFail;
             if (m_param->rc.cuTree)
-            analysis->frameRecordSize += (sizeof(int8_t) * depthBytes);
+            {
+                if (!addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)sizeof(int8_t)))
+                    goto frameRecordSizeFail;
+            }
             if (m_param->analysisSaveReuseLevel > 4)
-                analysis->frameRecordSize += (depthBytes * 2);
+            {
+                if (!addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, 2))
+                    goto frameRecordSizeFail;
+            }
 
             if (m_param->analysisSaveReuseLevel == 10)
             {
                 /* Add Size of interDir, mvpIdx, refIdx, mv, luma and chroma modes */
-                analysis->frameRecordSize += depthBytes;
-                analysis->frameRecordSize += sizeof(uint8_t)* depthBytes * numDir;
-                analysis->frameRecordSize += sizeof(int8_t)* depthBytes * numDir;
-                analysis->frameRecordSize += sizeof(MV)* depthBytes * numDir;
+                if (!addAnalysisRecordBytes(analysis->frameRecordSize, depthBytes) ||
+                    !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)numDir, (uint32_t)sizeof(uint8_t)) ||
+                    !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)numDir, (uint32_t)sizeof(int8_t)) ||
+                    !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)numDir, (uint32_t)sizeof(MV)))
+                    goto frameRecordSizeFail;
                 if (bIntraInInter)
-                    analysis->frameRecordSize += sizeof(uint8_t)* analysis->numCUsInFrame * analysis->numPartitions + depthBytes;
+                {
+                    if (!addAnalysisRecordProduct(analysis->frameRecordSize, analysis->numCUsInFrame, analysis->numPartitions, (uint32_t)sizeof(uint8_t)) ||
+                        !addAnalysisRecordBytes(analysis->frameRecordSize, depthBytes))
+                        goto frameRecordSizeFail;
+                }
             }
             else
-                analysis->frameRecordSize += sizeof(int32_t)* analysis->numCUsInFrame * X265_MAX_PRED_MODE_PER_CTU * numDir;
+            {
+                if (!addAnalysisRecordProduct(analysis->frameRecordSize, analysis->numCUsInFrame, (uint32_t)X265_MAX_PRED_MODE_PER_CTU * (uint32_t)numDir, (uint32_t)sizeof(int32_t)))
+                    goto frameRecordSizeFail;
+            }
         }
         analysis->depthBytes = depthBytes;
     }
@@ -6772,6 +6877,11 @@ void Encoder::writeAnalysisFile(x265_analysis_data* analysis, FrameData &curEncD
 
     }
 #undef X265_FWRITE
+    return;
+
+frameRecordSizeFail:
+    x265_log(m_param, X265_LOG_ERROR, "Analysis save record size exceeds supported range\n");
+    m_aborted = true;
 }
 
 void Encoder::writeAnalysisFileRefine(x265_analysis_data* analysis, FrameData &curEncData)
@@ -6843,16 +6953,19 @@ void Encoder::writeAnalysisFileRefine(x265_analysis_data* analysis, FrameData &c
     }
 
     /* calculate frameRecordSize */
-    analysis->frameRecordSize = sizeof(analysis->frameRecordSize) + sizeof(depthBytes) + sizeof(analysis->poc);
-    analysis->frameRecordSize += depthBytes * sizeof(uint8_t);
-    analysis->frameRecordSize += analysis->numCUsInFrame * sizeof(sse_t);
+    analysis->frameRecordSize = 0;
+    if (!addAnalysisRecordBytes(analysis->frameRecordSize, (uint32_t)(sizeof(analysis->frameRecordSize) + sizeof(depthBytes) + sizeof(analysis->poc))) ||
+        !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)sizeof(uint8_t)) ||
+        !addAnalysisRecordProduct(analysis->frameRecordSize, analysis->numCUsInFrame, (uint32_t)sizeof(sse_t)))
+        goto distortionRecordSizeFail;
     if (curEncData.m_slice->m_sliceType != I_SLICE)
     {
         int numDir = (curEncData.m_slice->m_sliceType == P_SLICE) ? 1 : 2;
-        analysis->frameRecordSize += depthBytes * sizeof(MV) * numDir;
-        analysis->frameRecordSize += depthBytes * sizeof(int32_t) * numDir;
-        analysis->frameRecordSize += depthBytes * sizeof(uint8_t) * numDir;
-        analysis->frameRecordSize += depthBytes * sizeof(uint8_t);
+        if (!addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)numDir, (uint32_t)sizeof(MV)) ||
+            !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)numDir, (uint32_t)sizeof(int32_t)) ||
+            !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)numDir, (uint32_t)sizeof(uint8_t)) ||
+            !addAnalysisRecordProduct(analysis->frameRecordSize, depthBytes, (uint32_t)sizeof(uint8_t)))
+            goto distortionRecordSizeFail;
     }
     X265_FWRITE(&analysis->frameRecordSize, sizeof(uint32_t), 1, m_analysisFileOut);
     X265_FWRITE(&depthBytes, sizeof(uint32_t), 1, m_analysisFileOut);
@@ -6879,6 +6992,11 @@ void Encoder::writeAnalysisFileRefine(x265_analysis_data* analysis, FrameData &c
         X265_FWRITE((analysis->interData)->modes, sizeof(uint8_t), depthBytes, m_analysisFileOut);
     }
 #undef X265_FWRITE
+    return;
+
+distortionRecordSizeFail:
+    x265_log(m_param, X265_LOG_ERROR, "Analysis distortion record size exceeds supported range\n");
+    m_aborted = true;
 }
 
 void Encoder::printReconfigureParams()
