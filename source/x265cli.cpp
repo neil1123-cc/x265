@@ -697,23 +697,30 @@ namespace X265_NS {
             return true;
         }
 
-        std::memcpy(globalParam->rc.zones[zonefileCount].zoneParam, globalParam, sizeof(x265_param));
 #ifdef SVT_HEVC
+        void* zoneSvtHevcParam = globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam;
+#endif
+        std::memcpy(globalParam->rc.zones[zonefileCount].zoneParam, globalParam, sizeof(x265_param));
+        globalParam->rc.zones[zonefileCount].zoneParam->rc.zones = NULL;
+        globalParam->rc.zones[zonefileCount].zoneParam->rc.zoneCount = 0;
+        globalParam->rc.zones[zonefileCount].zoneParam->rc.zonefileCount = 0;
+#ifdef SVT_HEVC
+        globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam = zoneSvtHevcParam;
         if (globalParam->svtHevcParam)
         {
-            if (!globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam)
+            if (!zoneSvtHevcParam)
             {
-                globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam =
+                zoneSvtHevcParam =
                     x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
-                if (!globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam)
+                globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam = zoneSvtHevcParam;
+                if (!zoneSvtHevcParam)
                 {
                     x265_log(NULL, X265_LOG_ERROR, "param alloc failed\n");
                     return true;
                 }
             }
 
-            std::memcpy(globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam,
-                        globalParam->svtHevcParam, sizeof(EB_H265_ENC_CONFIGURATION));
+            std::memcpy(zoneSvtHevcParam, globalParam->svtHevcParam, sizeof(EB_H265_ENC_CONFIGURATION));
         }
 #endif
 

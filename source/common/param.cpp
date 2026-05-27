@@ -122,6 +122,19 @@ static bool copySvtHevcParamStorage(x265_param* dst, const x265_param* src)
 
     return true;
 }
+
+static void finalizeZoneParamCopy(x265_param* zoneParam, const x265_param* src)
+{
+    if (!zoneParam)
+        return;
+
+    zoneParam->rc.zones = NULL;
+    zoneParam->rc.zoneCount = 0;
+    zoneParam->rc.zonefileCount = 0;
+
+    if (src)
+        copySvtHevcParamStorage(zoneParam, src);
+}
 #endif
 
 x265_param *x265_param_alloc()
@@ -3168,9 +3181,12 @@ void x265_copy_params(x265_param* dst, x265_param* src)
                 void* dstZoneSvtHevcParam = dst->rc.zones[i].zoneParam->svtHevcParam;
                 memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
                 dst->rc.zones[i].zoneParam->svtHevcParam = dstZoneSvtHevcParam;
-                copySvtHevcParamStorage(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam);
+                finalizeZoneParamCopy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam);
 #else
                 memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+                dst->rc.zones[i].zoneParam->rc.zones = NULL;
+                dst->rc.zones[i].zoneParam->rc.zoneCount = 0;
+                dst->rc.zones[i].zoneParam->rc.zonefileCount = 0;
 #endif
             }
         }

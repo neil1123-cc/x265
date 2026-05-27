@@ -323,8 +323,15 @@ x265_encoder *x265_encoder_open(x265_param *p)
             goto fail;
         for (int i = 0; i < param->rc.zonefileCount; i++)
         {
-            memcpy(param->rc.zones[i].zoneParam, param, sizeof(x265_param));
 #ifdef SVT_HEVC
+            void* zoneSvtHevcParam = param->rc.zones[i].zoneParam->svtHevcParam;
+#endif
+            memcpy(param->rc.zones[i].zoneParam, param, sizeof(x265_param));
+            param->rc.zones[i].zoneParam->rc.zones = NULL;
+            param->rc.zones[i].zoneParam->rc.zoneCount = 0;
+            param->rc.zones[i].zoneParam->rc.zonefileCount = 0;
+#ifdef SVT_HEVC
+            param->rc.zones[i].zoneParam->svtHevcParam = zoneSvtHevcParam;
             if (!svt_copy_param_storage(param->rc.zones[i].zoneParam, param))
                 goto fail;
 #endif
