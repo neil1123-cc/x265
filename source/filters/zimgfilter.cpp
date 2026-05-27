@@ -355,6 +355,7 @@ void ZimgFilter::processFrame(x265_picture& picture)
             int w = rWidth  >> x265_cli_csps[csp].width[i];
             int h = rHeight >> x265_cli_csps[csp].height[i];
             size_t planeStrideInput = (size_t)w * (size_t)pixelSize;
+            size_t planeFrameBytes = 0;
             if (w < 0 || h < 0 || planeStrideInput > UINT32_MAX)
             {
                 general_log(NULL, "zimg", X265_LOG_ERROR, "Init: invalid plane geometry\n");
@@ -362,9 +363,16 @@ void ZimgFilter::processFrame(x265_picture& picture)
                 return;
             }
             stride[i] = round_up_64((uint32_t)planeStrideInput);
+            if (mulOverflowSizeT((size_t)h, (size_t)stride[i], planeFrameBytes) ||
+                SIZE_MAX - framesize < planeFrameBytes)
+            {
+                general_log(NULL, "zimg", X265_LOG_ERROR, "Init: invalid plane frame size\n");
+                bFail = true;
+                return;
+            }
             planes[i] = planes_ptr;
-            planes_ptr += h * stride[i];
-            framesize += h * stride[i];
+            planes_ptr += planeFrameBytes;
+            framesize += planeFrameBytes;
         }
 
         graph = zimg_filter_graph_build(&src_format, &dst_format, &graph_params);
