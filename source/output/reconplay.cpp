@@ -64,7 +64,14 @@ ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
 
     frameSize = 0;
     for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)
-        frameSize += (uint32_t)((width >> x265_cli_csps[colorSpace].width[i]) * (height >> x265_cli_csps[colorSpace].height[i]));
+    {
+        uint64_t planeWidth = (uint64_t)(width >> x265_cli_csps[colorSpace].width[i]);
+        uint64_t planeHeight = (uint64_t)(height >> x265_cli_csps[colorSpace].height[i]);
+        uint64_t planeSize = planeWidth * planeHeight;
+        if ((planeWidth && planeSize / planeWidth != planeHeight) || planeSize > UINT32_MAX || frameSize > UINT32_MAX - (uint32_t)planeSize)
+            goto fail;
+        frameSize += (uint32_t)planeSize;
+    }
 
     for (int i = 0; i < RECON_BUF_SIZE; i++)
     {

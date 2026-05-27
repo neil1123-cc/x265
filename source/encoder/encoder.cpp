@@ -261,8 +261,18 @@ void Encoder::create()
         int pixelbytes = p->sourceBitDepth > 8 ? 2 : 1;
         for (int i = 0; i < x265_cli_csps[p->internalCsp].planes; i++)
         {
-            int stride = (p->sourceWidth >> x265_cli_csps[p->internalCsp].width[i]) * pixelbytes;
-            framesize += (stride * (p->sourceHeight >> x265_cli_csps[p->internalCsp].height[i]));
+            size_t planeWidth = (size_t)(p->sourceWidth >> x265_cli_csps[p->internalCsp].width[i]);
+            size_t planeHeight = (size_t)(p->sourceHeight >> x265_cli_csps[p->internalCsp].height[i]);
+            size_t stride = planeWidth * (size_t)pixelbytes;
+            size_t planeBytes = stride * planeHeight;
+            if (!planeWidth || !planeHeight || stride / (size_t)pixelbytes != planeWidth ||
+                (planeHeight && planeBytes / planeHeight != stride) || framesize > SIZE_MAX - planeBytes)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "Frame duplication buffer size exceeds supported range\n");
+                m_aborted = true;
+                return;
+            }
+            framesize += planeBytes;
         }
 
         //Sets the picture structure and emits it in the picture timing SEI message
