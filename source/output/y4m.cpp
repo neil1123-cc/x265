@@ -94,9 +94,35 @@ bool Y4MOutput::writePicture(const x265_picture& pic)
 {
     std::ofstream::pos_type outPicPos = header;
     if (pic.bitDepth > 8)
-        outPicPos += (uint64_t)(pic.poc * (6 + frameSize * 2));
+    {
+        if (frameSize > (UINT64_MAX - 6) / 2)
+        {
+            ofs.setstate(std::ios::failbit);
+            return false;
+        }
+        uint64_t frameSpan = 6 + frameSize * 2;
+        if ((uint64_t)pic.poc > UINT64_MAX / frameSpan)
+        {
+            ofs.setstate(std::ios::failbit);
+            return false;
+        }
+        outPicPos += (uint64_t)pic.poc * frameSpan;
+    }
     else
-        outPicPos += (uint64_t)pic.poc * (6 + frameSize);
+    {
+        if (frameSize > UINT64_MAX - 6)
+        {
+            ofs.setstate(std::ios::failbit);
+            return false;
+        }
+        uint64_t frameSpan = 6 + frameSize;
+        if ((uint64_t)pic.poc > UINT64_MAX / frameSpan)
+        {
+            ofs.setstate(std::ios::failbit);
+            return false;
+        }
+        outPicPos += (uint64_t)pic.poc * frameSpan;
+    }
     ofs.seekp(outPicPos);
     ofs << "FRAME\n";
 

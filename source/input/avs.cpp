@@ -129,6 +129,17 @@ void AVSInput::openfile(InputFileInfo& info)
 
 bool AVSInput::readPicture(x265_picture& pic)
 {
+    auto addPlaneBytes = [](size_t& total, int height, int stride, size_t& planeBytes) -> bool
+    {
+        if (height <= 0 || stride <= 0)
+            return false;
+        planeBytes = (size_t)height * (size_t)stride;
+        if (planeBytes / (size_t)stride != (size_t)height || total > SIZE_MAX - planeBytes)
+            return false;
+        total += planeBytes;
+        return true;
+    };
+
     AVS_VideoFrame *frm = h->func.avs_get_frame(h->clip, h->next_frame);
     const char *err = h->func.avs_clip_get_error(h->clip);
     if (err)
@@ -148,9 +159,28 @@ bool AVSInput::readPicture(x265_picture& pic)
         return false;
     }
 
-    size_t requiredFrameSize = (size_t)frm->height * (size_t)frm->pitch;
+    size_t requiredFrameSize = 0;
+    size_t planeBytesY = 0;
+    if (!addPlaneBytes(requiredFrameSize, frm->height, frm->pitch, planeBytesY))
+    {
+        general_log(NULL, "avs+", X265_LOG_ERROR, "Invalid Avisynth luma geometry at frame %d\n", h->next_frame);
+        b_fail = true;
+        h->func.avs_release_video_frame(frm);
+        return false;
+    }
     if (h->plane_count > 1)
-        requiredFrameSize += (size_t)frm->heightUV * (size_t)frm->pitchUV * 2;
+    {
+        size_t planeBytesU = 0;
+        size_t planeBytesV = 0;
+        if (!addPlaneBytes(requiredFrameSize, frm->heightUV, frm->pitchUV, planeBytesU) ||
+            !addPlaneBytes(requiredFrameSize, frm->heightUV, frm->pitchUV, planeBytesV))
+        {
+            general_log(NULL, "avs+", X265_LOG_ERROR, "Invalid Avisynth chroma geometry at frame %d\n", h->next_frame);
+            b_fail = true;
+            h->func.avs_release_video_frame(frm);
+            return false;
+        }
+    }
 
     if (!requiredFrameSize)
     {
@@ -179,18 +209,19 @@ bool AVSInput::readPicture(x265_picture& pic)
     uint8_t* ptr = frame_buffer;
     pic.planes[0] = ptr;
     pic.stride[0] = frm->pitch;
-    std::memcpy(pic.planes[0], frm->vfb->data + frm->offset, frm->pitch * frm->height);
+    std::memcpy(pic.planes[0], frm->vfb->data + frm->offset, planeBytesY);
     if (h->plane_count > 1)
     {
-        ptr += frm->pitch * frm->height;
+        size_t planeBytesUV = (size_t)frm->heightUV * (size_t)frm->pitchUV;
+        ptr += planeBytesY;
         pic.planes[1] = ptr;
         pic.stride[1] = frm->pitchUV;
-        std::memcpy(pic.planes[1], frm->vfb->data + frm->offsetU, frm->pitchUV * frm->heightUV);
+        std::memcpy(pic.planes[1], frm->vfb->data + frm->offsetU, planeBytesUV);
 
-        ptr += frm->pitchUV * frm->heightUV;
+        ptr += planeBytesUV;
         pic.planes[2] = ptr;
         pic.stride[2] = frm->pitchUV;
-        std::memcpy(pic.planes[2], frm->vfb->data + frm->offsetV, frm->pitchUV * frm->heightUV);
+        std::memcpy(pic.planes[2], frm->vfb->data + frm->offsetV, planeBytesUV);
     }
     pic.colorSpace = _info.csp;
     pic.bitDepth = _info.depth;

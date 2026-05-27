@@ -62,6 +62,17 @@ static int handle_jpeg(int csp, int *fullrange)
 }
 
 void LavfInput::fill_buffer(x265_picture& pic, uint8_t** planes, int* stride) {
+    auto addPlaneBytes = [](size_t& total, int height, int stride, size_t& planeBytes) -> bool
+    {
+        if (height <= 0 || stride <= 0)
+            return false;
+        planeBytes = (size_t)height * (size_t)stride;
+        if (planeBytes / (size_t)stride != (size_t)height || total > SIZE_MAX - planeBytes)
+            return false;
+        total += planeBytes;
+        return true;
+    };
+
     auto height = _info.height;
     auto height_uv = _info.height >> height_uv_ss;
 
@@ -80,9 +91,24 @@ void LavfInput::fill_buffer(x265_picture& pic, uint8_t** planes, int* stride) {
         return;
     }
 
-    size_t requiredFrameSize = (size_t)height * (size_t)stride[0];
+    size_t requiredFrameSize = 0;
+    size_t planeBytesY = 0;
+    if (!addPlaneBytes(requiredFrameSize, height, stride[0], planeBytesY))
+    {
+        b_fail = true;
+        return;
+    }
     if (stride[1])
-        requiredFrameSize += (size_t)height_uv * (size_t)stride[1] + (size_t)height_uv * (size_t)stride[2];
+    {
+        size_t planeBytesU = 0;
+        size_t planeBytesV = 0;
+        if (!addPlaneBytes(requiredFrameSize, height_uv, stride[1], planeBytesU) ||
+            !addPlaneBytes(requiredFrameSize, height_uv, stride[2], planeBytesV))
+        {
+            b_fail = true;
+            return;
+        }
+    }
 
     if (!requiredFrameSize)
     {
@@ -107,18 +133,20 @@ void LavfInput::fill_buffer(x265_picture& pic, uint8_t** planes, int* stride) {
     uint8_t* ptr = frame_buffer;
     pic.planes[0] = ptr;
     pic.stride[0] = stride[0];
-    std::memcpy(pic.planes[0], planes[0], stride[0] * height);
+    std::memcpy(pic.planes[0], planes[0], planeBytesY);
     if (stride[1])
     {
-        ptr += stride[0] * height;
+        size_t planeBytesU = (size_t)stride[1] * (size_t)height_uv;
+        size_t planeBytesV = (size_t)stride[2] * (size_t)height_uv;
+        ptr += planeBytesY;
         pic.planes[1] = ptr;
         pic.stride[1] = stride[1];
-        std::memcpy(pic.planes[1], planes[1], stride[1] * height_uv);
+        std::memcpy(pic.planes[1], planes[1], planeBytesU);
 
-        ptr += stride[1] * height_uv;
+        ptr += planeBytesU;
         pic.planes[2] = ptr;
         pic.stride[2] = stride[2];
-        std::memcpy(pic.planes[2], planes[2], stride[2] * height_uv);
+        std::memcpy(pic.planes[2], planes[2], planeBytesV);
     }
 }
 

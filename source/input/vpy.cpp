@@ -302,6 +302,17 @@ void VPYInput::release()
 
 bool VPYInput::readPicture(x265_picture& pic)
 {
+    auto addPlaneBytes = [](size_t& total, int height, int stride, size_t& planeBytes) -> bool
+    {
+        if (height <= 0 || stride <= 0)
+            return false;
+        planeBytes = (size_t)height * (size_t)stride;
+        if (planeBytes / (size_t)stride != (size_t)height || total > SIZE_MAX - planeBytes)
+            return false;
+        total += planeBytes;
+        return true;
+    };
+
     const VSFrameRef* currentFrame = nullptr;
 
     if(nextFrame >= _info.frameCount)
@@ -332,14 +343,14 @@ bool VPYInput::readPicture(x265_picture& pic)
     {
         int frameHeight = vsapi->getFrameHeight(currentFrame, i);
         int frameStride = vsapi->getStride(currentFrame, i);
-        if (frameHeight <= 0 || frameStride <= 0)
+        size_t planeBytes = 0;
+        if (!addPlaneBytes(requiredFrameSize, frameHeight, frameStride, planeBytes))
         {
             general_log(nullptr, "vpy", X265_LOG_ERROR, "Invalid VapourSynth frame geometry at frame %d plane %d\n", nextFrame, i);
             vpyFailed = true;
             vsapi->freeFrame(currentFrame);
             return false;
         }
-        requiredFrameSize += (size_t)frameHeight * (size_t)frameStride;
     }
 
     if (!requiredFrameSize)
@@ -370,9 +381,17 @@ bool VPYInput::readPicture(x265_picture& pic)
     uint8_t* ptr = frame_buffer;
     for(int i = 0; i < x265_cli_csps[_info.csp].planes; i++)
     {
+        int frameHeight = vsapi->getFrameHeight(currentFrame, i);
         pic.stride[i] = vsapi->getStride(currentFrame, i);
         pic.planes[i] = ptr;
-        auto len = vsapi->getFrameHeight(currentFrame, i) * pic.stride[i];
+        size_t len = 0;
+        if (!addPlaneBytes(len, frameHeight, pic.stride[i], len) || ptr > frame_buffer + frame_size || len > (size_t)(frame_buffer + frame_size - ptr))
+        {
+            general_log(nullptr, "vpy", X265_LOG_ERROR, "Invalid VapourSynth plane copy geometry at frame %d plane %d\n", nextFrame, i);
+            vpyFailed = true;
+            vsapi->freeFrame(currentFrame);
+            return false;
+        }
 
         std::memcpy(pic.planes[i], const_cast<unsigned char*>(vsapi->getReadPtr(currentFrame, i)), len);
         ptr += len;

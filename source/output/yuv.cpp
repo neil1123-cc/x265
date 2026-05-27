@@ -78,6 +78,11 @@ YUVOutput::~YUVOutput()
 bool YUVOutput::writePicture(const x265_picture& pic)
 {
     uint64_t fileOffset = pic.poc;
+    if (frameSize && fileOffset > UINT64_MAX / frameSize)
+    {
+        ofs.setstate(std::ios::failbit);
+        return false;
+    }
     fileOffset *= frameSize;
 
     X265_CHECK(pic.colorSpace == colorSpace, "invalid chroma subsampling\n");
@@ -103,6 +108,11 @@ bool YUVOutput::writePicture(const x265_picture& pic)
 	}
 	else
 	{
+		if (fileOffset > UINT64_MAX / 2)
+		{
+			ofs.setstate(std::ios::failbit);
+			return false;
+		}
 		ofs.seekp((std::streamoff)(fileOffset * 2));
 		for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)
 		{
