@@ -348,7 +348,7 @@ int x265_encoder_headers(x265_encoder *enc, x265_nal **pp_nal, uint32_t *pi_nal)
                 return -1;
             }
             *pp_nal = &encoder->m_nalList.m_nal[0];
-            *pi_nal = 1;
+            if (pi_nal) *pi_nal = 1;
             encoder->m_svtAppData->byteCount += outputPtr->nFilledLen;
 
             EbH265ReleaseOutBuffer(&outputPtr);
@@ -711,8 +711,9 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                         goto fail;
                     }
                     encoder->m_svtAppData->byteCount += outputStreamPtr->nFilledLen;
-                    *pp_nal = &encoder->m_nalList.m_nal[0];
-                    *pi_nal = 1;
+                    if (pp_nal)
+                        *pp_nal = &encoder->m_nalList.m_nal[0];
+                    if (pi_nal) *pi_nal = 1;
                     numEncoded = 0;
                     codedNal = 1;
                     EbH265ReleaseOutBuffer(&outputStreamPtr);
@@ -724,7 +725,7 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
         }
         else if (eofReached)
         {
-            *pi_nal = 0;
+            if (pi_nal) *pi_nal = 0;
             return numEncoded;
         }
 
@@ -750,8 +751,9 @@ int x265_encoder_encode(x265_encoder* enc, x265_nal** pp_nal, uint32_t* pi_nal, 
                 }
                 encoder->m_svtAppData->byteCount += outputPtr->nFilledLen;
                 encoder->m_svtAppData->outFrameCount++;
-                *pp_nal = &encoder->m_nalList.m_nal[0];
-                *pi_nal = 1;
+                if (pp_nal)
+                    *pp_nal = &encoder->m_nalList.m_nal[0];
+                if (pi_nal) *pi_nal = 1;
                 numEncoded = 1;
             }
 
@@ -812,7 +814,8 @@ fail:
     {
         Bitstream bs;
         encoder->getEndNalUnits(encoder->m_nalList, bs);
-        *pp_nal = &encoder->m_nalList.m_nal[0];
+        if (pp_nal)
+            *pp_nal = &encoder->m_nalList.m_nal[0];
         if (pi_nal) *pi_nal = encoder->m_nalList.m_numNal;
     }
 
