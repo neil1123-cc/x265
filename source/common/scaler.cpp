@@ -24,6 +24,7 @@
 #include "scaler.h"
 
 #include <cstring>
+#include <new>
 
 #if _MSC_VER
 #pragma warning(disable: 4706) // assignment within conditional
@@ -35,6 +36,24 @@
 #define SHORT_MAX_10 ((1 << 10) - 1)
 
 namespace X265_NS{
+
+namespace {
+template<typename T>
+T* allocArrayNoThrow(size_t count)
+{
+    if (count > SIZE_MAX / sizeof(T))
+        return NULL;
+    return new (std::nothrow) T[count];
+}
+
+bool mulOverflowSizeT(size_t a, size_t b, size_t& out)
+{
+    if (a && b > SIZE_MAX / a)
+        return true;
+    out = a * b;
+    return false;
+}
+}
 
 ScalerFilterManager::ScalerFilterManager() :
     m_bitDepth(0),
@@ -261,9 +280,16 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     int *outFilterSize = &m_filtLen;
     int64_t xDstInSrc;
     int sizeFactor = flag;
+    size_t filterCount = 0;
+    size_t outFilterCount = 0;
+    int index = RES_FACTOR_DEF;
+    int size = 0;
+    int16_t **outFilter = &m_filt;
 
     // Init filter pos, the +3 is for the MMX(+1) / SSE(+3) scaler which reads over the end
-    m_filtPos = new int32_t[dstW + 3];
+    m_filtPos = allocArrayNoThrow<int32_t>((size_t)dstW + 3);
+    if (!m_filtPos)
+        return -1;
     int32_t **filterPos = &m_filtPos;
 
     if (inc <= 1 << 16)
@@ -273,7 +299,11 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
 
     filterSize = x265_min(filterSize, srcW - 2);
     filterSize = x265_max(filterSize, 1);
-    filter = new int64_t[dstW * sizeof(*filter) * filterSize];
+    if (mulOverflowSizeT((size_t)dstW, (size_t)filterSize, filterCount))
+        goto fail;
+    filter = allocArrayNoThrow<int64_t>(filterCount);
+    if (!filter)
+        goto fail;
 
     xDstInSrc = ((destPos*(int64_t)inc) >> 7) - ((sourcePos * 0x10000LL) >> 7);
     for (int i = 0; i < dstW; i++)
@@ -326,11 +356,14 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     //apply src & dst Filter to filter -> filter2
     X265_CHECK(filterSize > 0, "invalid filterSize value.\n");
     filter2Size = filterSize;
-    filter2 = new int64_t[dstW * sizeof(*filter2) * filter2Size];
+    if (mulOverflowSizeT((size_t)dstW, (size_t)filter2Size, filterCount))
+        goto fail;
+    filter2 = allocArrayNoThrow<int64_t>(filterCount);
+    if (!filter2)
+        goto fail;
 
     /* This is hard to read code, but much faster. Speed is crucial here */
-    int index = RES_FACTOR_DEF;
-    int size = dstW * filterSize;
+    size = dstW * filterSize;
 
     (size % 4 == 0) && (index = RES_FACTOR_4);
     (size % 8 == 0) && (index = RES_FACTOR_8);
@@ -387,7 +420,11 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     X265_CHECK(minFilterSize > 0, "invalid minFilterSize value.\n");
     filterSize = (minFilterSize + (filtAlign - 1)) & (~(filtAlign - 1));
     X265_CHECK(filterSize > 0, "invalid filterSize value.\n");
-    filter = new int64_t[dstW*filterSize * sizeof(*filter)];
+    if (mulOverflowSizeT((size_t)dstW, (size_t)filterSize, filterCount))
+        goto fail;
+    filter = allocArrayNoThrow<int64_t>(filterCount);
+    if (!filter)
+        goto fail;
 
     *outFilterSize = filterSize;
 
@@ -459,8 +496,11 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     }
 
     // init filter
-    m_filt = new int16_t[(dstW + 3)*(*outFilterSize)];
-    int16_t **outFilter = &m_filt;
+    if (mulOverflowSizeT((size_t)dstW + 3, (size_t)(*outFilterSize), outFilterCount))
+        goto fail;
+    m_filt = allocArrayNoThrow<int16_t>(outFilterCount);
+    if (!m_filt)
+        goto fail;
 
     // normalize & store in outFilter
     for (int i = 0; i < dstW; i++)
@@ -499,6 +539,16 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     delete[](filter);
     delete[](filter2);
     return 0;
+
+fail:
+    delete[] filter;
+    delete[] filter2;
+    delete[] m_filtPos;
+    delete[] m_filt;
+    m_filtPos = NULL;
+    m_filt = NULL;
+    x265_log(NULL, X265_LOG_ERROR, "scaler: filter allocation exceeds supported range\n");
+    return -1;
 }
 
 int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, VideoDesc *dstVideoDesc)
@@ -585,21 +635,27 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
 
     // init horizontal Luma Scaler filter
     m_ScalerFilters[0] = new ScalerHLumFilter(m_bitDepth);
-    m_ScalerFilters[0]->initCoeff(m_algorithmFlags, lumXInc, srcW, dstW, filterAlign, 1 << 14, getLocalPos(0, 0), getLocalPos(0, 0));
+    if (!m_ScalerFilters[0] || m_ScalerFilters[0]->initCoeff(m_algorithmFlags, lumXInc, srcW, dstW, filterAlign, 1 << 14, getLocalPos(0, 0), getLocalPos(0, 0)) < 0)
+        return -1;
 
     // init horizontal cr Scaler filter
     m_ScalerFilters[1] = new ScalerHCrFilter(m_bitDepth);
-    m_ScalerFilters[1]->initCoeff(m_algorithmFlags, crXInc, m_crSrcW, m_crDstW, filterAlign, 1 << 14,
-        getLocalPos(m_crSrcHSubSample, srcHCrPos), getLocalPos(m_crDstHSubSample, dstHCrPos));
+    if (!m_ScalerFilters[1] ||
+        m_ScalerFilters[1]->initCoeff(m_algorithmFlags, crXInc, m_crSrcW, m_crDstW, filterAlign, 1 << 14,
+            getLocalPos(m_crSrcHSubSample, srcHCrPos), getLocalPos(m_crDstHSubSample, dstHCrPos)) < 0)
+        return -1;
 
     // init vertical Luma scaler filter
     m_ScalerFilters[2] = new ScalerVLumFilter(m_bitDepth);
-    m_ScalerFilters[2]->initCoeff(m_algorithmFlags, lumYInc, srcH, dstH, filterAlign, 1 << 12, getLocalPos(0, 0), getLocalPos(0, 0));
+    if (!m_ScalerFilters[2] || m_ScalerFilters[2]->initCoeff(m_algorithmFlags, lumYInc, srcH, dstH, filterAlign, 1 << 12, getLocalPos(0, 0), getLocalPos(0, 0)) < 0)
+        return -1;
 
     // init vertical cr scaler filter
     m_ScalerFilters[3] = new ScalerVCrFilter(m_bitDepth);
-    m_ScalerFilters[3]->initCoeff(m_algorithmFlags, crYInc, m_crSrcH, m_crDstH, filterAlign, 1 << 12,
-        getLocalPos(m_crSrcVSubSample, srcVCrPos), getLocalPos(m_crDstVSubSample, dstVCrPos));
+    if (!m_ScalerFilters[3] ||
+        m_ScalerFilters[3]->initCoeff(m_algorithmFlags, crYInc, m_crSrcH, m_crDstH, filterAlign, 1 << 12,
+            getLocalPos(m_crSrcVSubSample, srcVCrPos), getLocalPos(m_crDstVSubSample, dstVCrPos)) < 0)
+        return -1;
 
     // init slice, must after filter initialization
     if (initScalerSlice() < 0)

@@ -187,13 +187,21 @@ bool Y4MInput::parseHeader()
     if (!ifs)
         return false;
 
-    auto appendDecimalDigit = [](auto& value, int digit) -> bool
+    auto appendBoundedDigit = [](auto& value, int digit, int maxDigit) -> bool
     {
         using ValueType = std::decay_t<decltype(value)>;
         constexpr ValueType maxValue = std::numeric_limits<ValueType>::max();
-        if (digit < 0 || digit > 9 || value > (maxValue - (ValueType)digit) / (ValueType)10)
+        if (digit < 0 || digit > maxDigit || value > (maxValue - (ValueType)digit) / (ValueType)10)
             return false;
         value = value * (ValueType)10 + (ValueType)digit;
+        return true;
+    };
+    auto appendCspChar = [](int& value, int c) -> bool
+    {
+        int digit = c - '0';
+        if (c < '0' || c > 'o' || value > (INT_MAX - digit) / 10)
+            return false;
+        value = value * 10 + digit;
         return true;
     };
 
@@ -217,7 +225,7 @@ bool Y4MInput::parseHeader()
                 {
                     if (c == ' ' || c == '\n')
                         break;
-                    else if (!appendDecimalDigit(width, c - '0'))
+                    else if (!appendBoundedDigit(width, c - '0', 9))
                         headerValid = false;
                 }
                 break;
@@ -227,7 +235,7 @@ bool Y4MInput::parseHeader()
                 {
                     if (c == ' ' || c == '\n')
                         break;
-                    else if (!appendDecimalDigit(height, c - '0'))
+                    else if (!appendBoundedDigit(height, c - '0', 9))
                         headerValid = false;
                 }
                 break;
@@ -246,8 +254,8 @@ bool Y4MInput::parseHeader()
                                 break;
                             else
                             {
-                                if (!appendDecimalDigit(rateNum, c - '0') ||
-                                    !appendDecimalDigit(rateDenom, 0))
+                                if (!appendBoundedDigit(rateNum, c - '0', 9) ||
+                                    !appendBoundedDigit(rateDenom, 0, 9))
                                     headerValid = false;
                             }
                         }
@@ -259,12 +267,12 @@ bool Y4MInput::parseHeader()
                         {
                             if (c == ' ' || c == '\n')
                                 break;
-                            else if (!appendDecimalDigit(rateDenom, c - '0'))
+                            else if (!appendBoundedDigit(rateDenom, c - '0', 9))
                                 headerValid = false;
                         }
                         break;
                     }
-                    else if (!appendDecimalDigit(rateNum, c - '0'))
+                    else if (!appendBoundedDigit(rateNum, c - '0', 9))
                         headerValid = false;
                 }
                 break;
@@ -280,12 +288,12 @@ bool Y4MInput::parseHeader()
                         {
                             if (c == ' ' || c == '\n')
                                 break;
-                            else if (!appendDecimalDigit(sarHeight, c - '0'))
+                            else if (!appendBoundedDigit(sarHeight, c - '0', 9))
                                 headerValid = false;
                         }
                         break;
                     }
-                    else if (!appendDecimalDigit(sarWidth, c - '0'))
+                    else if (!appendBoundedDigit(sarWidth, c - '0', 9))
                         headerValid = false;
                 }
                 break;
@@ -297,7 +305,7 @@ bool Y4MInput::parseHeader()
                 {
                     if (c <= 'o' && c >= '0')
                     {
-                        if (!appendDecimalDigit(csp, c - '0'))
+                        if (!appendCspChar(csp, c))
                             headerValid = false;
                     }
                     else if (c == 'p')
@@ -307,7 +315,7 @@ bool Y4MInput::parseHeader()
                         {
                             if (c <= '9' && c >= '0')
                             {
-                                if (!appendDecimalDigit(d, c - '0'))
+                                if (!appendBoundedDigit(d, c - '0', 9))
                                     headerValid = false;
                             }
                             else
