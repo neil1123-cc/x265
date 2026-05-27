@@ -68,11 +68,39 @@ void LavfInput::fill_buffer(x265_picture& pic, uint8_t** planes, int* stride) {
     pic.width = _info.width;
     pic.height = _info.height;
 
-    if (frame_size == 0 || frame_buffer == nullptr) {
-        frame_size = height * stride[0];
-        if (stride[1])
-            frame_size += height_uv * stride[1] + height_uv * stride[2];
-        frame_buffer = reinterpret_cast<uint8_t*>(x265_malloc(frame_size));
+    if (!planes[0] || stride[0] <= 0 || height <= 0)
+    {
+        b_fail = true;
+        return;
+    }
+
+    if ((stride[1] || stride[2]) && (!planes[1] || !planes[2] || stride[1] <= 0 || stride[2] <= 0 || height_uv <= 0))
+    {
+        b_fail = true;
+        return;
+    }
+
+    size_t requiredFrameSize = (size_t)height * (size_t)stride[0];
+    if (stride[1])
+        requiredFrameSize += (size_t)height_uv * (size_t)stride[1] + (size_t)height_uv * (size_t)stride[2];
+
+    if (!requiredFrameSize)
+    {
+        b_fail = true;
+        return;
+    }
+
+    if (requiredFrameSize > frame_size || frame_buffer == nullptr)
+    {
+        X265_FREE(frame_buffer);
+        frame_buffer = reinterpret_cast<uint8_t*>(x265_malloc(requiredFrameSize));
+        if (!frame_buffer)
+        {
+            b_fail = true;
+            frame_size = 0;
+            return;
+        }
+        frame_size = requiredFrameSize;
     }
     pic.framesize = frame_size;
 
@@ -270,6 +298,8 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
 
     h->next_frame++;
     fill_buffer(p_pic, h->frame->data, h->frame->linesize);
+    if (b_fail)
+        return false;
 
     return true;
 }
@@ -372,6 +402,7 @@ void LavfInput::openfile(InputFileInfo& info)
 
 void LavfInput::release()
 {
+    X265_FREE(frame_buffer);
     // Deprecated since ffmpeg ~3.1
     // avcodec_close(h->lavf->streams[h->stream_id]->codec);
     //

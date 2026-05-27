@@ -140,11 +140,39 @@ bool AVSInput::readPicture(x265_picture& pic)
     pic.width = _info.width;
     pic.height = _info.height;
 
-    if (frame_size == 0 || frame_buffer == nullptr) {
-        frame_size = frm->height * frm->pitch;
-        if (h->plane_count > 1)
-            frame_size += frm->heightUV * frm->pitchUV * 2;
-        frame_buffer = reinterpret_cast<uint8_t*>(x265_malloc(frame_size));
+    if (frm->pitch <= 0 || frm->height <= 0 || (h->plane_count > 1 && (frm->pitchUV <= 0 || frm->heightUV <= 0)))
+    {
+        general_log(NULL, "avs+", X265_LOG_ERROR, "Invalid Avisynth frame geometry at frame %d\n", h->next_frame);
+        b_fail = true;
+        h->func.avs_release_video_frame(frm);
+        return false;
+    }
+
+    size_t requiredFrameSize = (size_t)frm->height * (size_t)frm->pitch;
+    if (h->plane_count > 1)
+        requiredFrameSize += (size_t)frm->heightUV * (size_t)frm->pitchUV * 2;
+
+    if (!requiredFrameSize)
+    {
+        general_log(NULL, "avs+", X265_LOG_ERROR, "Invalid Avisynth frame size at frame %d\n", h->next_frame);
+        b_fail = true;
+        h->func.avs_release_video_frame(frm);
+        return false;
+    }
+
+    if (requiredFrameSize > frame_size || frame_buffer == nullptr)
+    {
+        X265_FREE(frame_buffer);
+        frame_buffer = reinterpret_cast<uint8_t*>(x265_malloc(requiredFrameSize));
+        if (!frame_buffer)
+        {
+            general_log(NULL, "avs+", X265_LOG_ERROR, "Avisynth input buffer allocation failed at frame %d\n", h->next_frame);
+            b_fail = true;
+            frame_size = 0;
+            h->func.avs_release_video_frame(frm);
+            return false;
+        }
+        frame_size = requiredFrameSize;
     }
     pic.framesize = frame_size;
 
@@ -175,6 +203,7 @@ bool AVSInput::readPicture(x265_picture& pic)
 
 void AVSInput::release()
 {
+    X265_FREE(frame_buffer);
     if (h->clip)
         h->func.avs_release_clip(h->clip);
     if (h->env)

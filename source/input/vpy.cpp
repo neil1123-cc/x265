@@ -296,6 +296,7 @@ void VPYInput::release()
         }
     }
 
+    X265_FREE(frame_buffer);
     delete this;
 }
 
@@ -326,10 +327,42 @@ bool VPYInput::readPicture(x265_picture& pic)
     pic.colorSpace = _info.csp;
     pic.bitDepth = _info.depth;
 
-    if (frame_size == 0 || frame_buffer == nullptr) {
-        for (int i = 0; i < x265_cli_csps[_info.csp].planes; i++)
-            frame_size += vsapi->getFrameHeight(currentFrame, i) * vsapi->getStride(currentFrame, i);
-        frame_buffer = reinterpret_cast<uint8_t*>(x265_malloc(frame_size));
+    size_t requiredFrameSize = 0;
+    for (int i = 0; i < x265_cli_csps[_info.csp].planes; i++)
+    {
+        int frameHeight = vsapi->getFrameHeight(currentFrame, i);
+        int frameStride = vsapi->getStride(currentFrame, i);
+        if (frameHeight <= 0 || frameStride <= 0)
+        {
+            general_log(nullptr, "vpy", X265_LOG_ERROR, "Invalid VapourSynth frame geometry at frame %d plane %d\n", nextFrame, i);
+            vpyFailed = true;
+            vsapi->freeFrame(currentFrame);
+            return false;
+        }
+        requiredFrameSize += (size_t)frameHeight * (size_t)frameStride;
+    }
+
+    if (!requiredFrameSize)
+    {
+        general_log(nullptr, "vpy", X265_LOG_ERROR, "Invalid VapourSynth frame size at frame %d\n", nextFrame);
+        vpyFailed = true;
+        vsapi->freeFrame(currentFrame);
+        return false;
+    }
+
+    if (requiredFrameSize > frame_size || frame_buffer == nullptr)
+    {
+        X265_FREE(frame_buffer);
+        frame_buffer = reinterpret_cast<uint8_t*>(x265_malloc(requiredFrameSize));
+        if (!frame_buffer)
+        {
+            general_log(nullptr, "vpy", X265_LOG_ERROR, "VapourSynth input buffer allocation failed at frame %d\n", nextFrame);
+            vpyFailed = true;
+            frame_size = 0;
+            vsapi->freeFrame(currentFrame);
+            return false;
+        }
+        frame_size = requiredFrameSize;
     }
 
     pic.framesize = frame_size;
