@@ -2087,7 +2087,12 @@ int read_image_word(FILE *file, float *buf, int width, int height, int stride)
         goto fail_or_end;
     }
 
-    if (!(tmp_buf = (unsigned short*)malloc(width * 2))) // '*2' to accommodate words
+    if ((size_t)width > SIZE_MAX / sizeof(unsigned short))
+    {
+        goto fail_or_end;
+    }
+
+    if (!(tmp_buf = (unsigned short*)malloc((size_t)width * sizeof(unsigned short))))
     {
         goto fail_or_end;
     }
@@ -2241,6 +2246,12 @@ int compute_vmaf(double* vmaf_score, char* fmt, int width, int height, int bitde
 
     size_t totalValues = (size_t)height * rowValues;
     if (rowValues && totalValues / rowValues != (size_t)height)
+    {
+        printf("problem allocating picture memory\n");
+        return -1;
+    }
+
+    if (rowBytes > INT_MAX)
     {
         printf("problem allocating picture memory\n");
         return -1;
