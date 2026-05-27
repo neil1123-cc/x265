@@ -25,6 +25,8 @@
 #include "y4m.h"
 #include "common.h"
 
+#include <climits>
+#include <limits>
 #include <cstdio>
 #include <cstring>
 
@@ -72,24 +74,40 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
     {
         if (format == 1) width /= 2;
         if (format == 2) height /= 2;
-        int pixelbytes = depth > 8 ? 2 : 1;
+        bool frameSizeValid = true;
+        uint32_t pixelbytes = depth > 8 ? 2 : 1;
+        size_t packedWidth = (size_t)width * (size_t)(format == 1 ? 2 : 1);
+        size_t packedHeight = (size_t)height * (size_t)(format == 2 ? 2 : 1);
         for (int i = 0; i < x265_cli_csps[colorSpace].planes + alphaAvailable; i++)
         {
-            int stride = ((width * (format == 1 ? 2 : 1)) >> x265_cli_csps[colorSpace].width[i]) * pixelbytes;
-            framesize += (stride * ((height * (format == 2 ? 2 : 1)) >> x265_cli_csps[colorSpace].height[i]));
-        }
-
-        threadActive.store(true);
-        for (int q = 0; q < QUEUE_SIZE; q++)
-        {
-            buf[q] = X265_MALLOC(char, framesize);
-            if (!buf[q])
+            size_t w = packedWidth >> x265_cli_csps[colorSpace].width[i];
+            size_t h = packedHeight >> x265_cli_csps[colorSpace].height[i];
+            size_t planeBytes = w * h * pixelbytes;
+            if (!w || !h || planeBytes / pixelbytes / h != w || framesize > SIZE_MAX - planeBytes)
             {
-                x265_log(nullptr, X265_LOG_ERROR, "y4m: buffer allocation failure, aborting");
-                threadActive.store(false);
+                x265_log(nullptr, X265_LOG_ERROR, "y4m: frame size exceeds supported range\n");
+                frameSizeValid = false;
                 break;
             }
+            framesize += planeBytes;
         }
+
+        if (frameSizeValid && framesize && framesize <= SIZE_MAX - sizeof(header) - 1)
+        {
+            threadActive.store(true);
+            for (int q = 0; q < QUEUE_SIZE; q++)
+            {
+                buf[q] = X265_MALLOC(char, framesize);
+                if (!buf[q])
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "y4m: buffer allocation failure, aborting\n");
+                    threadActive.store(false);
+                    break;
+                }
+            }
+        }
+        else if (frameSizeValid && framesize)
+            x265_log(nullptr, X265_LOG_ERROR, "y4m: frame size exceeds supported range\n");
     }
     if (!threadActive.load())
     {
@@ -133,7 +151,15 @@ Y4MInput::Y4MInput(InputFileInfo& info, bool alpha, int format)
 #else
         if (ifs != stdin)
 #endif
-            fseeko(ifs, (int64_t)estFrameSize * info.skipFrames, SEEK_CUR);
+        {
+            if ((uint64_t)estFrameSize > (uint64_t)INT64_MAX / (uint64_t)info.skipFrames)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "y4m: skip offset exceeds supported range\n");
+                threadActive.store(false);
+            }
+            else
+                fseeko(ifs, (int64_t)estFrameSize * info.skipFrames, SEEK_CUR);
+        }
         else
             for (int i = 0; i < info.skipFrames; i++)
                 if (std::fread(buf[0], estFrameSize - framesize, 1, ifs) + std::fread(buf[0], framesize, 1, ifs) != 2)
@@ -161,9 +187,20 @@ bool Y4MInput::parseHeader()
     if (!ifs)
         return false;
 
+    auto appendDecimalDigit = [](auto& value, int digit) -> bool
+    {
+        using ValueType = std::decay_t<decltype(value)>;
+        constexpr ValueType maxValue = std::numeric_limits<ValueType>::max();
+        if (digit < 0 || digit > 9 || value > (maxValue - (ValueType)digit) / (ValueType)10)
+            return false;
+        value = value * (ValueType)10 + (ValueType)digit;
+        return true;
+    };
+
     int csp = 0;
     int d = 0;
     int c;
+    bool headerValid = true;
     while ((c = std::fgetc(ifs)) != EOF)
     {
         // Skip Y4MPEG string
@@ -180,8 +217,8 @@ bool Y4MInput::parseHeader()
                 {
                     if (c == ' ' || c == '\n')
                         break;
-                    else
-                        width = width * 10 + (c - '0');
+                    else if (!appendDecimalDigit(width, c - '0'))
+                        headerValid = false;
                 }
                 break;
             case 'H':
@@ -190,8 +227,8 @@ bool Y4MInput::parseHeader()
                 {
                     if (c == ' ' || c == '\n')
                         break;
-                    else
-                        height = height * 10 + (c - '0');
+                    else if (!appendDecimalDigit(height, c - '0'))
+                        headerValid = false;
                 }
                 break;
 
@@ -209,8 +246,9 @@ bool Y4MInput::parseHeader()
                                 break;
                             else
                             {
-                                rateNum = rateNum * 10 + (c - '0');
-                                rateDenom = rateDenom * 10;
+                                if (!appendDecimalDigit(rateNum, c - '0') ||
+                                    !appendDecimalDigit(rateDenom, 0))
+                                    headerValid = false;
                             }
                         }
                         break;
@@ -221,13 +259,13 @@ bool Y4MInput::parseHeader()
                         {
                             if (c == ' ' || c == '\n')
                                 break;
-                            else
-                                rateDenom = rateDenom * 10 + (c - '0');
+                            else if (!appendDecimalDigit(rateDenom, c - '0'))
+                                headerValid = false;
                         }
                         break;
                     }
-                    else
-                        rateNum = rateNum * 10 + (c - '0');
+                    else if (!appendDecimalDigit(rateNum, c - '0'))
+                        headerValid = false;
                 }
                 break;
 
@@ -242,13 +280,13 @@ bool Y4MInput::parseHeader()
                         {
                             if (c == ' ' || c == '\n')
                                 break;
-                            else
-                                sarHeight = sarHeight * 10 + (c - '0');
+                            else if (!appendDecimalDigit(sarHeight, c - '0'))
+                                headerValid = false;
                         }
                         break;
                     }
-                    else
-                        sarWidth = sarWidth * 10 + (c - '0');
+                    else if (!appendDecimalDigit(sarWidth, c - '0'))
+                        headerValid = false;
                 }
                 break;
 
@@ -258,14 +296,20 @@ bool Y4MInput::parseHeader()
                 while ((c = std::fgetc(ifs)) != EOF)
                 {
                     if (c <= 'o' && c >= '0')
-                        csp = csp * 10 + (c - '0');
+                    {
+                        if (!appendDecimalDigit(csp, c - '0'))
+                            headerValid = false;
+                    }
                     else if (c == 'p')
                     {
                         // example: C420p16
                         while ((c = std::fgetc(ifs)) != EOF)
                         {
                             if (c <= '9' && c >= '0')
-                                d = d * 10 + (c - '0');
+                            {
+                                if (!appendDecimalDigit(d, c - '0'))
+                                    headerValid = false;
+                            }
                             else
                                 break;
                         }
@@ -309,6 +353,12 @@ bool Y4MInput::parseHeader()
 
         if (c == '\n')
             break;
+    }
+
+    if (!headerValid)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "y4m: header value exceeds supported range\n");
+        return false;
     }
 
     if (width < MIN_FRAME_WIDTH || width > MAX_FRAME_WIDTH ||
