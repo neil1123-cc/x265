@@ -57,9 +57,50 @@ const x265_api* x265_api_query(int bitDepth, int apiVersion, int* err);
 }
 #endif
 
-#ifdef SVT_HEVC
 namespace X265_NS {
+#ifdef SVT_HEVC
 static void svt_release_app_context(Encoder* encoder);
+static bool svt_copy_param_storage(x265_param* dst, const x265_param* src)
+{
+    if (!dst || !src)
+        return false;
+
+    if (!src->svtHevcParam)
+    {
+        x265_free(dst->svtHevcParam);
+        dst->svtHevcParam = NULL;
+        return true;
+    }
+
+    if (!dst->svtHevcParam)
+    {
+        dst->svtHevcParam = x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+        if (!dst->svtHevcParam)
+            return false;
+    }
+
+    memcpy(dst->svtHevcParam, src->svtHevcParam, sizeof(EB_H265_ENC_CONFIGURATION));
+    return true;
+}
+
+static void svt_cleanup_local_param(x265_param* param)
+{
+    if (!param)
+        return;
+
+    x265_zone_free(param);
+    x265_free(param->svtHevcParam);
+    param->svtHevcParam = NULL;
+}
+#else
+static void svt_cleanup_local_param(x265_param* param)
+{
+    if (param)
+        x265_zone_free(param);
+}
+#endif
+
+#ifdef SVT_HEVC
 static bool svt_copy_output_to_nal(Encoder* encoder, const EB_BUFFERHEADERTYPE* outputPtr)
 {
     if (!outputPtr || !outputPtr->pBuffer)
@@ -87,8 +128,8 @@ static bool svt_copy_output_to_nal(Encoder* encoder, const EB_BUFFERHEADERTYPE* 
     nalList.m_nal[0].sizeBytes = outputPtr->nFilledLen;
     return true;
 }
-}
 #endif
+}
 
 #if EXPORT_C_API
 /* these functions are exported as C functions (default) */
@@ -200,6 +241,12 @@ x265_encoder *x265_encoder_open(x265_param *p)
     {
         EB_ERRORTYPE return_error = EB_ErrorNone;
 
+        if (!param->svtHevcParam)
+        {
+            x265_log(param, X265_LOG_ERROR, "SVT-HEVC Encoder: Missing parameter storage\n");
+            goto fail;
+        }
+
         if (!svt_initialise_app_context(encoder))
         {
             x265_log(param, X265_LOG_ERROR, "SVT-HEVC Encoder: Unable to allocate app context\n");
@@ -277,6 +324,10 @@ x265_encoder *x265_encoder_open(x265_param *p)
         for (int i = 0; i < param->rc.zonefileCount; i++)
         {
             memcpy(param->rc.zones[i].zoneParam, param, sizeof(x265_param));
+#ifdef SVT_HEVC
+            if (!svt_copy_param_storage(param->rc.zones[i].zoneParam, param))
+                goto fail;
+#endif
             param->rc.zones[i].relativeComplexity = X265_MALLOC(double, param->reconfigWindowSize);
             if (!param->rc.zones[i].relativeComplexity)
                 goto fail;
@@ -416,7 +467,7 @@ int x265_encoder_reconfig(x265_encoder* enc, x265_param* param_in)
     {
         /* reconfigure failed, recover saved param set */
         x265_copy_params(encoder->m_latestParam, &save);
-        x265_zone_free(&save);
+        svt_cleanup_local_param(&save);
         ret = -1;
     }
     else
@@ -429,7 +480,7 @@ int x265_encoder_reconfig(x265_encoder* enc, x265_param* param_in)
                 if (encoder->m_scalingList.parseScalingList(encoder->m_latestParam->scalingLists))
                 {
                     x265_copy_params(encoder->m_latestParam, &save);
-                    x265_zone_free(&save);
+                    svt_cleanup_local_param(&save);
                     return -1;
                 }
                 encoder->m_scalingList.setupQuantMatrices(encoder->m_param->internalCsp);
@@ -438,7 +489,7 @@ int x265_encoder_reconfig(x265_encoder* enc, x265_param* param_in)
             {
                 x265_log(encoder->m_param, X265_LOG_ERROR, "Repeat headers is turned OFF, cannot reconfigure scalinglists\n");
                 x265_copy_params(encoder->m_latestParam, &save);
-                x265_zone_free(&save);
+                svt_cleanup_local_param(&save);
                 return -1;
             }
         }
@@ -465,7 +516,7 @@ int x265_encoder_reconfig(x265_encoder* enc, x265_param* param_in)
     /* Zones support modifying num of Refs. Requires determining level at each zone start*/
     if (encoder->m_param->rc.zonefileCount)
         determineLevel(*encoder->m_latestParam, encoder->m_vps);
-    x265_zone_free(&save);
+    svt_cleanup_local_param(&save);
     return ret;
 }
 
@@ -1227,11 +1278,11 @@ x265_zone *x265_zone_alloc(int zoneCount, int isZoneFile)
     {
         for (int i = 0; i < zoneCount; i++)
         {
-            zone[i].zoneParam = (x265_param*)x265_malloc(sizeof(x265_param));
+            zone[i].zoneParam = x265_param_alloc();
             if (!zone[i].zoneParam)
             {
                 for (int j = 0; j < i; j++)
-                    x265_free(zone[j].zoneParam);
+                    x265_param_free(zone[j].zoneParam);
                 x265_free(zone);
                 return nullptr;
             }
@@ -1250,7 +1301,7 @@ void x265_zone_free(x265_param *param)
         for (int i = 0; i < param->rc.zonefileCount; i++)
         {
             x265_free(param->rc.zones[i].relativeComplexity);
-            x265_free(param->rc.zones[i].zoneParam);
+            x265_param_free(param->rc.zones[i].zoneParam);
         }
         x265_free(param->rc.zones);
     }

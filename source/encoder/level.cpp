@@ -527,6 +527,11 @@ int x265_param_apply_profile(x265_param *param, const char *profile)
 #ifdef SVT_HEVC
     if (param->bEnableSvtHevc)
     {
+        if (!param->svtHevcParam)
+        {
+            x265_log(param, X265_LOG_ERROR, "SVT-HEVC encoder: Missing parameter storage\n");
+            return -1;
+        }
         EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
         if (!std::strcmp(profile, "main"))    svtParam->profile = 1;
         else if (!std::strcmp(profile, "main10"))    svtParam->profile = 2;

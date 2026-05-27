@@ -91,6 +91,24 @@ namespace X265_NS {
 
 #endif
 
+#ifdef SVT_HEVC
+static EB_H265_ENC_CONFIGURATION* ensureSvtHevcParam(x265_param* param)
+{
+    if (!param)
+        return NULL;
+
+    if (!param->svtHevcParam)
+    {
+        param->svtHevcParam = x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+        if (!param->svtHevcParam)
+            return NULL;
+        std::memset(param->svtHevcParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+    }
+
+    return (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+}
+#endif
+
 x265_param *x265_param_alloc()
 {
     x265_param* param = (x265_param*)x265_malloc(sizeof(x265_param));
@@ -455,7 +473,8 @@ void x265_param_default(x265_param* param)
 
 #ifdef SVT_HEVC
     param->svtHevcParam = svtParam;
-    svt_param_default(param);
+    if (ensureSvtHevcParam(param))
+        svt_param_default(param);
 #endif
     /* Film grain characteristics model filename */
     param->filmGrain = NULL;
@@ -3295,7 +3314,15 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     if (strlen(src->videoSignalTypePreset)) snprintf(dst->videoSignalTypePreset, X265_MAX_STRING_SIZE, "%s", src->videoSignalTypePreset);
     else dst->videoSignalTypePreset[0] = 0;
 #ifdef SVT_HEVC
-    memcpy(dst->svtHevcParam, src->svtHevcParam, sizeof(EB_H265_ENC_CONFIGURATION));
+    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst);
+    EB_H265_ENC_CONFIGURATION* srcSvtParam = src ? (EB_H265_ENC_CONFIGURATION*)src->svtHevcParam : NULL;
+    if (dstSvtParam)
+    {
+        if (srcSvtParam)
+            memcpy(dstSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
+        else
+            memset(dstSvtParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+    }
 #endif
     /* Film grain */
     dst->filmGrain = src->filmGrain;

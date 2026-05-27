@@ -698,6 +698,24 @@ namespace X265_NS {
         }
 
         std::memcpy(globalParam->rc.zones[zonefileCount].zoneParam, globalParam, sizeof(x265_param));
+#ifdef SVT_HEVC
+        if (globalParam->svtHevcParam)
+        {
+            if (!globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam)
+            {
+                globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam =
+                    x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+                if (!globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam)
+                {
+                    x265_log(NULL, X265_LOG_ERROR, "param alloc failed\n");
+                    return true;
+                }
+            }
+
+            std::memcpy(globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam,
+                        globalParam->svtHevcParam, sizeof(EB_H265_ENC_CONFIGURATION));
+        }
+#endif
 
         if (zonefileCount == 0)
             globalParam->rc.zones[zonefileCount].keyframeMax = globalParam->keyframeMax;
