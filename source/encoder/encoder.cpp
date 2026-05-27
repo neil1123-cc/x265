@@ -7047,26 +7047,31 @@ void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
         int poc = std::atoi(pocToken);
         int nalType = std::atoi(nalTypeToken);
         int payloadType = std::atoi(payloadTypeToken);
-        int base64EncodeLength = (int)std::strlen(base64Encode);
-        if (base64EncodeLength <= 0 || (base64EncodeLength % 4))
+        size_t base64EncodeLength = std::strlen(base64Encode);
+        if (!base64EncodeLength || (base64EncodeLength % 4) || base64EncodeLength > (size_t)INT_MAX)
         {
             x265_log(m_param, X265_LOG_WARNING, "Skipping malformed base64 SEI payload for frame %d\n", poc);
             continue;
         }
         char* decodedString;
-        decodedString = (char*)std::malloc(sizeof(char) * (base64EncodeLength + 1));
+        if (base64EncodeLength == SIZE_MAX)
+        {
+            x265_log(m_param, X265_LOG_WARNING, "Skipping oversized base64 SEI payload for frame %d\n", poc);
+            continue;
+        }
+        decodedString = (char*)std::malloc(base64EncodeLength + 1);
         if (!decodedString)
         {
             x265_log(m_param, X265_LOG_ERROR, "Unable to allocate memory for SEI decode buffer\n");
             break;
         }
-        char *base64Decode = SEI::base64Decode(base64Encode, base64EncodeLength, decodedString);
-        int decodedSize = (base64EncodeLength / 4) * 3;
+        char *base64Decode = SEI::base64Decode(base64Encode, (int)base64EncodeLength, decodedString);
+        size_t decodedSize = (base64EncodeLength / 4) * 3;
         if (base64EncodeLength >= 1 && base64Encode[base64EncodeLength - 1] == '=')
             --decodedSize;
         if (base64EncodeLength >= 2 && base64Encode[base64EncodeLength - 2] == '=')
             --decodedSize;
-        if (decodedSize <= 0)
+        if (!decodedSize || decodedSize > (size_t)INT_MAX)
         {
             x265_log(m_param, X265_LOG_WARNING, "Skipping empty SEI payload for frame %d\n", poc);
             std::free(decodedString);
@@ -7077,8 +7082,8 @@ void Encoder::readUserSeiFile(x265_sei_payload& seiMsg, int curPoc)
             int currentPOC = curPoc;
             if (currentPOC == poc)
             {
-                seiMsg.payloadSize = decodedSize;
-                seiMsg.payload = (uint8_t*)x265_malloc(sizeof(uint8_t) * seiMsg.payloadSize);
+                seiMsg.payloadSize = (int)decodedSize;
+                seiMsg.payload = (uint8_t*)x265_malloc(decodedSize);
                 if (!seiMsg.payload)
                 {
                     x265_log(m_param, X265_LOG_ERROR, "Unable to allocate memory for SEI payload\n");
