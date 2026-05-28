@@ -4445,7 +4445,9 @@ void Encoder::initPPS(PPS *pps)
 
 void Encoder::configureZone(x265_param *p, x265_param *zone)
 {
+#ifdef SVT_HEVC
     void* zoneSvtHevcParam = zone->svtHevcParam;
+#endif
     if (m_param->bResetZoneConfig)
     {
         p->maxNumReferences = zone->maxNumReferences;
@@ -4498,16 +4500,32 @@ void Encoder::configureZone(x265_param *p, x265_param *zone)
         p->radl = zone->radl;
     }
     std::memcpy(zone, p, sizeof(x265_param));
-    zone->svtHevcParam = zoneSvtHevcParam;
+    zone->logfn = NULL;
+    zone->pgfn = NULL;
+    zone->rc.zones = NULL;
+    zone->rc.zoneCount = 0;
+    zone->rc.zonefileCount = 0;
 #ifdef SVT_HEVC
-    if (zoneSvtHevcParam)
+    zone->svtHevcParam = zoneSvtHevcParam;
+    if (p->svtHevcParam)
     {
-        EB_H265_ENC_CONFIGURATION* zoneSvtParam = (EB_H265_ENC_CONFIGURATION*)zoneSvtHevcParam;
-        EB_H265_ENC_CONFIGURATION* srcSvtParam = (EB_H265_ENC_CONFIGURATION*)p->svtHevcParam;
-        if (srcSvtParam)
-            std::memcpy(zoneSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
-        else
-            std::memset(zoneSvtParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+        if (!zoneSvtHevcParam)
+        {
+            zoneSvtHevcParam = x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+            zone->svtHevcParam = zoneSvtHevcParam;
+            if (!zoneSvtHevcParam)
+            {
+                x265_log(p, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+                m_aborted = true;
+                return;
+            }
+        }
+        std::memcpy(zoneSvtHevcParam, p->svtHevcParam, sizeof(EB_H265_ENC_CONFIGURATION));
+    }
+    else
+    {
+        x265_free(zoneSvtHevcParam);
+        zone->svtHevcParam = NULL;
     }
 #endif
 }

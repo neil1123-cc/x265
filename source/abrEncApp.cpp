@@ -31,6 +31,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 #include <queue>
 
@@ -1090,7 +1091,7 @@ ret:
 
         if (src->m_height != dst->m_height || src->m_width != dst->m_width)
         {
-            m_filterManager = new ScalerFilterManager;
+            m_filterManager = new (std::nothrow) ScalerFilterManager;
             if (!m_filterManager || m_filterManager->init(4, m_srcFormat, m_dstFormat) < 0)
             {
                 x265_log(m_parentEnc ? m_parentEnc->m_param : nullptr, X265_LOG_ERROR, "Unable to initialize ABR ladder scaler\n");

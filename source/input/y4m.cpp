@@ -199,7 +199,7 @@ bool Y4MInput::parseHeader()
     auto appendCspChar = [](int& value, int c) -> bool
     {
         int digit = c - '0';
-        if (c < '0' || c > 'o' || value > (INT_MAX - digit) / 10)
+        if (!((c >= '0' && c <= '9') || c == 'm' || c == 'o' || c == 'n') || value > (INT_MAX - digit) / 10)
             return false;
         value = value * 10 + digit;
         return true;
@@ -303,7 +303,7 @@ bool Y4MInput::parseHeader()
                 d = 0;
                 while ((c = std::fgetc(ifs)) != EOF)
                 {
-                    if (c <= 'o' && c >= '0')
+                    if ((c >= '0' && c <= '9') || c == 'm' || c == 'o' || c == 'n')
                     {
                         if (!appendCspChar(csp, c))
                             headerValid = false;

@@ -83,6 +83,22 @@ static bool svt_copy_param_storage(x265_param* dst, const x265_param* src)
     return true;
 }
 
+static bool svt_ensure_param_defaults(x265_param* param)
+{
+    if (!param)
+        return false;
+
+    if (!param->svtHevcParam)
+    {
+        param->svtHevcParam = x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+        if (!param->svtHevcParam)
+            return false;
+        memset(param->svtHevcParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+        svt_param_default(param);
+    }
+    return true;
+}
+
 static void svt_cleanup_local_param(x265_param* param)
 {
     if (!param)
@@ -173,16 +189,16 @@ x265_encoder *x265_encoder_open(x265_param *p)
     x265_param* param = encoder->m_paramBase[0];
     x265_param* latestParam = encoder->m_paramBase[1];
     x265_param* zoneParam = encoder->m_paramBase[2];
-
-    if(param) PARAM_NS::x265_param_default(param);
-    if(latestParam) PARAM_NS::x265_param_default(latestParam);
-    if(zoneParam) PARAM_NS::x265_param_default(zoneParam);
-
     int zoneAllocCount = 0;
     bool zoneAllocIsZoneFile = false;
 
     if (!param || !latestParam || !zoneParam)
         goto fail;
+
+    PARAM_NS::x265_param_default(param);
+    PARAM_NS::x265_param_default(latestParam);
+    PARAM_NS::x265_param_default(zoneParam);
+
     if (p->rc.zonefileCount)
     {
         if (p->bResetZoneConfig)
@@ -241,7 +257,7 @@ x265_encoder *x265_encoder_open(x265_param *p)
     {
         EB_ERRORTYPE return_error = EB_ErrorNone;
 
-        if (!param->svtHevcParam)
+        if (!svt_ensure_param_defaults(param))
         {
             x265_log(param, X265_LOG_ERROR, "SVT-HEVC Encoder: Missing parameter storage\n");
             goto fail;
@@ -327,6 +343,8 @@ x265_encoder *x265_encoder_open(x265_param *p)
             void* zoneSvtHevcParam = param->rc.zones[i].zoneParam->svtHevcParam;
 #endif
             memcpy(param->rc.zones[i].zoneParam, param, sizeof(x265_param));
+            param->rc.zones[i].zoneParam->logfn = NULL;
+            param->rc.zones[i].zoneParam->pgfn = NULL;
             param->rc.zones[i].zoneParam->rc.zones = NULL;
             param->rc.zones[i].zoneParam->rc.zoneCount = 0;
             param->rc.zones[i].zoneParam->rc.zonefileCount = 0;

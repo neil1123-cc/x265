@@ -701,6 +701,8 @@ namespace X265_NS {
         void* zoneSvtHevcParam = globalParam->rc.zones[zonefileCount].zoneParam->svtHevcParam;
 #endif
         std::memcpy(globalParam->rc.zones[zonefileCount].zoneParam, globalParam, sizeof(x265_param));
+        globalParam->rc.zones[zonefileCount].zoneParam->logfn = NULL;
+        globalParam->rc.zones[zonefileCount].zoneParam->pgfn = NULL;
         globalParam->rc.zones[zonefileCount].zoneParam->rc.zones = NULL;
         globalParam->rc.zones[zonefileCount].zoneParam->rc.zoneCount = 0;
         globalParam->rc.zones[zonefileCount].zoneParam->rc.zonefileCount = 0;
@@ -870,7 +872,13 @@ namespace X265_NS {
         }
 
         //Set enable SVT-HEVC encoder first if found in the command line
-        if (svtEnabled) api->param_parse(param, "svt", NULL);
+        if (svtEnabled)
+        {
+            if (api->param_parse(param, "svt", NULL))
+                return true;
+            if (preset && api->param_parse(param, "preset", preset))
+                return true;
+        }
 
         for (optind = 0;;)
         {

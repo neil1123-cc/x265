@@ -103,6 +103,7 @@ static EB_H265_ENC_CONFIGURATION* ensureSvtHevcParam(x265_param* param)
         if (!param->svtHevcParam)
             return NULL;
         std::memset(param->svtHevcParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+        svt_param_default(param);
     }
 
     return (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
@@ -110,16 +111,19 @@ static EB_H265_ENC_CONFIGURATION* ensureSvtHevcParam(x265_param* param)
 
 static bool copySvtHevcParamStorage(x265_param* dst, const x265_param* src)
 {
-    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst);
     EB_H265_ENC_CONFIGURATION* srcSvtParam = src ? (EB_H265_ENC_CONFIGURATION*)src->svtHevcParam : NULL;
+    if (!srcSvtParam)
+    {
+        x265_free(dst->svtHevcParam);
+        dst->svtHevcParam = NULL;
+        return true;
+    }
+
+    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst);
     if (!dstSvtParam)
         return false;
 
-    if (srcSvtParam)
-        memcpy(dstSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
-    else
-        memset(dstSvtParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
-
+    memcpy(dstSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
     return true;
 }
 
@@ -134,18 +138,18 @@ static void finalizeZoneParamCopy(x265_param* zoneParam, const x265_param* src)
     zoneParam->rc.zoneCount = 0;
     zoneParam->rc.zonefileCount = 0;
 
-    if (src)
-        copySvtHevcParamStorage(zoneParam, src);
+    if (src && !copySvtHevcParamStorage(zoneParam, src))
+        x265_log(NULL, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
 }
 #endif
 
 x265_param *x265_param_alloc()
 {
     x265_param* param = (x265_param*)x265_malloc(sizeof(x265_param));
+    if (!param)
+        return NULL;
+
     std::memset(param, 0, sizeof(x265_param));
-#ifdef SVT_HEVC
-    param->svtHevcParam = (EB_H265_ENC_CONFIGURATION*)x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
-#endif
     return param;
 }
 
@@ -201,7 +205,7 @@ static const SCCProfileName validSCCProfileNames[1][4/* bit depth constraint 8=0
 void x265_param_default(x265_param* param)
 {
 #ifdef SVT_HEVC
-    EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    void* svtParam = param->svtHevcParam;
 #endif
 
     std::memset(param, 0, sizeof(x265_param));
@@ -484,7 +488,13 @@ void x265_param_default(x265_param* param)
 
     /* SVT Hevc Encoder specific params */
     param->bEnableSvtHevc = 0;
+#ifdef SVT_HEVC
+    param->svtHevcParam = svtParam;
+    if (svtParam)
+        svt_param_default(param);
+#else
     param->svtHevcParam = NULL;
+#endif
 
     /* MCSTF */
     param->bEnableTemporalFilter = 0;
@@ -501,11 +511,6 @@ void x265_param_default(x265_param* param)
     param->bEnableAlpha = 0;
     param->numScalableLayers = 1;
 
-#ifdef SVT_HEVC
-    param->svtHevcParam = svtParam;
-    if (ensureSvtHevcParam(param))
-        svt_param_default(param);
-#endif
     /* Film grain characteristics model filename */
     param->filmGrain = NULL;
     param->aomFilmGrain = NULL;
@@ -843,7 +848,7 @@ int x265_param_default_preset(x265_param* param, const char* preset, const char*
     }
 
 #ifdef SVT_HEVC
-    if (svt_set_preset(param, preset))
+    if (preset && svt_set_preset(param, preset))
         return -1;
 #endif
 
@@ -1613,6 +1618,20 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
             {
                 x265_log(NULL, X265_LOG_ERROR, "Enable SVT should be the first call to x265_parse_parse \n");
                 bError = true;
+            }
+            if (p->bEnableSvtHevc)
+            {
+                EB_H265_ENC_CONFIGURATION* svtParam = ensureSvtHevcParam(p);
+                if (!svtParam)
+                {
+                    x265_log(p, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+                    bError = true;
+                }
+            }
+            else
+            {
+                x265_free(p->svtHevcParam);
+                p->svtHevcParam = NULL;
             }
         }
         OPT("svt-hme") x265_log(p, X265_LOG_WARNING, "Option %s is SVT-HEVC Encoder specific; Disabling it here \n", name);
@@ -2986,6 +3005,14 @@ bool parseMaskingStrength(x265_param* p, const char* value)
 
 void x265_copy_params(x265_param* dst, x265_param* src)
 {
+#ifdef SVT_HEVC
+    if (src->svtHevcParam && !ensureSvtHevcParam(dst))
+    {
+        x265_log(NULL, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+        return;
+    }
+#endif
+
     dst->mcstfFrameRange = src->mcstfFrameRange;
     dst->cpuid = src->cpuid;
     dst->frameNumThreads = src->frameNumThreads;
@@ -3354,7 +3381,8 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     if (strlen(src->videoSignalTypePreset)) snprintf(dst->videoSignalTypePreset, X265_MAX_STRING_SIZE, "%s", src->videoSignalTypePreset);
     else dst->videoSignalTypePreset[0] = 0;
 #ifdef SVT_HEVC
-    copySvtHevcParamStorage(dst, src);
+    if (!copySvtHevcParamStorage(dst, src))
+        x265_log(NULL, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
 #endif
     /* Film grain */
     dst->filmGrain = src->filmGrain;
@@ -3488,11 +3516,16 @@ int svt_set_preset(x265_param* param, const char* preset)
         x265_log(param, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
         return -1;
     }
-    
+
     if (preset)
     {
-        if (!strcmp(preset, "ultrafast")) svtHevcParam->encMode = 11;
-        else if (!strcmp(preset, "superfast")) svtHevcParam->encMode = 10;
+        char *end;
+        int i = strtol(preset, &end, 10);
+        if (*end == 0 && i >= 0 && i < (int)(sizeof(x265_preset_names) / sizeof(*x265_preset_names) - 1))
+            preset = x265_preset_names[i];
+
+        if (!strcmp(preset, "ultrafast")) svtHevcParam->encMode = 9;
+        else if (!strcmp(preset, "superfast")) svtHevcParam->encMode = 9;
         else if (!strcmp(preset, "veryfast")) svtHevcParam->encMode = 9;
         else if (!strcmp(preset, "faster")) svtHevcParam->encMode = 8;
         else if (!strcmp(preset, "fast")) svtHevcParam->encMode = 7;
@@ -3672,6 +3705,7 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
     OPT("svt-search-height") svtHevcParam->searchAreaHeight = atoi(value);
     OPT("svt-compressed-ten-bit-format") svtHevcParam->compressedTenBitFormat = x265_atobool(value, bError);
     OPT("svt-speed-control") svtHevcParam->speedControlFlag = x265_atobool(value, bError);
+    OPT("preset") bError |= svt_set_preset(param, value) < 0;
     OPT("svt-preset-tuner")
     {
         if (svtHevcParam->encMode == 2)

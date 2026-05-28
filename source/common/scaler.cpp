@@ -634,24 +634,24 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
     const int filterAlign = 1;
 
     // init horizontal Luma Scaler filter
-    m_ScalerFilters[0] = new ScalerHLumFilter(m_bitDepth);
+    m_ScalerFilters[0] = new (std::nothrow) ScalerHLumFilter(m_bitDepth);
     if (!m_ScalerFilters[0] || m_ScalerFilters[0]->initCoeff(m_algorithmFlags, lumXInc, srcW, dstW, filterAlign, 1 << 14, getLocalPos(0, 0), getLocalPos(0, 0)) < 0)
         return -1;
 
     // init horizontal cr Scaler filter
-    m_ScalerFilters[1] = new ScalerHCrFilter(m_bitDepth);
+    m_ScalerFilters[1] = new (std::nothrow) ScalerHCrFilter(m_bitDepth);
     if (!m_ScalerFilters[1] ||
         m_ScalerFilters[1]->initCoeff(m_algorithmFlags, crXInc, m_crSrcW, m_crDstW, filterAlign, 1 << 14,
             getLocalPos(m_crSrcHSubSample, srcHCrPos), getLocalPos(m_crDstHSubSample, dstHCrPos)) < 0)
         return -1;
 
     // init vertical Luma scaler filter
-    m_ScalerFilters[2] = new ScalerVLumFilter(m_bitDepth);
+    m_ScalerFilters[2] = new (std::nothrow) ScalerVLumFilter(m_bitDepth);
     if (!m_ScalerFilters[2] || m_ScalerFilters[2]->initCoeff(m_algorithmFlags, lumYInc, srcH, dstH, filterAlign, 1 << 12, getLocalPos(0, 0), getLocalPos(0, 0)) < 0)
         return -1;
 
     // init vertical cr scaler filter
-    m_ScalerFilters[3] = new ScalerVCrFilter(m_bitDepth);
+    m_ScalerFilters[3] = new (std::nothrow) ScalerVCrFilter(m_bitDepth);
     if (!m_ScalerFilters[3] ||
         m_ScalerFilters[3]->initCoeff(m_algorithmFlags, crYInc, m_crSrcH, m_crDstH, filterAlign, 1 << 12,
             getLocalPos(m_crSrcVSubSample, srcVCrPos), getLocalPos(m_crDstVSubSample, dstVCrPos)) < 0)
