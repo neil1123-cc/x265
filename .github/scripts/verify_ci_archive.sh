@@ -12,6 +12,19 @@ usage() {
   exit 2
 }
 
+isolated_windows_path() {
+  local exe_dir="$1"
+  printf '%s' "${exe_dir}:/c/Windows/System32:/c/Windows:/c/Windows/System32/Wbem"
+}
+
+run_with_isolated_path() {
+  local exe="$1"
+  shift
+  local exe_dir
+  exe_dir="$(cd "$(dirname "$exe")" && pwd)"
+  PATH="$(isolated_windows_path "$exe_dir")" "$exe" "$@"
+}
+
 verify_clean_dir() {
   local dir="$1"
   rm -rf "$dir"
@@ -81,7 +94,7 @@ verify_llvm_profdata() {
   7za x -o"$extract_dir" "$archive"
 
   test -s "$extract_dir/llvm-profdata.exe"
-  "$extract_dir/llvm-profdata.exe" --version >/dev/null
+  run_with_isolated_path "$extract_dir/llvm-profdata.exe" --version >/dev/null
 
   local dll_count
   dll_count=$(find "$extract_dir" -maxdepth 1 -type f -iname '*.dll' | wc -l)

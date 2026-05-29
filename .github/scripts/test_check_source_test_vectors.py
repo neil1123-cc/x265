@@ -43,6 +43,7 @@ def main():
             'clip.y4m,--preset medium --frames 1\n'
             'clip2.y4m,--pass 1::--pass 2 --bitrate 1000\n',
         )
+        (test_dir / 'CMakeLists.txt').write_text('# plain text ok\n', encoding='utf-8')
         expect_pass(run_checker(test_dir))
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -64,6 +65,12 @@ def main():
         test_dir = Path(tmp) / 'source' / 'test'
         write_vectors(test_dir, 'clip.y4m,--preset medium \n')
         expect_fail(run_checker(test_dir), 'source test vector line must not have trailing whitespace')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        test_dir = Path(tmp) / 'source' / 'test'
+        write_vectors(test_dir, 'clip.y4m,--preset medium --frames 1\n')
+        (test_dir / 'future-tests.txt').write_text('clip.y4m,--preset fast\n', encoding='utf-8')
+        expect_fail(run_checker(test_dir), 'unknown source test text file; classify it in HARNESS_LISTS or PLAIN_TEXT_LISTS')
 
     print('source/test vector guardrails validated')
 

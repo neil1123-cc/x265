@@ -216,6 +216,10 @@ def main():
         'Build workflow must define pull_request trigger for pre-merge CI',
     )
     fail_case(
+        lambda repo: replace_text(build_workflow(repo), "      - '.github/workflows/**'", "      - '.github/workflows/build.yml'"),
+        'Build workflow pull_request paths missing: .github/workflows/**',
+    )
+    fail_case(
         lambda repo: replace_text(build_workflow(repo), "    if: github.event_name != 'pull_request'\n    runs-on: windows-latest", "    runs-on: windows-latest", count=1),
         'Build workflow job cxx20-warning-scan must be skipped for pull_request fast gate',
     )
@@ -254,6 +258,10 @@ def main():
     fail_case(
         lambda repo: replace_text(archive_verify_helper(repo), 'verify_x265_release()', 'verify_x265_release_disabled()'),
         'archive verification helper missing function: verify_x265_release()',
+    )
+    fail_case(
+        lambda repo: replace_text(archive_verify_helper(repo), 'run_with_isolated_path "$extract_dir/llvm-profdata.exe" --version >/dev/null', '"$extract_dir/llvm-profdata.exe" --version >/dev/null'),
+        'archive verification helper missing function: run_with_isolated_path "$extract_dir/llvm-profdata.exe" --version >/dev/null',
     )
 
     fail_case(

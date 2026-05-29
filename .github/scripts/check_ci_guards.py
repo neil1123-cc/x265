@@ -350,7 +350,7 @@ WARNING_SCAN_SMOKES = (
     ),
 )
 PR_TRIGGER_PATHS = (
-    '.github/workflows/build.yml',
+    '.github/workflows/**',
     '.github/actions/**',
     '.github/scripts/**',
     'source/**',
@@ -682,9 +682,12 @@ def validate_verify_ci_archive_helper(repo_root, bash):
         VERIFY_CI_ARCHIVE_HELPER,
         'missing archive verification helper',
         required_text=(
+            'isolated_windows_path()',
+            'run_with_isolated_path()',
             'verify_x265_release()',
             'verify_x265_profiling()',
             'verify_llvm_profdata()',
+            'run_with_isolated_path "$extract_dir/llvm-profdata.exe" --version >/dev/null',
             'case "$mode" in',
         ),
         required_message='archive verification helper missing function',

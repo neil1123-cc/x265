@@ -14,6 +14,10 @@ HARNESS_LISTS = {
     'smoke-tests.txt',
 }
 
+PLAIN_TEXT_LISTS = {
+    'CMakeLists.txt',
+}
+
 
 class TestVectorError(Exception):
     def __init__(self, message, path=None, line=None):
@@ -126,9 +130,14 @@ def main():
             count = validate_harness_list(path)
             total_vectors += count
             print(f'{path.as_posix()}: {count} active vectors')
-        else:
+        elif path.name in PLAIN_TEXT_LISTS:
             validate_plain_text(path)
             print(f'{path.as_posix()}: plain text validated')
+        else:
+            fail(
+                f'unknown source test text file; classify it in HARNESS_LISTS or PLAIN_TEXT_LISTS: {path.name}',
+                path,
+            )
 
     print(f'source/test vector files validated: {len(txt_files)} files, {total_vectors} active vectors')
 
