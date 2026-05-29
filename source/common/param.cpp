@@ -92,21 +92,107 @@ namespace X265_NS {
 #endif
 
 #ifdef SVT_HEVC
-static EB_H265_ENC_CONFIGURATION* ensureSvtHevcParam(x265_param* param)
+struct SvtHevcParamStorage
+{
+    x265_param* owner;
+    EB_H265_ENC_CONFIGURATION* storage;
+    SvtHevcParamStorage* next;
+};
+
+static Lock g_svtHevcParamStorageLock;
+static SvtHevcParamStorage* g_svtHevcParamStorage;
+
+static EB_H265_ENC_CONFIGURATION* getSvtHevcParamStorage(x265_param* param)
+{
+    ScopedLock lock(g_svtHevcParamStorageLock);
+    for (SvtHevcParamStorage* entry = g_svtHevcParamStorage; entry; entry = entry->next)
+        if (entry->owner == param)
+            return entry->storage;
+    return NULL;
+}
+
+static bool registerSvtHevcParamStorage(x265_param* param, EB_H265_ENC_CONFIGURATION* storage)
+{
+    if (!param || !storage)
+        return false;
+
+    ScopedLock lock(g_svtHevcParamStorageLock);
+    for (SvtHevcParamStorage* entry = g_svtHevcParamStorage; entry; entry = entry->next)
+    {
+        if (entry->owner == param)
+        {
+            entry->storage = storage;
+            return true;
+        }
+    }
+
+    SvtHevcParamStorage* entry = (SvtHevcParamStorage*)x265_malloc(sizeof(SvtHevcParamStorage));
+    if (!entry)
+        return false;
+    entry->owner = param;
+    entry->storage = storage;
+    entry->next = g_svtHevcParamStorage;
+    g_svtHevcParamStorage = entry;
+    return true;
+}
+
+static EB_H265_ENC_CONFIGURATION* unregisterSvtHevcParamStorage(x265_param* param)
+{
+    ScopedLock lock(g_svtHevcParamStorageLock);
+    SvtHevcParamStorage** current = &g_svtHevcParamStorage;
+    while (*current)
+    {
+        SvtHevcParamStorage* entry = *current;
+        if (entry->owner == param)
+        {
+            EB_H265_ENC_CONFIGURATION* storage = entry->storage;
+            *current = entry->next;
+            x265_free(entry);
+            return storage;
+        }
+        current = &entry->next;
+    }
+    return NULL;
+}
+
+static void freeSvtHevcParamStorage(x265_param* param)
+{
+    if (!param)
+        return;
+
+    EB_H265_ENC_CONFIGURATION* storage = unregisterSvtHevcParamStorage(param);
+    if (!storage)
+        storage = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    x265_free(storage);
+    param->svtHevcParam = NULL;
+}
+
+static EB_H265_ENC_CONFIGURATION* ensureSvtHevcParam(x265_param* param, bool trackStorage = true)
 {
     if (!param)
         return NULL;
 
-    if (!param->svtHevcParam)
+    EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    if (svtParam)
     {
-        param->svtHevcParam = x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
-        if (!param->svtHevcParam)
+        if (trackStorage && !registerSvtHevcParamStorage(param, svtParam))
             return NULL;
-        std::memset(param->svtHevcParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
-        svt_param_default(param);
+        return svtParam;
     }
 
-    return (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    svtParam = (EB_H265_ENC_CONFIGURATION*)x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+    if (!svtParam)
+        return NULL;
+    std::memset(svtParam, 0, sizeof(EB_H265_ENC_CONFIGURATION));
+    if (trackStorage && !registerSvtHevcParamStorage(param, svtParam))
+    {
+        x265_free(svtParam);
+        return NULL;
+    }
+    param->svtHevcParam = svtParam;
+    svt_param_default(param);
+
+    return svtParam;
 }
 
 static bool copySvtHevcParamStorage(x265_param* dst, const x265_param* src)
@@ -114,12 +200,11 @@ static bool copySvtHevcParamStorage(x265_param* dst, const x265_param* src)
     EB_H265_ENC_CONFIGURATION* srcSvtParam = src ? (EB_H265_ENC_CONFIGURATION*)src->svtHevcParam : NULL;
     if (!srcSvtParam)
     {
-        x265_free(dst->svtHevcParam);
-        dst->svtHevcParam = NULL;
+        freeSvtHevcParamStorage(dst);
         return true;
     }
 
-    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst);
+    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst, false);
     if (!dstSvtParam)
         return false;
 
@@ -170,7 +255,7 @@ void x265_param_free(x265_param* p)
         p->pgfn = NULL;
     }
 #ifdef SVT_HEVC
-     x265_free(p->svtHevcParam);
+    freeSvtHevcParamStorage(p);
 #endif
     x265_free(p);
 }
@@ -205,7 +290,7 @@ static const SCCProfileName validSCCProfileNames[1][4/* bit depth constraint 8=0
 void x265_param_default(x265_param* param)
 {
 #ifdef SVT_HEVC
-    void* svtParam = param->svtHevcParam;
+    EB_H265_ENC_CONFIGURATION* svtParam = getSvtHevcParamStorage(param);
 #endif
 
     std::memset(param, 0, sizeof(x265_param));
@@ -492,8 +577,6 @@ void x265_param_default(x265_param* param)
     param->svtHevcParam = svtParam;
     if (svtParam)
         svt_param_default(param);
-#else
-    param->svtHevcParam = NULL;
 #endif
 
     /* MCSTF */
@@ -1630,8 +1713,7 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
             }
             else
             {
-                x265_free(p->svtHevcParam);
-                p->svtHevcParam = NULL;
+                freeSvtHevcParamStorage(p);
             }
         }
         OPT("svt-hme") x265_log(p, X265_LOG_WARNING, "Option %s is SVT-HEVC Encoder specific; Disabling it here \n", name);

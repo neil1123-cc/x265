@@ -52,17 +52,24 @@ static void sigpipe_handler(int)
 #endif
 
 ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
+    : outputPipe(NULL)
+    , frameSize(0)
+    , threadActive(false)
+    , width(param.sourceWidth)
+    , height(param.sourceHeight)
+    , colorSpace(param.internalCsp)
 {
+    for (int i = 0; i < RECON_BUF_SIZE; i++)
+    {
+        poc[i] = -1;
+        frameData[i] = NULL;
+    }
+
 #ifndef _WIN32
     if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR)
         general_log(&param, "exec", X265_LOG_ERROR, "Unable to register SIGPIPE handler: %s\n", std::strerror(errno));
 #endif
 
-    width = param.sourceWidth;
-    height = param.sourceHeight;
-    colorSpace = param.internalCsp;
-
-    frameSize = 0;
     for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)
     {
         uint64_t planeWidth = (uint64_t)(width >> x265_cli_csps[colorSpace].width[i]);
@@ -74,10 +81,7 @@ ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
     }
 
     for (int i = 0; i < RECON_BUF_SIZE; i++)
-    {
-        poc[i] = -1;
         CHECKED_MALLOC(frameData[i], pixel, frameSize);
-    }
 
     outputPipe = popen(commandLine, pipemode);
     if (outputPipe)
