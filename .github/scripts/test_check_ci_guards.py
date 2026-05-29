@@ -71,6 +71,10 @@ def write_repo(repo):
     (scripts / 'profiling_smoke_package_verify.sh').write_text(profiling_helper_text)
     archive_helper_text = Path(__file__).with_name('verify_ci_archive.sh').read_text()
     (scripts / 'verify_ci_archive.sh').write_text(archive_helper_text)
+    source_test_vector_text = Path(__file__).with_name('check_source_test_vectors.py').read_text()
+    (scripts / 'check_source_test_vectors.py').write_text(source_test_vector_text)
+    source_test_vector_test_text = Path(__file__).with_name('test_check_source_test_vectors.py').read_text()
+    (scripts / 'test_check_source_test_vectors.py').write_text(source_test_vector_test_text)
     runtime_suite_text = Path(__file__).with_name('runtime_smoke_suite.sh').read_text()
     (scripts / 'runtime_smoke_suite.sh').write_text(runtime_suite_text)
     mp4_suite_text = Path(__file__).with_name('mp4_smoke_suite.sh').read_text()
@@ -133,6 +137,12 @@ def main():
 
     def archive_verify_helper(repo):
         return repo / '.github' / 'scripts' / 'verify_ci_archive.sh'
+
+    def source_test_vector_checker(repo):
+        return repo / '.github' / 'scripts' / 'check_source_test_vectors.py'
+
+    def source_test_vector_guard_test(repo):
+        return repo / '.github' / 'scripts' / 'test_check_source_test_vectors.py'
 
     def fail_case(modifier, expected):
         with tempfile.TemporaryDirectory() as tmp:
@@ -220,6 +230,10 @@ def main():
         'Build workflow pull_request paths missing: .github/workflows/**',
     )
     fail_case(
+        lambda repo: replace_text(build_workflow(repo), "      - '.github/patches/**'", "      - '.github/scripts/**'"),
+        'Build workflow pull_request paths missing: .github/patches/**',
+    )
+    fail_case(
         lambda repo: replace_text(build_workflow(repo), "    if: github.event_name != 'pull_request'\n    runs-on: windows-latest", "    runs-on: windows-latest", count=1),
         'Build workflow job cxx20-warning-scan must be skipped for pull_request fast gate',
     )
@@ -262,6 +276,14 @@ def main():
     fail_case(
         lambda repo: replace_text(archive_verify_helper(repo), 'run_with_isolated_path "$extract_dir/llvm-profdata.exe" --version >/dev/null', '"$extract_dir/llvm-profdata.exe" --version >/dev/null'),
         'archive verification helper missing function: run_with_isolated_path "$extract_dir/llvm-profdata.exe" --version >/dev/null',
+    )
+    fail_case(
+        lambda repo: source_test_vector_checker(repo).unlink(),
+        'missing source test vector checker',
+    )
+    fail_case(
+        lambda repo: source_test_vector_guard_test(repo).unlink(),
+        'missing source test vector guard test',
     )
 
     fail_case(

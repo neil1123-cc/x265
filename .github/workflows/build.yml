@@ -12,6 +12,7 @@ on:
     paths:
       - '.github/workflows/**'
       - '.github/actions/**'
+      - '.github/patches/**'
       - '.github/scripts/**'
       - 'source/**'
       - 'x265Version.txt'

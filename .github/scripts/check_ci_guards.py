@@ -17,6 +17,8 @@ PROFILING_SMOKE_HELPER = Path('.github/scripts/profiling_smoke_package_verify.sh
 VERIFY_CI_ARCHIVE_HELPER = Path('.github/scripts/verify_ci_archive.sh')
 RUNTIME_SMOKE_SUITE = Path('.github/scripts/runtime_smoke_suite.sh')
 MP4_SMOKE_SUITE = Path('.github/scripts/mp4_smoke_suite.sh')
+SOURCE_TEST_VECTOR_CHECK = Path('.github/scripts/check_source_test_vectors.py')
+SOURCE_TEST_VECTOR_TEST = Path('.github/scripts/test_check_source_test_vectors.py')
 DEPENDENCY_SUFFIX_CHECK = Path('.github/scripts/check_dependency_patch_suffixes.py')
 WINDOWS_DEPS_ACTION = Path('.github/actions/setup-windows-deps/action.yml')
 UPDATE_DEPS_WORKFLOW = Path('.github/workflows/update-deps.yml')
@@ -352,6 +354,7 @@ WARNING_SCAN_SMOKES = (
 PR_TRIGGER_PATHS = (
     '.github/workflows/**',
     '.github/actions/**',
+    '.github/patches/**',
     '.github/scripts/**',
     'source/**',
     'x265Version.txt',
@@ -775,6 +778,54 @@ def validate_bash_file(repo_root, bash, relative_path, missing_message, required
             if required not in tokens:
                 fail(f'{required_message}: {required}', path)
     print(f'{relative_path.as_posix()}: bash syntax validated')
+
+
+def validate_python_file(repo_root, relative_path, missing_message, required_text=(), required_message='missing required python detail'):
+    path = repo_root / relative_path
+    if not path.is_file():
+        fail(missing_message, path)
+    result = subprocess.run(
+        [sys.executable, '-m', 'py_compile', str(path)],
+        cwd=repo_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if result.returncode != 0:
+        fail(f'python syntax check failed: {result.stdout.strip()}', path)
+    text = read_text(path)
+    for required in required_text:
+        if required not in text:
+            fail(f'{required_message}: {required}', path)
+    print(f'{relative_path.as_posix()}: python syntax validated')
+
+
+def validate_source_test_vector_scripts(repo_root):
+    validate_python_file(
+        repo_root,
+        SOURCE_TEST_VECTOR_CHECK,
+        'missing source test vector checker',
+        required_text=(
+            'HARNESS_LISTS = {',
+            'PLAIN_TEXT_LISTS = {',
+            'validate_harness_list(path)',
+            'validate_plain_text(path)',
+            'unknown source test text file; classify it in HARNESS_LISTS or PLAIN_TEXT_LISTS',
+        ),
+        required_message='source test vector checker missing detail',
+    )
+    validate_python_file(
+        repo_root,
+        SOURCE_TEST_VECTOR_TEST,
+        'missing source test vector guard test',
+        required_text=(
+            "CHECKER = Path(__file__).with_name('check_source_test_vectors.py')",
+            'expect_pass(run_checker(test_dir))',
+            'future-tests.txt',
+            'unknown source test text file; classify it in HARNESS_LISTS or PLAIN_TEXT_LISTS',
+        ),
+        required_message='source test vector guard test missing detail',
+    )
 
 
 def validate_dependency_suffixes(repo_root, before, after):
@@ -2420,6 +2471,7 @@ def main():
         validate_verify_ci_archive_helper(repo_root, bash)
         validate_runtime_smoke_suite(repo_root, bash)
         validate_mp4_smoke_suite(repo_root, bash)
+        validate_source_test_vector_scripts(repo_root)
         validate_dependency_update_anchors(repo_root)
         validate_required_snippets(repo_root)
         validate_build_pr_fast_gate(repo_root)
