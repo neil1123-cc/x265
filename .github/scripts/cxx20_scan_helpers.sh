@@ -35,7 +35,7 @@ cxx20_gcc_check_args=(
 check_cxx20_commands_clang() {
   local build_dir="$1"
   shift
-  python x265/.github/scripts/check_compile_commands.py "$build_dir" \
+  run_compile_commands_check "$build_dir" \
     "${cxx20_common_check_args[@]}" \
     "${cxx20_clang_check_args[@]}" \
     "$@"
@@ -44,16 +44,22 @@ check_cxx20_commands_clang() {
 check_cxx20_commands_gcc() {
   local build_dir="$1"
   shift
-  python x265/.github/scripts/check_compile_commands.py "$build_dir" \
+  run_compile_commands_check "$build_dir" \
     "${cxx20_common_check_args[@]}" \
     "${cxx20_gcc_check_args[@]}" \
     "$@"
 }
 
+run_compile_commands_check() {
+  local build_dir="$1"
+  shift
+  python "${CXX20_CHECK_SCRIPT:-x265/.github/scripts/check_compile_commands.py}" "$build_dir" "$@"
+}
+
 check_cxx20_commands_profiling() {
   local build_dir="$1"
   shift
-  python "${CXX20_CHECK_SCRIPT:-x265/.github/scripts/check_compile_commands.py}" "$build_dir" \
+  run_compile_commands_check "$build_dir" \
     --required-flag=-fprofile-instr-generate \
     --required-flag=-fprofile-update=atomic \
     --forbidden-flag=-fprofile-instr-use \
@@ -64,7 +70,7 @@ check_cxx20_commands_profiling() {
 check_cxx20_commands_pgo_consume() {
   local build_dir="$1"
   shift
-  python "${CXX20_CHECK_SCRIPT:-x265/.github/scripts/check_compile_commands.py}" "$build_dir" \
+  run_compile_commands_check "$build_dir" \
     --required-flag-prefix=-fprofile-instr-use= \
     --forbidden-flag=-fprofile-instr-generate \
     --forbidden-flag=-fprofile-update=atomic \
