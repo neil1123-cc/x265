@@ -160,6 +160,7 @@ public:
     Event         m_outputSignal;
     LookaheadTLD* m_tld;
     x265_param*   m_param;
+    x265_param*   m_baseParam;
     Lowres*       m_lastNonB;
     int*          m_scratch;         // temp buffer for cutree propagate
 
