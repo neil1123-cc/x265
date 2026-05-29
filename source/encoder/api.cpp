@@ -1316,7 +1316,7 @@ x265_zone *x265_zone_alloc(int zoneCount, int isZoneFile)
             if (!zone[i].zoneParam)
             {
                 for (int j = 0; j < i; j++)
-                    x265_param_free(zone[j].zoneParam);
+                    PARAM_NS::x265_param_free(zone[j].zoneParam);
                 x265_free(zone);
                 return nullptr;
             }
@@ -1335,7 +1335,7 @@ void x265_zone_free(x265_param *param)
         for (int i = 0; i < param->rc.zonefileCount; i++)
         {
             x265_free(param->rc.zones[i].relativeComplexity);
-            x265_param_free(param->rc.zones[i].zoneParam);
+            PARAM_NS::x265_param_free(param->rc.zones[i].zoneParam);
         }
         x265_free(param->rc.zones);
     }
