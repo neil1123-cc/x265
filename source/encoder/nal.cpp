@@ -74,11 +74,14 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
         uint8_t *temp = X265_MALLOC(uint8_t, nextSize);
         if (temp)
         {
-            std::memcpy(temp, m_buffer, m_occupancy);
+            if (m_occupancy)
+            {
+                std::memcpy(temp, m_buffer, m_occupancy);
 
-            /* fixup existing payload pointers */
-            for (uint32_t i = 0; i < m_numNal; i++)
-                m_nal[i].payload = temp + (m_nal[i].payload - m_buffer);
+                /* fixup existing payload pointers */
+                for (uint32_t i = 0; i < m_numNal; i++)
+                    m_nal[i].payload = temp + (m_nal[i].payload - m_buffer);
+            }
 
             X265_FREE(m_buffer);
             m_buffer = temp;

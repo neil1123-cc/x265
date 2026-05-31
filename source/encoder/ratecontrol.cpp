@@ -98,6 +98,14 @@ inline int calcLength(uint32_t x)
     return z + lut[x];
 }
 
+inline int calcAmortizedResidualCost(int64_t bits, double fraction, int frames)
+{
+    if (frames <= 0 || !std::isfinite(fraction))
+        return 0;
+
+    return (int)((bits * fraction) / frames);
+}
+
 typedef struct CUTreeSharedDataItem
 {
     uint8_t  *type;
@@ -2446,7 +2454,7 @@ void RateControl::rateControlUpdateStats(RateControlEntry* rce)
             rce->amortizeFrames = m_amortizeFrames;
             rce->amortizeFraction = m_amortizeFraction;
             m_partialResidualFrames = X265_MIN((int)rce->amortizeFrames, m_param->keyframeMax);
-            m_partialResidualCost = (int)((rce->rowTotalBits * rce->amortizeFraction) / m_partialResidualFrames);
+            m_partialResidualCost = calcAmortizedResidualCost(rce->rowTotalBits, rce->amortizeFraction, m_partialResidualFrames);
             rce->rowTotalBits -= m_partialResidualCost * m_partialResidualFrames;
         }
         else if (m_partialResidualFrames)
@@ -3192,7 +3200,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
                 if (m_residualFrames)
                     bits += m_residualCost * m_residualFrames;
                 m_residualFrames = X265_MIN((int)rce->amortizeFrames, m_param->keyframeMax);
-                m_residualCost = (int)((bits * rce->amortizeFraction) / m_residualFrames);
+                m_residualCost = calcAmortizedResidualCost(bits, rce->amortizeFraction, m_residualFrames);
                 bits -= m_residualCost * m_residualFrames;
             }
             else if (m_residualFrames)
