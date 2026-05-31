@@ -188,8 +188,9 @@ smoke_gop_output() {
   grep -q 'nb_read_frames=16' smoke_gop_mux_count.txt
 }
 
-main() {
-  case "${1:-}" in
+run_runtime_smoke_target() {
+  local target="$1"
+  case "$target" in
     raw)
       smoke_raw
       ;;
@@ -227,8 +228,31 @@ main() {
       smoke_gop_output
       ;;
     *)
-      echo "unknown runtime smoke suite target: ${1:-<empty>}" >&2
+      echo "unknown runtime smoke suite target: ${target}" >&2
       exit 2
+      ;;
+  esac
+}
+
+run_runtime_smoke_targets() {
+  local target
+  for target in "$@"; do
+    echo "=== Running runtime smoke: ${target} ==="
+    run_runtime_smoke_target "$target"
+  done
+}
+
+main() {
+  case "${1:-}" in
+    '')
+      echo "missing runtime smoke suite target" >&2
+      exit 2
+      ;;
+    all)
+      run_runtime_smoke_targets raw cli-long-input mkv lavf threaded-me threaded-me-stress qpfile zonefile zonefile-oversized recon video-signal-type-preset-oversized gop-output
+      ;;
+    *)
+      run_runtime_smoke_targets "$@"
       ;;
   esac
 }

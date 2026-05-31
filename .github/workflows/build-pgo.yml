@@ -22,8 +22,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-guardrails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - name: Checkout X265
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Check CI guardrails
+      shell: bash
+      run: |
+        set -euo pipefail
+        python .github/scripts/check_ci_guards.py
+        python .github/scripts/test_check_ci_guards.py
+
   generate:
+    needs: validate-guardrails
     runs-on: windows-latest
+    timeout-minutes: 360
     defaults:
       run:
         shell: msys2 {0}

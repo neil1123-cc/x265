@@ -17,6 +17,7 @@ concurrency:
 jobs:
   validate-guardrails:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
     - name: Checkout X265
       uses: actions/checkout@v6
@@ -34,6 +35,7 @@ jobs:
   build:
     needs: validate-guardrails
     runs-on: windows-latest
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -289,6 +291,7 @@ jobs:
     needs: [build, validate-guardrails]
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
     - name: Checkout X265
       uses: actions/checkout@v6

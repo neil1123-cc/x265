@@ -218,8 +218,9 @@ smoke_mp4_idr_recovery() {
   assert_duration_window smoke_recovery 0.60 0.75
 }
 
-main() {
-  case "${1:-}" in
+run_mp4_smoke_target() {
+  local target="$1"
+  case "$target" in
     smoke)
       smoke_mp4
       ;;
@@ -260,8 +261,31 @@ main() {
       smoke_mp4_idr_recovery
       ;;
     *)
-      echo "unknown MP4 smoke suite target: ${1:-<empty>}" >&2
+      echo "unknown MP4 smoke suite target: ${target}" >&2
       exit 2
+      ;;
+  esac
+}
+
+run_mp4_smoke_targets() {
+  local target
+  for target in "$@"; do
+    echo "=== Running MP4 smoke: ${target} ==="
+    run_mp4_smoke_target "$target"
+  done
+}
+
+main() {
+  case "${1:-}" in
+    '')
+      echo "missing MP4 smoke suite target" >&2
+      exit 2
+      ;;
+    all)
+      run_mp4_smoke_targets smoke open-gop cra single-frame frames-zero single-frame-24000-1001 vui strict-cbr-fails frac-24000-1001 b-pyramid aud eos-eob idr-recovery
+      ;;
+    *)
+      run_mp4_smoke_targets "$@"
       ;;
   esac
 }

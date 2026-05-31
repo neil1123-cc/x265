@@ -39,4 +39,6 @@ build/
 !/.github/workflows/
 !/.github/patches/
 !/.github/patches/*.patch
+/.github/**/__pycache__/
+/.github/**/*.pyc
 Status.md

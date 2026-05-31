@@ -173,6 +173,7 @@ runs:
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
+        release: false
         msystem: CLANG64
         update: true
         install: >-

@@ -29,18 +29,27 @@ concurrency:
 jobs:
   validate-deps-cache-suffix:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout X265
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Check CI guardrails
+      - name: Run Python CI guard bundle
         shell: bash
         run: |
           set -euo pipefail
           python .github/scripts/check_ci_guards.py
           python .github/scripts/test_check_ci_guards.py
+          python .github/scripts/check_cmake_cxx20_contract.py source
+          python .github/scripts/test_check_cmake_cxx20_contract.py
+          python .github/scripts/test_check_compile_commands.py
+          python .github/scripts/check_source_test_vectors.py source/test
+          python .github/scripts/test_check_source_test_vectors.py
+          python .github/scripts/test_check_dependency_patch_suffixes.py
+          python .github/scripts/check_release_needs.py
+          python .github/scripts/test_check_pgo_consume_chain.py
 
       - name: Check dependency patch cache suffixes
         shell: bash
@@ -63,53 +72,11 @@ jobs:
 
           python .github/scripts/check_dependency_patch_suffixes.py --before "$before" --after "$after"
 
-      - name: Check CMake C++20 contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .github/scripts/check_cmake_cxx20_contract.py source
-
-      - name: Check CMake C++20 contract guardrails
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .github/scripts/test_check_cmake_cxx20_contract.py
-
-      - name: Check C++20 compile command guardrails
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .github/scripts/test_check_compile_commands.py
-
-      - name: Check source test vector guardrails
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .github/scripts/check_source_test_vectors.py source/test
-          python .github/scripts/test_check_source_test_vectors.py
-
-      - name: Check dependency patch suffix guardrails
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .github/scripts/test_check_dependency_patch_suffixes.py
-
-      - name: Check release needs guardrails
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .github/scripts/check_release_needs.py
-
-      - name: Check PGO metadata/consume guardrails
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .github/scripts/test_check_pgo_consume_chain.py
-
   cxx20-warning-scan:
     needs: validate-deps-cache-suffix
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
+    timeout-minutes: 120
     defaults:
       run:
         shell: msys2 {0}
@@ -118,8 +85,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: x265
-          fetch-depth: 0
-          fetch-tags: true
+          fetch-depth: 1
 
       - name: Setup Shared Dependencies
         uses: ./x265/.github/actions/setup-windows-deps
@@ -159,7 +125,24 @@ jobs:
         env:
           PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
         run: |
+          set -euo pipefail
           source cxx20-scan-helpers.sh
+          wait_for_jobs() {
+            local status=0
+            local pid
+
+            for pid in "$@"; do
+              if ! wait "$pid"; then
+                status=1
+              fi
+            done
+
+            return "$status"
+          }
+
+          NPROC=$(nproc)
+          NINJA_JOBS_PAIR=$(( (NPROC + 1) / 2 ))
+
           configure_cxx20_scan x265/source build/cxx20-warning-scan \
             -DENABLE_CLI=ON \
             -DENABLE_ASSEMBLY=OFF \
@@ -181,7 +164,26 @@ jobs:
             --required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
-          ninja -C build/cxx20-warning-scan cli
+
+          configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
+            -DENABLE_CLI=ON \
+            -DENABLE_ASSEMBLY=OFF \
+            -DENABLE_HDR10_PLUS=ON \
+            -DENABLE_MKV=ON \
+            -DHIGH_BIT_DEPTH=ON \
+            -DMAIN12=ON
+          check_cxx20_commands_clang build/cxx20-warning-scan-12bit \
+            --min-cpp-commands=60 \
+            --required-depth-define=-DX265_DEPTH=12 \
+            --forbidden-flag=-DX265_DEPTH=8 \
+            --forbidden-flag=-DX265_DEPTH=10 \
+            --required-file-substring=source/abrEncApp.cpp
+          ninja -C build/cxx20-warning-scan cli -j "$NINJA_JOBS_PAIR" &
+          ninja_warning_scan_pid=$!
+          ninja -C build/cxx20-warning-scan-12bit cli -j "$NINJA_JOBS_PAIR" &
+          ninja_warning_scan_12bit_pid=$!
+          wait_for_jobs "$ninja_warning_scan_pid" "$ninja_warning_scan_12bit_pid"
+
           python - <<'PY'
           from pathlib import Path
           width = height = 96
@@ -209,20 +211,6 @@ jobs:
           fi
           grep -Fq 'Filter name exceeds supported length' build/cxx20-warning-scan/smoke_filter_longname.log
 
-          configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit \
-            -DENABLE_CLI=ON \
-            -DENABLE_ASSEMBLY=OFF \
-            -DENABLE_HDR10_PLUS=ON \
-            -DENABLE_MKV=ON \
-            -DHIGH_BIT_DEPTH=ON \
-            -DMAIN12=ON
-          check_cxx20_commands_clang build/cxx20-warning-scan-12bit \
-            --min-cpp-commands=60 \
-            --required-depth-define=-DX265_DEPTH=12 \
-            --forbidden-flag=-DX265_DEPTH=8 \
-            --forbidden-flag=-DX265_DEPTH=10 \
-            --required-file-substring=source/abrEncApp.cpp
-          ninja -C build/cxx20-warning-scan-12bit cli
           python - <<'PY'
           from pathlib import Path
           width = height = 64
@@ -310,7 +298,24 @@ jobs:
         env:
           PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
         run: |
+          set -euo pipefail
           source cxx20-scan-helpers.sh
+          wait_for_jobs() {
+            local status=0
+            local pid
+
+            for pid in "$@"; do
+              if ! wait "$pid"; then
+                status=1
+              fi
+            done
+
+            return "$status"
+          }
+
+          NPROC=$(nproc)
+          NINJA_JOBS_TRIPLE=$(( (NPROC + 2) / 3 ))
+
           configure_cxx20_scan x265/source build/cxx20-warning-scan-shared-library \
             -DENABLE_CLI=ON \
             -DENABLE_SHARED=ON \
@@ -327,15 +332,6 @@ jobs:
             --required-file-substring=source/common/version.cpp \
             --forbidden-file-substring=source/input/lavf.cpp \
             --forbidden-file-substring=source/output/mp4.cpp
-          ninja -C build/cxx20-warning-scan-shared-library cli x265-shared
-          python - <<'PY'
-          from pathlib import Path
-          width = height = 64
-          frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
-          Path('build/cxx20-warning-scan-shared-library/smoke_shared.yuv').write_bytes(frame)
-          PY
-          build/cxx20-warning-scan-shared-library/x265.exe --input build/cxx20-warning-scan-shared-library/smoke_shared.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-warning-scan-shared-library/smoke_shared.hevc
-          test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc
 
           configure_cxx20_scan x265/source build/cxx20-warning-scan-all-8b-lib \
             -DENABLE_CLI=OFF \
@@ -357,7 +353,6 @@ jobs:
             --forbidden-file-substring=source/abrEncApp.cpp \
             --forbidden-file-substring=source/x265.cpp \
             --forbidden-file-substring=source/x265cli.cpp
-          ninja -C build/cxx20-warning-scan-all-8b-lib x265-static
 
           configure_cxx20_scan x265/source build/cxx20-warning-scan-all-12b-lib \
             -DENABLE_CLI=OFF \
@@ -381,7 +376,25 @@ jobs:
             --forbidden-file-substring=source/abrEncApp.cpp \
             --forbidden-file-substring=source/x265.cpp \
             --forbidden-file-substring=source/x265cli.cpp
-          ninja -C build/cxx20-warning-scan-all-12b-lib x265-static
+          ninja -C build/cxx20-warning-scan-shared-library cli x265-shared -j "$NINJA_JOBS_TRIPLE" &
+          ninja_warning_scan_shared_pid=$!
+          ninja -C build/cxx20-warning-scan-all-8b-lib x265-static -j "$NINJA_JOBS_TRIPLE" &
+          ninja_warning_scan_all_8b_pid=$!
+          ninja -C build/cxx20-warning-scan-all-12b-lib x265-static -j "$NINJA_JOBS_TRIPLE" &
+          ninja_warning_scan_all_12b_pid=$!
+          wait_for_jobs \
+            "$ninja_warning_scan_shared_pid" \
+            "$ninja_warning_scan_all_8b_pid" \
+            "$ninja_warning_scan_all_12b_pid"
+
+          python - <<'PY'
+          from pathlib import Path
+          width = height = 64
+          frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
+          Path('build/cxx20-warning-scan-shared-library/smoke_shared.yuv').write_bytes(frame)
+          PY
+          build/cxx20-warning-scan-shared-library/x265.exe --input build/cxx20-warning-scan-shared-library/smoke_shared.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-warning-scan-shared-library/smoke_shared.hevc
+          test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc
 
           mkdir -p build/cxx20-warning-scan-all
           cp build/cxx20-warning-scan-all-8b-lib/libx265.a build/cxx20-warning-scan-all/libx265_8b.a
@@ -425,8 +438,23 @@ jobs:
         env:
           PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
         run: |
+          set -euo pipefail
           source cxx20-scan-helpers.sh
-          for target_cpu in haswell arrowlake znver5; do
+          wait_for_jobs() {
+            local status=0
+            local pid
+
+            for pid in "$@"; do
+              if ! wait "$pid"; then
+                status=1
+              fi
+            done
+
+            return "$status"
+          }
+
+          run_cpu_warning_scan() {
+            local target_cpu="$1"
             configure_cxx20_scan x265/source "build/cxx20-warning-scan-${target_cpu}" \
               --target-cpu="${target_cpu}" \
               -DENABLE_CLI=OFF \
@@ -446,7 +474,14 @@ jobs:
               --forbidden-file-substring=source/abrEncApp.cpp \
               --forbidden-file-substring=source/x265.cpp \
               --forbidden-file-substring=source/x265cli.cpp
+          }
+
+          cpu_scan_pids=()
+          for target_cpu in haswell arrowlake znver5; do
+            run_cpu_warning_scan "$target_cpu" &
+            cpu_scan_pids+=($!)
           done
+          wait_for_jobs "${cpu_scan_pids[@]}"
 
           configure_cxx20_scan x265/source build/cxx20-warning-scan-asm \
             -DENABLE_CLI=OFF \
@@ -464,6 +499,7 @@ jobs:
     needs: validate-deps-cache-suffix
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
+    timeout-minutes: 90
     defaults:
       run:
         shell: msys2 {0}
@@ -472,12 +508,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: x265
-          fetch-depth: 0
-          fetch-tags: true
+          fetch-depth: 1
 
       - name: Setup GCC diagnostics
         uses: msys2/setup-msys2@v2
         with:
+          release: false
           msystem: MINGW64
           update: true
           install: >-
@@ -600,35 +636,25 @@ jobs:
     needs: validate-deps-cache-suffix
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout X265
         uses: actions/checkout@v6
         with:
           path: x265
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Install CMake 4
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m venv "$RUNNER_TEMP/cmake-venv"
-          "$RUNNER_TEMP/cmake-venv/bin/python" -m pip install 'cmake>=4.0,<5'
-          echo "$RUNNER_TEMP/cmake-venv/bin" >> "$GITHUB_PATH"
-
-      - name: Show GCC diagnostics tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake --version
-          g++ --version
-          ninja --version
-          python --version
+          fetch-depth: 1
 
       - name: Run Linux GCC C++20 compile command diagnostics
         shell: bash
         run: |
           set -euo pipefail
+          python -m venv "$RUNNER_TEMP/cmake-venv"
+          "$RUNNER_TEMP/cmake-venv/bin/python" -m pip install 'cmake>=4.0,<5'
+          export PATH="$RUNNER_TEMP/cmake-venv/bin:$PATH"
+          cmake --version
+          g++ --version
+          ninja --version
+          python --version
           source x265/.github/scripts/cxx20_scan_helpers.sh
 
           configure_cxx20_scan x265/source build/cxx20-linux-gcc-compile-commands \
@@ -691,33 +717,13 @@ jobs:
   linux-clang-sanitizers:
     needs: validate-deps-cache-suffix
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout X265
         uses: actions/checkout@v6
         with:
           path: x265
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Install Clang and CMake 4
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y clang lld ninja-build
-          python -m venv "$RUNNER_TEMP/cmake-venv"
-          "$RUNNER_TEMP/cmake-venv/bin/python" -m pip install 'cmake>=4.0,<5'
-          echo "$RUNNER_TEMP/cmake-venv/bin" >> "$GITHUB_PATH"
-
-      - name: Show sanitizer toolchain versions
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake --version
-          clang++ --version
-          ld.lld --version
-          ninja --version
-          python --version
+          fetch-depth: 1
 
       - name: Build and smoke-test with ASan and UBSan
         shell: bash
@@ -726,6 +732,16 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang lld ninja-build
+          python -m venv "$RUNNER_TEMP/cmake-venv"
+          "$RUNNER_TEMP/cmake-venv/bin/python" -m pip install 'cmake>=4.0,<5'
+          export PATH="$RUNNER_TEMP/cmake-venv/bin:$PATH"
+          cmake --version
+          clang++ --version
+          ld.lld --version
+          ninja --version
+          python --version
           source x265/.github/scripts/cxx20_scan_helpers.sh
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             min_cpp_commands=50
@@ -803,6 +819,7 @@ jobs:
     needs: validate-deps-cache-suffix
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
+    timeout-minutes: 240
     defaults:
       run:
         shell: msys2 {0}
@@ -822,778 +839,686 @@ jobs:
           - znver5
 
     steps:
-    - name: Checkout X265
-      uses: actions/checkout@v6
-      with:
-        path: x265
-        fetch-depth: 0
-        fetch-tags: true
+      - name: Checkout X265
+        uses: actions/checkout@v6
+        with:
+          path: x265
+          fetch-depth: 1
+          fetch-tags: true
 
-    - name: Get Latest Tag
-      id: tag
-      shell: bash
-      working-directory: x265
-      run: |
-        version=""
-        if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then
-          version="${GITHUB_REF_NAME:-}"
-        else
-          version=$(git tag --list '[0-9].[0-9]*' --sort=-v:refname | head -n1)
-        fi
-        if [ -z "$version" ]; then
-          version="0.0"
-          echo "::warning::No numeric version tag found; using $version as CI fallback"
-        fi
-        test -n "$version"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-
-    - name: Get CI Version
-      id: ci_version
-      shell: bash
-      working-directory: x265
-      run: |
-        head_tag=$(git describe --tags --match='[0-9].[0-9]*' HEAD 2>/dev/null || true)
-        head_hash=$(git rev-parse --short HEAD)
-        if [ -z "$head_tag" ]; then
-          version="${{ steps.tag.outputs.version }}-g${head_hash}"
-        elif [[ "$head_tag" != *-* ]]; then
-          version="${head_tag#M}-g${head_hash}"
-        else
-          orig_tag=${head_tag%%-*}
-          rest=${head_tag#*-}
-          distance=${rest%%-*}
-          version="${orig_tag#M}+${distance}-g${head_hash}"
-        fi
-        test -n "$version"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-
-    - name: Setup Shared Dependencies
-      uses: ./x265/.github/actions/setup-windows-deps
-      with:
-        ffmpeg-cache-suffix: lavf-v2-clang
-        ffmpeg-configure: |
-          ./configure --prefix=/usr/local --enable-gpl \
-            --disable-runtime-cpudetect --disable-all --disable-autodetect \
-            --disable-everything --disable-network \
-            --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
-            --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf \
-            --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
-            --enable-protocol=file \
-            --cc=cc --cxx=c++ --cpu=x86-64
-        use-mimalloc: 'true'
-        use-gop-muxer: 'true'
-        extra-msys2-packages: >-
-          mingw-w64-clang-x86_64-ffmpeg
-          mingw-w64-clang-x86_64-lldb
-
-    - name: Detect LLVM Profdata Identity
-      id: llvm_profdata
-      run: |
-        version=$(llvm-profdata --version | sed -nE 's/.*LLVM version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
-        test -n "$version"
-        safe_version=${version//[^A-Za-z0-9_.-]/_}
-        echo "id=llvm-${safe_version}" >> "$GITHUB_OUTPUT"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-
-    - name: Fetch PGO Profdata
-      shell: bash
-      run: |
-        mkdir -p build
-        cd x265
-
-        append_pgo_status() {
-          local profile_target="$1"
-          local status="$2"
-          local branch="$3"
-          local note="$4"
-          note=$(printf '%s' "$note" | tr '\n|' ';/' | cut -c1-180)
-          printf '| %s | %s | %s | %s | %s |\n' "${{ matrix.target_cpu }}" "$profile_target" "$status" "$branch" "$note" >> ../build/pgo-status.md
-        }
-
-        fetch_profdata() {
-          local target="$1"
-          local primary_branch="$2"
-          local fallback_branch="$3"
-          local source_path="$4"
-          local expected_toolchain="${5:-}"
-          local report_unavailable="${6:-true}"
-          local destination="../build/x265-${target}.profdata"
-          local branch last_branch="" status="unavailable" summary_branch="" summary_note="no matching profdata branch"
-
-          if [ -s "$destination" ]; then
-            echo "PGO profdata already selected for ${target}: ${destination}"
-            append_pgo_status "$target" selected previous "already selected by newer branch identity"
-            return 0
+      - name: Get Latest Tag
+        id: tag
+        shell: bash
+        working-directory: x265
+        run: |
+          version=""
+          if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then
+            version="${GITHUB_REF_NAME:-}"
+          else
+            version=$(git tag --list '[0-9].[0-9]*' --sort=-v:refname | head -n1)
           fi
+          if [ -z "$version" ]; then
+            version="0.0"
+            echo "::warning::No numeric version tag found; using $version as CI fallback"
+          fi
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-          for branch in "$primary_branch" "$fallback_branch"; do
-            [ -n "$branch" ] || continue
-            [ "$branch" != "$last_branch" ] || continue
-            last_branch="$branch"
-            summary_branch="$branch"
+      - name: Get CI Version
+        id: ci_version
+        shell: bash
+        working-directory: x265
+        run: |
+          head_tag=$(git describe --tags --match='[0-9].[0-9]*' HEAD 2>/dev/null || true)
+          head_hash=$(git rev-parse --short HEAD)
+          if [ -z "$head_tag" ]; then
+            version="${{ steps.tag.outputs.version }}-g${head_hash}"
+          elif [[ "$head_tag" != *-* ]]; then
+            version="${head_tag#M}-g${head_hash}"
+          else
+            orig_tag=${head_tag%%-*}
+            rest=${head_tag#*-}
+            distance=${rest%%-*}
+            version="${orig_tag#M}+${distance}-g${head_hash}"
+          fi
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-            local ls_remote_output ls_remote_status
-            set +e
-            ls_remote_output=$(git ls-remote --exit-code --heads origin "$branch" 2>&1)
-            ls_remote_status=$?
-            set -e
-            if [ "$ls_remote_status" -eq 2 ]; then
-              echo "PGO profdata branch missing: $branch"
-              summary_note="missing branch ${branch}"
-              continue
+      - name: Setup Shared Dependencies
+        uses: ./x265/.github/actions/setup-windows-deps
+        with:
+          ffmpeg-cache-suffix: lavf-v2-clang
+          ffmpeg-configure: |
+            ./configure --prefix=/usr/local --enable-gpl \
+              --disable-runtime-cpudetect --disable-all --disable-autodetect \
+              --disable-everything --disable-network \
+              --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
+              --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf \
+              --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
+              --enable-protocol=file \
+              --cc=cc --cxx=c++ --cpu=x86-64
+          use-mimalloc: 'true'
+          use-gop-muxer: 'true'
+          extra-msys2-packages: >-
+            mingw-w64-clang-x86_64-ffmpeg
+            mingw-w64-clang-x86_64-lldb
+
+      - name: Detect LLVM Profdata Identity
+        id: llvm_profdata
+        run: |
+          version=$(llvm-profdata --version | sed -nE 's/.*LLVM version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
+          test -n "$version"
+          safe_version=${version//[^A-Za-z0-9_.-]/_}
+          echo "id=llvm-${safe_version}" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch PGO Profdata
+        shell: bash
+        run: |
+          mkdir -p build
+          cd x265
+
+          append_pgo_status() {
+            local profile_target="$1"
+            local status="$2"
+            local branch="$3"
+            local note="$4"
+            note=$(printf '%s' "$note" | tr '\n|' ';/' | cut -c1-180)
+            printf '| %s | %s | %s | %s | %s |\n' "${{ matrix.target_cpu }}" "$profile_target" "$status" "$branch" "$note" >> ../build/pgo-status.md
+          }
+
+          fetch_profdata() {
+            local target="$1"
+            local primary_branch="$2"
+            local fallback_branch="$3"
+            local source_path="$4"
+            local expected_toolchain="${5:-}"
+            local report_unavailable="${6:-true}"
+            local destination="../build/x265-${target}.profdata"
+            local branch last_branch="" status="unavailable" summary_branch="" summary_note="no matching profdata branch"
+
+            if [ -s "$destination" ]; then
+              echo "PGO profdata already selected for ${target}: ${destination}"
+              append_pgo_status "$target" selected previous "already selected by newer branch identity"
+              return 0
             fi
-            if [ "$ls_remote_status" -ne 0 ]; then
-              printf '%s\n' "$ls_remote_output"
-              return "$ls_remote_status"
-            fi
 
-            echo "=== Fetching PGO profdata for ${target} from ${branch}:${source_path} ==="
-            git fetch --quiet origin "$branch" --depth=1
+            for branch in "$primary_branch" "$fallback_branch"; do
+              [ -n "$branch" ] || continue
+              [ "$branch" != "$last_branch" ] || continue
+              last_branch="$branch"
+              summary_branch="$branch"
 
-            local metadata_path="../build/x265-${target}.profdata.metadata.json"
-            rm -f "$metadata_path"
-            if git show "FETCH_HEAD:metadata.json" > "$metadata_path" 2>/dev/null; then
-              rm -rf ../build/profiles
-              mkdir -p ../build/profiles
-              if ! git show "FETCH_HEAD:profiles/0.profdata" > ../build/profiles/0.profdata 2>/dev/null; then
-                rm -f ../build/profiles/0.profdata
-              fi
-              metadata_check_args=(
-                --expected-target="$target"
-                --expected-branch="$branch"
-                --current-commit="${{ github.sha }}"
-                --require-dependency-fields
-                --require-fresh-slot
-              )
-              if [ -n "$expected_toolchain" ]; then
-                metadata_check_args+=(--expected-toolchain="$expected_toolchain")
-              fi
-              if ! metadata_check_output=$(python .github/scripts/check_profdata_metadata.py "$metadata_path" "${metadata_check_args[@]}" 2>&1); then
-                printf '%s\n' "$metadata_check_output"
-                if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-                  {
-                    echo
-                    echo "#### Rejected PGO metadata"
-                    echo
-                    echo "- target_cpu: ${{ matrix.target_cpu }}"
-                    echo "- profile_target: ${target}"
-                    echo "- branch: ${branch}"
-                    echo
-                    echo '```text'
-                    printf '%s\n' "$metadata_check_output" | head -20
-                    echo '```'
-                  } >> "$GITHUB_STEP_SUMMARY"
-                fi
-                while IFS= read -r line; do
-                  [ -n "$line" ] && echo "::warning::PGO profdata metadata rejected: target=${target} branch=${branch}: $line"
-                done <<< "$metadata_check_output"
-                summary_note="metadata rejected: $(printf '%s' "$metadata_check_output" | tr '\n' ';' | cut -c1-180)"
-                rm -f "$metadata_path"
-                rm -rf ../build/profiles
+              local ls_remote_output ls_remote_status
+              set +e
+              ls_remote_output=$(git ls-remote --exit-code --heads origin "$branch" 2>&1)
+              ls_remote_status=$?
+              set -e
+              if [ "$ls_remote_status" -eq 2 ]; then
+                echo "PGO profdata branch missing: $branch"
+                summary_note="missing branch ${branch}"
                 continue
               fi
-              printf '%s\n' "$metadata_check_output"
-              summary_note="metadata validated"
-              rm -rf ../build/profiles
-            else
-              echo "::warning::PGO profdata metadata missing: target=${target} branch=${branch}"
-              summary_note="metadata missing"
+              if [ "$ls_remote_status" -ne 0 ]; then
+                printf '%s\n' "$ls_remote_output"
+                return "$ls_remote_status"
+              fi
+
+              echo "=== Fetching PGO profdata for ${target} from ${branch}:${source_path} ==="
+              git fetch --quiet origin "$branch" --depth=1
+
+              local metadata_path="../build/x265-${target}.profdata.metadata.json"
+              rm -f "$metadata_path"
+              if git show "FETCH_HEAD:metadata.json" > "$metadata_path" 2>/dev/null; then
+                rm -rf ../build/profiles
+                mkdir -p ../build/profiles
+                if ! git show "FETCH_HEAD:profiles/0.profdata" > ../build/profiles/0.profdata 2>/dev/null; then
+                  rm -f ../build/profiles/0.profdata
+                fi
+                metadata_check_args=(
+                  --expected-target="$target"
+                  --expected-branch="$branch"
+                  --current-commit="${{ github.sha }}"
+                  --require-dependency-fields
+                  --require-fresh-slot
+                )
+                if [ -n "$expected_toolchain" ]; then
+                  metadata_check_args+=(--expected-toolchain="$expected_toolchain")
+                fi
+                if ! metadata_check_output=$(python .github/scripts/check_profdata_metadata.py "$metadata_path" "${metadata_check_args[@]}" 2>&1); then
+                  printf '%s\n' "$metadata_check_output"
+                  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                    {
+                      echo
+                      echo "#### Rejected PGO metadata"
+                      echo
+                      echo "- target_cpu: ${{ matrix.target_cpu }}"
+                      echo "- profile_target: ${target}"
+                      echo "- branch: ${branch}"
+                      echo
+                      echo '```text'
+                      printf '%s\n' "$metadata_check_output" | head -20
+                      echo '```'
+                    } >> "$GITHUB_STEP_SUMMARY"
+                  fi
+                  while IFS= read -r line; do
+                    [ -n "$line" ] && echo "::warning::PGO profdata metadata rejected: target=${target} branch=${branch}: $line"
+                  done <<< "$metadata_check_output"
+                  summary_note="metadata rejected: $(printf '%s' "$metadata_check_output" | tr '\n' ';' | cut -c1-180)"
+                  rm -f "$metadata_path"
+                  rm -rf ../build/profiles
+                  continue
+                fi
+                printf '%s\n' "$metadata_check_output"
+                summary_note="metadata validated"
+                rm -rf ../build/profiles
+              else
+                echo "::warning::PGO profdata metadata missing: target=${target} branch=${branch}"
+                summary_note="metadata missing"
+              fi
+
+              if ! git show "FETCH_HEAD:${source_path}" > "$destination" 2>/dev/null; then
+                echo "::warning::PGO profdata file missing: target=${target} branch=${branch} path=${source_path}"
+                rm -f "$destination"
+                summary_note="profdata file missing at ${source_path}"
+                continue
+              fi
+
+              if [ "$branch" = "$fallback_branch" ] && [ "$primary_branch" != "$fallback_branch" ]; then
+                echo "PGO profdata fallback hit: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
+                status="fallback"
+              else
+                echo "PGO profdata hit: target=${target} branch=${branch}"
+                status="hit"
+              fi
+              echo "PGO profdata path: source=${source_path} destination=${destination}"
+              append_pgo_status "$target" "$status" "$branch" "$summary_note"
+              return 0
+            done
+
+            echo "::warning::PGO profdata unavailable: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
+            if [ "$report_unavailable" = true ]; then
+              append_pgo_status "$target" unavailable "${summary_branch:-none}" "$summary_note"
             fi
+          }
 
-            if ! git show "FETCH_HEAD:${source_path}" > "$destination" 2>/dev/null; then
-              echo "::warning::PGO profdata file missing: target=${target} branch=${branch} path=${source_path}"
-              rm -f "$destination"
-              summary_note="profdata file missing at ${source_path}"
-              continue
-            fi
+          {
+            echo "### PGO profdata status"
+            echo
+            echo "| target_cpu | profile_target | status | branch | notes |"
+            echo "| --- | --- | --- | --- | --- |"
+          } > ../build/pgo-status.md
 
-            if [ "$branch" = "$fallback_branch" ] && [ "$primary_branch" != "$fallback_branch" ]; then
-              echo "PGO profdata fallback hit: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
-              status="fallback"
-            else
-              echo "PGO profdata hit: target=${target} branch=${branch}"
-              status="hit"
-            fi
-            echo "PGO profdata path: source=${source_path} destination=${destination}"
-            append_pgo_status "$target" "$status" "$branch" "$summary_note"
-            return 0
-          done
-
-          echo "::warning::PGO profdata unavailable: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
-          if [ "$report_unavailable" = true ]; then
-            append_pgo_status "$target" unavailable "${summary_branch:-none}" "$summary_note"
-          fi
-        }
-
-        {
-          echo "### PGO profdata status"
-          echo
-          echo "| target_cpu | profile_target | status | branch | notes |"
-          echo "| --- | --- | --- | --- | --- |"
-        } > ../build/pgo-status.md
-
-        fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-8b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
-        fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib profdata-x86-64-8b-lib x265.profdata
-        fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-12b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
-        fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib profdata-x86-64-12b-lib x265.profdata
-        fetch_profdata all profdata-${{ matrix.target_cpu }}-all-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-all-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
-        fetch_profdata all profdata-${{ matrix.target_cpu }}-all profdata-x86-64-all x265.profdata
-        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-          cat ../build/pgo-status.md >> "$GITHUB_STEP_SUMMARY"
-        fi
-
-    - name: Smoke Test L-SMASH
-      env:
-        MSYSTEM: CLANG64
-      shell: msys2 {0}
-      run: |
-        set -ex
-        export PATH="/clang64/bin:/usr/bin"
-        echo "=== Step 1: Check library files ==="
-        ls -la /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a 2>&1
-        echo "=== Step 2: Check symbols in liblsmash ==="
-        nm /usr/local/lib/liblsmash.a 2>/dev/null | grep -E "lsmash_create_root|lsmash_destroy_root" | head -5
-        echo "=== Step 3: Check obp symbols in liblsmash (verifies obuparse linkage) ==="
-        nm /usr/local/lib/liblsmash.a 2>/dev/null | grep " obp_" | head -10
-        echo "=== Step 4: Compile smoke test ==="
-        cat > /tmp/lsmash_smoke.c << 'SMOKE'
-        #include <stdio.h>
-        #include <lsmash.h>
-        int main(void) {
-            printf("Creating root...\n");
-            lsmash_root_t *root = lsmash_create_root();
-            if (!root) { printf("FAIL: lsmash_create_root returned NULL\n"); return 1; }
-            printf("OK: lsmash_create_root succeeded %p\n", (void*)root);
-            printf("Destroying root...\n");
-            lsmash_destroy_root(root);
-            printf("OK: lsmash_destroy_root succeeded\n");
-            return 0;
-        }
-        SMOKE
-        echo "=== Step 5: Compile smoke test (no ASAN - runtime unavailable in clang64) ==="
-        clang -g -I/usr/local/include -L/usr/local/lib /tmp/lsmash_smoke.c /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a -lm -o /tmp/lsmash_smoke.exe
-        cat > /tmp/mp4_smoke.c << 'MP4SMOKE'
-        #include <stdio.h>
-        #include <stdlib.h>
-        #include <string.h>
-        #include <lsmash.h>
-        int main(void) {
-            printf("Creating root...\n");
-            lsmash_root_t *root = lsmash_create_root();
-            if (!root) { printf("FAIL: lsmash_create_root\n"); return 1; }
-            printf("OK: root %p\n", (void*)root);
-
-            lsmash_file_parameters_t params = {0};
-            printf("Opening file...\n");
-            if (lsmash_open_file("./smoke.mp4", 0, &params) < 0) {
-                printf("FAIL: lsmash_open_file\n"); lsmash_destroy_root(root); return 1; }
-            printf("Setting file...\n");
-            if (!lsmash_set_file(root, &params)) {
-                printf("FAIL: lsmash_set_file\n"); lsmash_destroy_root(root); return 1; }
-
-            printf("Creating track...\n");
-            uint32_t track = lsmash_create_track(root, ISOM_MEDIA_HANDLER_TYPE_VIDEO_TRACK);
-            if (!track) { printf("FAIL: lsmash_create_track\n"); lsmash_destroy_root(root); return 1; }
-            printf("OK: track %u\n", track);
-
-            lsmash_media_parameters_t media_params;
-            lsmash_initialize_media_parameters(&media_params);
-            media_params.timescale = 24;
-            if (lsmash_set_media_parameters(root, track, &media_params) < 0) {
-                printf("FAIL: lsmash_set_media_parameters\n"); lsmash_destroy_root(root); return 1; }
-
-            lsmash_video_summary_t *summary = (lsmash_video_summary_t*)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
-            if (!summary) { printf("FAIL: lsmash_create_summary\n"); lsmash_destroy_root(root); return 1; }
-            summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
-            summary->width = 128;
-            summary->height = 72;
-
-            printf("Adding sample entry...\n");
-            uint32_t sampleEntry = lsmash_add_sample_entry(root, track, (lsmash_summary_t*)summary);
-            if (!sampleEntry) { printf("FAIL: lsmash_add_sample_entry\n"); lsmash_destroy_root(root); return 1; }
-            printf("OK: sampleEntry %u\n", sampleEntry);
-
-            // Create a minimal fake HEVC NAL unit (5 bytes: start code + slice)
-            unsigned char fake_nal[5] = {0x00, 0x00, 0x00, 0x01, 0x41};
-            lsmash_sample_t *sample = lsmash_create_sample(16);
-            if (!sample) { printf("FAIL: lsmash_create_sample\n"); lsmash_destroy_root(root); return 1; }
-            memset(sample->data, 0, 16);
-            memcpy(sample->data, fake_nal, 5);
-            sample->length = 16;
-            sample->dts = 0;
-            sample->cts = 0;
-            sample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC;
-            sample->index = sampleEntry;
-
-            printf("Appending sample (track=%u)...\n", track);
-            if (lsmash_append_sample(root, track, sample)) {
-                printf("FAIL: lsmash_append_sample\n"); lsmash_delete_sample(sample); lsmash_destroy_root(root); return 1; }
-            printf("OK: sample appended\n");
-            sample = NULL;
-
-            printf("Finishing movie...\n");
-            lsmash_finish_movie(root, NULL);
-            printf("Closing file...\n");
-            lsmash_close_file(&params);
-            lsmash_destroy_root(root);
-            printf("OK: complete MP4 write smoke passed\n");
-            return 0;
-        }
-        MP4SMOKE
-        echo "=== Step 6: Run root smoke ==="
-        /tmp/lsmash_smoke.exe
-        echo "=== Step 7: MP4 creation smoke (tests lsmash+obuparse ABI) ==="
-        clang -g -I/usr/local/include -L/usr/local/lib /tmp/mp4_smoke.c /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a -lm -o /tmp/mp4_smoke.exe
-        cat > /tmp/mp4_smoke_lldb.cmd <<'LLDB'
-        run
-        process status
-        thread list
-        thread backtrace all
-        bt full
-        frame info
-        register read
-        disassemble --pc
-        image list
-        quit
-        LLDB
-        lldb -b -s /tmp/mp4_smoke_lldb.cmd /tmp/mp4_smoke.exe || true
-        test -s smoke.mp4
-        echo "L-SMASH smoke: PASS"
-
-    # === Build x265 ===
-    - name: Setup Build Dirs
-      run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all-8b-lib build/all-12b-lib build/all
-
-    - name: Compile X265
-      env:
-        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
-      run: |
-        set -euo pipefail
-
-        CPU=${{matrix.target_cpu}}
-        FULL_BUILD=false
-        if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          FULL_BUILD=true
-          echo "Building full CLI set"
-        else
-          echo "Building all-only push path"
-        fi
-
-        mkdir -p build/logs
-
-        print_thinlto_cache() {
-          local dir="$1"
-          local cache="$dir/CMakeCache.txt"
-
-          echo "=== ThinLTO cache: $dir ==="
-          if [ ! -f "$cache" ]; then
-            echo "Missing CMakeCache.txt: $cache"
-            return 1
+          fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-8b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
+          fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib profdata-x86-64-8b-lib x265.profdata
+          fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-12b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
+          fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib profdata-x86-64-12b-lib x265.profdata
+          fetch_profdata all profdata-${{ matrix.target_cpu }}-all-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-all-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
+          fetch_profdata all profdata-${{ matrix.target_cpu }}-all profdata-x86-64-all x265.profdata
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat ../build/pgo-status.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          for key in CMAKE_CXX_COMPILER CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS CMAKE_INTERPROCEDURAL_OPTIMIZATION CMAKE_AR CMAKE_RANLIB; do
-            grep -E "^${key}:" "$cache" || echo "${key}:UNSET=<unset>"
-          done
-        }
+      - name: Smoke Test L-SMASH
+        env:
+          MSYSTEM: CLANG64
+        shell: msys2 {0}
+        run: |
+          set -ex
+          export PATH="/clang64/bin:/usr/bin"
+          echo "=== Step 1: Check library files ==="
+          ls -la /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a 2>&1
+          echo "=== Step 2: Check symbols in liblsmash ==="
+          nm /usr/local/lib/liblsmash.a 2>/dev/null | grep -E "lsmash_create_root|lsmash_destroy_root" | head -5
+          echo "=== Step 3: Check obp symbols in liblsmash (verifies obuparse linkage) ==="
+          nm /usr/local/lib/liblsmash.a 2>/dev/null | grep " obp_" | head -10
+          echo "=== Step 4: Compile smoke test ==="
+          cat > /tmp/lsmash_smoke.c << 'SMOKE'
+          #include <stdio.h>
+          #include <lsmash.h>
+          int main(void) {
+              printf("Creating root...\n");
+              lsmash_root_t *root = lsmash_create_root();
+              if (!root) { printf("FAIL: lsmash_create_root returned NULL\n"); return 1; }
+              printf("OK: lsmash_create_root succeeded %p\n", (void*)root);
+              printf("Destroying root...\n");
+              lsmash_destroy_root(root);
+              printf("OK: lsmash_destroy_root succeeded\n");
+              return 0;
+          }
+          SMOKE
+          echo "=== Step 5: Compile smoke test (no ASAN - runtime unavailable in clang64) ==="
+          clang -g -I/usr/local/include -L/usr/local/lib /tmp/lsmash_smoke.c /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a -lm -o /tmp/lsmash_smoke.exe
+          cat > /tmp/mp4_smoke.c << 'MP4SMOKE'
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <lsmash.h>
+          int main(void) {
+              printf("Creating root...\n");
+              lsmash_root_t *root = lsmash_create_root();
+              if (!root) { printf("FAIL: lsmash_create_root\n"); return 1; }
+              printf("OK: root %p\n", (void*)root);
 
-        run_ninja_logged() {
-          local label="$1"
-          local dir="$2"
-          local jobs="${3:-}"
-          local log="build/logs/${label}.log"
+              lsmash_file_parameters_t params = {0};
+              printf("Opening file...\n");
+              if (lsmash_open_file("./smoke.mp4", 0, &params) < 0) {
+                  printf("FAIL: lsmash_open_file\n"); lsmash_destroy_root(root); return 1; }
+              printf("Setting file...\n");
+              if (!lsmash_set_file(root, &params)) {
+                  printf("FAIL: lsmash_set_file\n"); lsmash_destroy_root(root); return 1; }
 
-          echo "=== Verbose ninja: $dir -> $log ==="
-          (
-            set -o pipefail
-            if [ -n "$jobs" ]; then
-              ninja -C "$dir" -v -j "$jobs" 2>&1 | tee "$log"
-            else
-              ninja -C "$dir" -v 2>&1 | tee "$log"
+              printf("Creating track...\n");
+              uint32_t track = lsmash_create_track(root, ISOM_MEDIA_HANDLER_TYPE_VIDEO_TRACK);
+              if (!track) { printf("FAIL: lsmash_create_track\n"); lsmash_destroy_root(root); return 1; }
+              printf("OK: track %u\n", track);
+
+              lsmash_media_parameters_t media_params;
+              lsmash_initialize_media_parameters(&media_params);
+              media_params.timescale = 24;
+              if (lsmash_set_media_parameters(root, track, &media_params) < 0) {
+                  printf("FAIL: lsmash_set_media_parameters\n"); lsmash_destroy_root(root); return 1; }
+
+              lsmash_video_summary_t *summary = (lsmash_video_summary_t*)lsmash_create_summary(LSMASH_SUMMARY_TYPE_VIDEO);
+              if (!summary) { printf("FAIL: lsmash_create_summary\n"); lsmash_destroy_root(root); return 1; }
+              summary->sample_type = ISOM_CODEC_TYPE_HVC1_VIDEO;
+              summary->width = 128;
+              summary->height = 72;
+
+              printf("Adding sample entry...\n");
+              uint32_t sampleEntry = lsmash_add_sample_entry(root, track, (lsmash_summary_t*)summary);
+              if (!sampleEntry) { printf("FAIL: lsmash_add_sample_entry\n"); lsmash_destroy_root(root); return 1; }
+              printf("OK: sampleEntry %u\n", sampleEntry);
+
+              // Create a minimal fake HEVC NAL unit (5 bytes: start code + slice)
+              unsigned char fake_nal[5] = {0x00, 0x00, 0x00, 0x01, 0x41};
+              lsmash_sample_t *sample = lsmash_create_sample(16);
+              if (!sample) { printf("FAIL: lsmash_create_sample\n"); lsmash_destroy_root(root); return 1; }
+              memset(sample->data, 0, 16);
+              memcpy(sample->data, fake_nal, 5);
+              sample->length = 16;
+              sample->dts = 0;
+              sample->cts = 0;
+              sample->prop.ra_flags = ISOM_SAMPLE_RANDOM_ACCESS_FLAG_SYNC;
+              sample->index = sampleEntry;
+
+              printf("Appending sample (track=%u)...\n", track);
+              if (lsmash_append_sample(root, track, sample)) {
+                  printf("FAIL: lsmash_append_sample\n"); lsmash_delete_sample(sample); lsmash_destroy_root(root); return 1; }
+              printf("OK: sample appended\n");
+              sample = NULL;
+
+              printf("Finishing movie...\n");
+              lsmash_finish_movie(root, NULL);
+              printf("Closing file...\n");
+              lsmash_close_file(&params);
+              lsmash_destroy_root(root);
+              printf("OK: complete MP4 write smoke passed\n");
+              return 0;
+          }
+          MP4SMOKE
+          echo "=== Step 6: Run root smoke ==="
+          /tmp/lsmash_smoke.exe
+          echo "=== Step 7: MP4 creation smoke (tests lsmash+obuparse ABI) ==="
+          clang -g -I/usr/local/include -L/usr/local/lib /tmp/mp4_smoke.c /usr/local/lib/liblsmash.a /usr/local/lib/libobuparse.a -lm -o /tmp/mp4_smoke.exe
+          cat > /tmp/mp4_smoke_lldb.cmd <<'LLDB'
+          run
+          process status
+          thread list
+          thread backtrace all
+          bt full
+          frame info
+          register read
+          disassemble --pc
+          image list
+          quit
+          LLDB
+          lldb -b -s /tmp/mp4_smoke_lldb.cmd /tmp/mp4_smoke.exe || true
+          test -s smoke.mp4
+          echo "L-SMASH smoke: PASS"
+
+      # === Build x265 ===
+      - name: Setup Build Dirs
+        run: mkdir -p build/8b build/10b build/12b build/8b-lib build/12b-lib build/all-8b-lib build/all-12b-lib build/all
+
+      - name: Compile X265
+        env:
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/clang64/lib/pkgconfig
+        run: |
+          set -euo pipefail
+
+          CPU=${{matrix.target_cpu}}
+          FULL_BUILD=false
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            FULL_BUILD=true
+            echo "Building full CLI set"
+          else
+            echo "Building all-only push path"
+          fi
+
+          mkdir -p build/logs
+
+          print_thinlto_cache() {
+            local dir="$1"
+            local cache="$dir/CMakeCache.txt"
+
+            echo "=== ThinLTO cache: $dir ==="
+            if [ ! -f "$cache" ]; then
+              echo "Missing CMakeCache.txt: $cache"
+              return 1
             fi
+
+            for key in CMAKE_CXX_COMPILER CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS CMAKE_INTERPROCEDURAL_OPTIMIZATION CMAKE_AR CMAKE_RANLIB; do
+              grep -E "^${key}:" "$cache" || echo "${key}:UNSET=<unset>"
+            done
+          }
+
+          run_ninja_logged() {
+            local label="$1"
+            local dir="$2"
+            local jobs="${3:-}"
+            local log="build/logs/${label}.log"
+
+            echo "=== Verbose ninja: $dir -> $log ==="
+            (
+              set -o pipefail
+              if [ -n "$jobs" ]; then
+                ninja -C "$dir" -v -j "$jobs" 2>&1 | tee "$log"
+              else
+                ninja -C "$dir" -v 2>&1 | tee "$log"
+              fi
+            )
+          }
+
+          wait_for_jobs() {
+            local status=0
+            local pid
+
+            for pid in "$@"; do
+              if ! wait "$pid"; then
+                status=1
+              fi
+            done
+
+            return "$status"
+          }
+
+          NPROC=$(nproc)
+          NINJA_JOBS_PAIR=$(( (NPROC + 1) / 2 ))
+          NINJA_JOBS_TRIPLE=$(( (NPROC + 2) / 3 ))
+          echo "Ninja job limits: single=${NPROC}, pair=${NINJA_JOBS_PAIR}, triple=${NINJA_JOBS_TRIPLE}"
+
+          summarize_thinlto_logs() {
+            local compile_cmd link_cmd archive_cmd
+
+            compile_cmd=$(grep -h -E -- '-flto=thin' build/logs/*.log | grep -- ' -c ' | head -n1 || true)
+            link_cmd=$(grep -h -E -- '-flto=thin' build/logs/*.log | grep -F 'x265' | grep -v -- ' -c ' | head -n1 || true)
+            archive_cmd=$(grep -h -E 'libx265\.a|x265_8b\.a|x265_12b\.a' build/logs/*.log | grep -E 'llvm-ar|llvm-ranlib|(^|[[:space:]/])ar([[:space:]]|$)|(^|[[:space:]/])ranlib([[:space:]]|$)' | head -n1 || true)
+
+            echo "=== ThinLTO summary ==="
+            if [ -n "$compile_cmd" ]; then
+              echo "compile_with_thinlto=yes"
+              echo "$compile_cmd"
+            else
+              echo "compile_with_thinlto=no"
+            fi
+
+            if [ -n "$link_cmd" ]; then
+              echo "link_with_thinlto=yes"
+              echo "$link_cmd"
+            else
+              echo "link_with_thinlto=no"
+            fi
+
+            if [ -n "$archive_cmd" ]; then
+              echo "archive_tool_detected=yes"
+              echo "$archive_cmd"
+            else
+              echo "archive_tool_detected=no"
+            fi
+
+            echo "=== ThinLTO tool discovery ==="
+            for tool in c++ ld.lld llvm-ar llvm-ranlib ar ranlib; do
+              if command -v "$tool" >/dev/null 2>&1; then
+                printf '%s=%s\n' "$tool" "$(command -v "$tool")"
+              else
+                printf '%s=<not found>\n' "$tool"
+              fi
+            done
+          }
+
+          BASE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
+          cmake_common_args=(
+            -GNinja x265/source
+            -DCMAKE_PREFIX_PATH=/usr/local
+            -DENABLE_LAVF=ON
+            -DENABLE_STATIC_LAVF=ON
+            -DENABLE_MKV=ON
+            -DENABLE_LSMASH=ON
+            -DTARGET_CPU="$CPU"
+            -DENABLE_AVISYNTH=OFF
+            -DENABLE_VPYSYNTH=OFF
+            -DUSE_MIMALLOC=ON
+            -DENABLE_UNITY_BUILD=ON
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
           )
-        }
 
-        wait_for_jobs() {
-          local status=0
-          local pid
+          configure_x265() {
+            local build_dir="$1"
+            shift
+            cmake "${cmake_common_args[@]}" -B "$build_dir" "$@"
+          }
 
-          for pid in "$@"; do
-            if ! wait "$pid"; then
-              status=1
-            fi
-          done
-
-          return "$status"
-        }
-
-        NPROC=$(nproc)
-        NINJA_JOBS_PAIR=$(( (NPROC + 1) / 2 ))
-        NINJA_JOBS_TRIPLE=$(( (NPROC + 2) / 3 ))
-        echo "Ninja job limits: single=${NPROC}, pair=${NINJA_JOBS_PAIR}, triple=${NINJA_JOBS_TRIPLE}"
-
-        summarize_thinlto_logs() {
-          local compile_cmd link_cmd archive_cmd
-
-          compile_cmd=$(grep -h -E -- '-flto=thin' build/logs/*.log | grep -- ' -c ' | head -n1 || true)
-          link_cmd=$(grep -h -E -- '-flto=thin' build/logs/*.log | grep -F 'x265' | grep -v -- ' -c ' | head -n1 || true)
-          archive_cmd=$(grep -h -E 'libx265\.a|x265_8b\.a|x265_12b\.a' build/logs/*.log | grep -E 'llvm-ar|llvm-ranlib|(^|[[:space:]/])ar([[:space:]]|$)|(^|[[:space:]/])ranlib([[:space:]]|$)' | head -n1 || true)
-
-          echo "=== ThinLTO summary ==="
-          if [ -n "$compile_cmd" ]; then
-            echo "compile_with_thinlto=yes"
-            echo "$compile_cmd"
+          PGO_8B_LIB_FLAG=""
+          if [ -f build/x265-8b-lib.profdata ]; then
+            PGO_8B_LIB_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265-8b-lib.profdata"
+            echo "Using 8b-lib PGO profdata"
           else
-            echo "compile_with_thinlto=no"
+            echo "Building 8b-lib without PGO"
           fi
 
-          if [ -n "$link_cmd" ]; then
-            echo "link_with_thinlto=yes"
-            echo "$link_cmd"
+          PGO_12B_LIB_FLAG=""
+          if [ -f build/x265-12b-lib.profdata ]; then
+            PGO_12B_LIB_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265-12b-lib.profdata"
+            echo "Using 12b-lib PGO profdata"
           else
-            echo "link_with_thinlto=no"
+            echo "Building 12b-lib without PGO"
           fi
 
-          if [ -n "$archive_cmd" ]; then
-            echo "archive_tool_detected=yes"
-            echo "$archive_cmd"
+          PGO_ALL_FLAG=""
+          if [ -f build/x265-all.profdata ]; then
+            PGO_ALL_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265-all.profdata"
+            echo "Using all-target PGO profdata"
           else
-            echo "archive_tool_detected=no"
+            echo "Building all target without PGO"
           fi
 
-          echo "=== ThinLTO tool discovery ==="
-          for tool in c++ ld.lld llvm-ar llvm-ranlib ar ranlib; do
-            if command -v "$tool" >/dev/null 2>&1; then
-              printf '%s=%s\n' "$tool" "$(command -v "$tool")"
-            else
-              printf '%s=<not found>\n' "$tool"
-            fi
-          done
-        }
+          CXX_FLAGS="${BASE_CXX_FLAGS}"
+          CXX_FLAGS_8B_LIB="${BASE_CXX_FLAGS} ${PGO_8B_LIB_FLAG}"
+          CXX_FLAGS_12B_LIB="${BASE_CXX_FLAGS} ${PGO_12B_LIB_FLAG}"
+          CXX_FLAGS_ALL="${BASE_CXX_FLAGS} ${PGO_ALL_FLAG}"
 
-        BASE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
-        cmake_common_args=(
-          -GNinja x265/source
-          -DCMAKE_PREFIX_PATH=/usr/local
-          -DENABLE_LAVF=ON
-          -DENABLE_STATIC_LAVF=ON
-          -DENABLE_MKV=ON
-          -DENABLE_LSMASH=ON
-          -DTARGET_CPU="$CPU"
-          -DENABLE_AVISYNTH=OFF
-          -DENABLE_VPYSYNTH=OFF
-          -DUSE_MIMALLOC=ON
-          -DENABLE_UNITY_BUILD=ON
-          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
-        )
+          source x265/.github/scripts/cxx20_scan_helpers.sh
 
-        configure_x265() {
-          local build_dir="$1"
-          shift
-          cmake "${cmake_common_args[@]}" -B "$build_dir" "$@"
-        }
+          check_pgo_consume_commands() {
+            local build_dir="$1"
+            local pgo_flag="$2"
+            local min_cpp_commands="$3"
+            [ -n "$pgo_flag" ] || return 0
+            check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"
+          }
 
-        PGO_8B_LIB_FLAG=""
-        if [ -f build/x265-8b-lib.profdata ]; then
-          PGO_8B_LIB_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265-8b-lib.profdata"
-          echo "Using 8b-lib PGO profdata"
-        else
-          echo "Building 8b-lib without PGO"
-        fi
+          if [ "$FULL_BUILD" = true ]; then
+            # === Configure and build 8bit CLI ===
+            echo "=== Building 8bit CLI ==="
+            configure_x265 build/8b \
+              -DENABLE_SHARED=OFF \
+              -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+              -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+            print_thinlto_cache build/8b
+            run_ninja_logged 8b build/8b "$NINJA_JOBS_TRIPLE" &
+            ninja_8b_pid=$!
 
-        PGO_12B_LIB_FLAG=""
-        if [ -f build/x265-12b-lib.profdata ]; then
-          PGO_12B_LIB_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265-12b-lib.profdata"
-          echo "Using 12b-lib PGO profdata"
-        else
-          echo "Building 12b-lib without PGO"
-        fi
+            # === Configure and build 10bit CLI ===
+            echo "=== Building 10bit CLI ==="
+            configure_x265 build/10b \
+              -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
+              -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+              -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+            print_thinlto_cache build/10b
+            run_ninja_logged 10b build/10b "$NINJA_JOBS_TRIPLE" &
+            ninja_10b_pid=$!
 
-        PGO_ALL_FLAG=""
-        if [ -f build/x265-all.profdata ]; then
-          PGO_ALL_FLAG="-fprofile-instr-use=$GITHUB_WORKSPACE/build/x265-all.profdata"
-          echo "Using all-target PGO profdata"
-        else
-          echo "Building all target without PGO"
-        fi
+            # === Configure and build 12bit CLI ===
+            echo "=== Building 12bit CLI ==="
+            configure_x265 build/12b \
+              -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF \
+              -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+              -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+            print_thinlto_cache build/12b
+            run_ninja_logged 12b build/12b "$NINJA_JOBS_TRIPLE" &
+            ninja_12b_pid=$!
+            wait_for_jobs "$ninja_8b_pid" "$ninja_10b_pid" "$ninja_12b_pid"
+            echo "=== Full CLI builds complete ==="
+          fi
 
-        CXX_FLAGS="${BASE_CXX_FLAGS}"
-        CXX_FLAGS_8B_LIB="${BASE_CXX_FLAGS} ${PGO_8B_LIB_FLAG}"
-        CXX_FLAGS_12B_LIB="${BASE_CXX_FLAGS} ${PGO_12B_LIB_FLAG}"
-        CXX_FLAGS_ALL="${BASE_CXX_FLAGS} ${PGO_ALL_FLAG}"
+          if [ "$FULL_BUILD" = true ]; then
+            # === Configure and build 8bit multilib ===
+            echo "=== Building 8bit multilib ==="
+            configure_x265 build/8b-lib \
+              -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+              -DCMAKE_CXX_FLAGS="$CXX_FLAGS_8B_LIB" \
+              -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+            print_thinlto_cache build/8b-lib
+            check_pgo_consume_commands build/8b-lib "$PGO_8B_LIB_FLAG" 50
+            run_ninja_logged 8b-lib build/8b-lib "$NINJA_JOBS_PAIR" &
+            ninja_8b_lib_pid=$!
 
-        source x265/.github/scripts/cxx20_scan_helpers.sh
+            # === Configure and build 12bit multilib ===
+            echo "=== Building 12bit multilib ==="
+            configure_x265 build/12b-lib \
+              -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
+              -DCMAKE_CXX_FLAGS="$CXX_FLAGS_12B_LIB" \
+              -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
+            print_thinlto_cache build/12b-lib
+            check_pgo_consume_commands build/12b-lib "$PGO_12B_LIB_FLAG" 50
+            run_ninja_logged 12b-lib build/12b-lib "$NINJA_JOBS_PAIR" &
+            ninja_12b_lib_pid=$!
+            wait_for_jobs "$ninja_8b_lib_pid" "$ninja_12b_lib_pid"
+            echo "=== Full multilib builds complete ==="
+          fi
 
-        check_pgo_consume_commands() {
-          local build_dir="$1"
-          local pgo_flag="$2"
-          local min_cpp_commands="$3"
-          [ -n "$pgo_flag" ] || return 0
-          check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"
-        }
+          echo "=== All CLI and multilib builds complete ==="
 
-        if [ "$FULL_BUILD" = true ]; then
-          # === Configure and build 8bit CLI ===
-          echo "=== Building 8bit CLI ==="
-          configure_x265 build/8b \
-            -DENABLE_SHARED=OFF \
-            -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-            -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
-          print_thinlto_cache build/8b
-          run_ninja_logged 8b build/8b "$NINJA_JOBS_TRIPLE" &
-          ninja_8b_pid=$!
+          # === Build all-bit-depth version ===
+          echo "=== Building all-bit-depth version ==="
 
-          # === Configure and build 10bit CLI ===
-          echo "=== Building 10bit CLI ==="
-          configure_x265 build/10b \
-            -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
-            -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-            -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
-          print_thinlto_cache build/10b
-          run_ninja_logged 10b build/10b "$NINJA_JOBS_TRIPLE" &
-          ninja_10b_pid=$!
-
-          # === Configure and build 12bit CLI ===
-          echo "=== Building 12bit CLI ==="
-          configure_x265 build/12b \
-            -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF \
-            -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
-            -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
-          print_thinlto_cache build/12b
-          run_ninja_logged 12b build/12b "$NINJA_JOBS_TRIPLE" &
-          ninja_12b_pid=$!
-          wait_for_jobs "$ninja_8b_pid" "$ninja_10b_pid" "$ninja_12b_pid"
-          echo "=== Full CLI builds complete ==="
-        fi
-
-        if [ "$FULL_BUILD" = true ]; then
-          # === Configure and build 8bit multilib ===
-          echo "=== Building 8bit multilib ==="
-          configure_x265 build/8b-lib \
+          echo "=== Building all-specific 8bit helper lib ==="
+          configure_x265 build/all-8b-lib \
             -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-            -DCMAKE_CXX_FLAGS="$CXX_FLAGS_8B_LIB" \
-            -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
-          print_thinlto_cache build/8b-lib
-          check_pgo_consume_commands build/8b-lib "$PGO_8B_LIB_FLAG" 50
-          run_ninja_logged 8b-lib build/8b-lib "$NINJA_JOBS_PAIR" &
-          ninja_8b_lib_pid=$!
+            -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
+            -DCMAKE_EXE_LINKER_FLAGS=""
+          print_thinlto_cache build/all-8b-lib
+          check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50
+          run_ninja_logged all-8b-lib build/all-8b-lib "$NINJA_JOBS_PAIR" &
+          ninja_all_8b_lib_pid=$!
 
-          # === Configure and build 12bit multilib ===
-          echo "=== Building 12bit multilib ==="
-          configure_x265 build/12b-lib \
+          echo "=== Building all-specific 12bit helper lib ==="
+          configure_x265 build/all-12b-lib \
             -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-            -DCMAKE_CXX_FLAGS="$CXX_FLAGS_12B_LIB" \
-            -DCMAKE_EXE_LINKER_FLAGS="-flto=thin"
-          print_thinlto_cache build/12b-lib
-          check_pgo_consume_commands build/12b-lib "$PGO_12B_LIB_FLAG" 50
-          run_ninja_logged 12b-lib build/12b-lib "$NINJA_JOBS_PAIR" &
-          ninja_12b_lib_pid=$!
-          wait_for_jobs "$ninja_8b_lib_pid" "$ninja_12b_lib_pid"
-          echo "=== Full multilib builds complete ==="
-        fi
+            -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
+            -DCMAKE_EXE_LINKER_FLAGS=""
+          print_thinlto_cache build/all-12b-lib
+          check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50
+          run_ninja_logged all-12b-lib build/all-12b-lib "$NINJA_JOBS_PAIR" &
+          ninja_all_12b_lib_pid=$!
+          wait_for_jobs "$ninja_all_8b_lib_pid" "$ninja_all_12b_lib_pid"
 
-        echo "=== All CLI and multilib builds complete ==="
+          cp build/all-8b-lib/libx265.a build/all/libx265_8b.a
+          cp build/all-12b-lib/libx265.a build/all/libx265_12b.a
 
-        # === Build all-bit-depth version ===
-        echo "=== Building all-bit-depth version ==="
+          configure_x265 build/all \
+            -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
+            -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
+            -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
+            -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
+            -DOBUPARSE_LIBRARY=/usr/local/lib/libobuparse.a \
+            -DCMAKE_EXE_LINKER_FLAGS=""
+          check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60
+          echo "=== All builds complete ==="
+          run_ninja_logged all build/all
+          echo "=== All builds complete ==="
 
-        echo "=== Building all-specific 8bit helper lib ==="
-        configure_x265 build/all-8b-lib \
-          -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-          -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
-          -DCMAKE_EXE_LINKER_FLAGS=""
-        print_thinlto_cache build/all-8b-lib
-        check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50
-        run_ninja_logged all-8b-lib build/all-8b-lib "$NINJA_JOBS_PAIR" &
-        ninja_all_8b_lib_pid=$!
+          echo "Keeping built executables unstripped until packaging"
 
-        echo "=== Building all-specific 12bit helper lib ==="
-        configure_x265 build/all-12b-lib \
-          -DHIGH_BIT_DEPTH=ON -DMAIN12=ON -DENABLE_SHARED=OFF -DENABLE_CLI=OFF -DEXPORT_C_API=OFF \
-          -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
-          -DCMAKE_EXE_LINKER_FLAGS=""
-        print_thinlto_cache build/all-12b-lib
-        check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50
-        run_ninja_logged all-12b-lib build/all-12b-lib "$NINJA_JOBS_PAIR" &
-        ninja_all_12b_lib_pid=$!
-        wait_for_jobs "$ninja_all_8b_lib_pid" "$ninja_all_12b_lib_pid"
+      - name: Runtime Smoke Boundary Summary
+        run: |
+          {
+            echo "### Runtime smoke boundary"
+            echo
+            echo "| target_cpu | build | runtime_smoke | reason |"
+            echo "| --- | --- | --- | --- |"
+            if [ "${{ matrix.target_cpu }}" = "x86-64" ]; then
+              echo "| ${{ matrix.target_cpu }} | yes | yes | baseline runner ISA |"
+            else
+              echo "| ${{ matrix.target_cpu }} | yes | no | GitHub runner host may not support target-specific instructions |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
-        cp build/all-8b-lib/libx265.a build/all/libx265_8b.a
-        cp build/all-12b-lib/libx265.a build/all/libx265_12b.a
+      - name: Runtime Smokes (All CLI)
+        if: matrix.target_cpu == 'x86-64'
+        run: bash x265/.github/scripts/runtime_smoke_suite.sh all
 
-        configure_x265 build/all \
-          -DEXTRA_LIB="x265_8b.a;x265_12b.a" -DEXTRA_LINK_FLAGS=-L. \
-          -DLINKED_8BIT=ON -DLINKED_12BIT=ON -DENABLE_HDR10_PLUS=ON \
-          -DHIGH_BIT_DEPTH=ON -DENABLE_SHARED=OFF \
-          -DCMAKE_CXX_FLAGS="$CXX_FLAGS_ALL" \
-          -DOBUPARSE_LIBRARY=/usr/local/lib/libobuparse.a \
-          -DCMAKE_EXE_LINKER_FLAGS=""
-        check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60
-        echo "=== All builds complete ==="
-        run_ninja_logged all build/all
-        echo "=== All builds complete ==="
+      - name: MP4 Smokes (All CLI)
+        if: matrix.target_cpu == 'x86-64'
+        run: bash x265/.github/scripts/mp4_smoke_suite.sh all
 
-        echo "Keeping built executables unstripped until packaging"
-
-    - name: Runtime Smoke Boundary Summary
-      run: |
-        {
-          echo "### Runtime smoke boundary"
-          echo
-          echo "| target_cpu | build | runtime_smoke | reason |"
-          echo "| --- | --- | --- | --- |"
-          if [ "${{ matrix.target_cpu }}" = "x86-64" ]; then
-            echo "| ${{ matrix.target_cpu }} | yes | yes | baseline runner ISA |"
-          else
-            echo "| ${{ matrix.target_cpu }} | yes | no | GitHub runner host may not support target-specific instructions |"
+      - name: Package
+        run: |
+          mkdir dist
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            strip -s build/8b/x265.exe
+            strip -s build/10b/x265.exe
+            strip -s build/12b/x265.exe
+            cp build/8b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-8bit.exe
+            cp build/10b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-10bit.exe
+            cp build/12b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-12bit.exe
           fi
-        } >> "$GITHUB_STEP_SUMMARY"
+          strip -s build/all/x265.exe
+          cp build/all/x265.exe dist/x265-win64-${{matrix.target_cpu}}-all.exe
 
-    - name: RAW Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh raw
+      - name: Set Package Version
+        id: package_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            version="${{ steps.tag.outputs.version }}"
+          else
+            version="${{ steps.ci_version.outputs.version }}"
+          fi
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-    - name: CLI Long Input Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh cli-long-input
+      - name: Compress Package
+        run: |
+          cd dist
+          7za a -t7z -mx=9 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z ./*.exe
 
-    - name: MKV Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh mkv
+      - name: Verify Package Artifact
+        run: |
+          expected_count=1
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            expected_count=4
+          fi
+          bash x265/.github/scripts/verify_ci_archive.sh x265-release "x265-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z" artifact-check "${{ matrix.target_cpu }}" "$expected_count"
 
-    - name: LAVF Input Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh lavf
-
-    - name: Threaded ME Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh threaded-me
-
-    - name: Threaded ME Stress Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh threaded-me-stress
-
-    - name: QPFile Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh qpfile
-
-    - name: Zonefile Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh zonefile
-
-    - name: Zonefile Oversized Argument Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh zonefile-oversized
-
-    - name: Recon Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh recon
-
-    - name: Video Signal Type Preset Oversized Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh video-signal-type-preset-oversized
-
-    - name: GOP Output Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/runtime_smoke_suite.sh gop-output
-
-    - name: MP4 Smoke (All CLI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh smoke
-
-    - name: MP4 Smoke (All CLI Open GOP)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh open-gop
-
-    - name: MP4 Smoke (All CLI CRA)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh cra
-
-    - name: MP4 Smoke (All CLI Single Frame)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh single-frame
-
-    - name: MP4 Smoke (All CLI Frames=0 Means Encode Available Input)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh frames-zero
-
-    - name: MP4 Smoke (All CLI Single Frame 24000/1001)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh single-frame-24000-1001
-
-    - name: MP4 Smoke (All CLI VUI Metadata)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh vui
-
-    - name: MP4 Smoke (All CLI Strict-CBR Fails)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh strict-cbr-fails
-
-    - name: MP4 Smoke (All CLI 24000/1001)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh frac-24000-1001
-
-    - name: MP4 Smoke (All CLI B-Pyramid)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh b-pyramid
-
-    - name: MP4 Smoke (All CLI AUD Request Stays Valid)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh aud
-
-    - name: MP4 Smoke (All CLI EOS/EOB Request Stays Valid)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh eos-eob
-
-    - name: MP4 Smoke (All CLI IDR Recovery SEI)
-      if: matrix.target_cpu == 'x86-64'
-      run: bash x265/.github/scripts/mp4_smoke_suite.sh idr-recovery
-
-    - name: Package
-      run: |
-        mkdir dist
-        if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          strip -s build/8b/x265.exe
-          strip -s build/10b/x265.exe
-          strip -s build/12b/x265.exe
-          cp build/8b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-8bit.exe
-          cp build/10b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-10bit.exe
-          cp build/12b/x265.exe dist/x265-win64-${{matrix.target_cpu}}-12bit.exe
-        fi
-        strip -s build/all/x265.exe
-        cp build/all/x265.exe dist/x265-win64-${{matrix.target_cpu}}-all.exe
-
-    - name: Set Package Version
-      id: package_version
-      shell: bash
-      run: |
-        if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          version="${{ steps.tag.outputs.version }}"
-        else
-          version="${{ steps.ci_version.outputs.version }}"
-        fi
-        test -n "$version"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-
-    - name: Compress Package
-      run: |
-        cd dist
-        7za a -t7z -mx=9 ../x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z ./*.exe
-
-    - name: Verify Package Artifact
-      run: |
-        expected_count=1
-        if [ "${{ github.event_name }}" = 'workflow_dispatch' ] || [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          expected_count=4
-        fi
-        bash x265/.github/scripts/verify_ci_archive.sh x265-release "x265-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z" artifact-check "${{ matrix.target_cpu }}" "$expected_count"
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}
-        path: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z
-        compression-level: 0
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}
+          path: x265-win64-${{matrix.target_cpu}}-clang.${{ steps.package_version.outputs.version }}.7z
+          compression-level: 0
 
   publish-release:
     needs:
@@ -1603,6 +1528,7 @@ jobs:
       - build
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
     - name: Checkout X265
       uses: actions/checkout@v6

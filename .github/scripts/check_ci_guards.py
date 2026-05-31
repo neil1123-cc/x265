@@ -1,627 +1,103 @@
 #!/usr/bin/env python3
 import argparse
-import os
 import re
 import shlex
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-WORKFLOW_DIR = Path('.github/workflows')
-ACTION_DIR = Path('.github/actions')
-SCAN_HELPER = Path('.github/scripts/cxx20_scan_helpers.sh')
-MP4_SMOKE_HELPER = Path('.github/scripts/mp4_smoke_helpers.sh')
-PROFILING_SMOKE_HELPER = Path('.github/scripts/profiling_smoke_package_verify.sh')
-VERIFY_CI_ARCHIVE_HELPER = Path('.github/scripts/verify_ci_archive.sh')
-RUNTIME_SMOKE_SUITE = Path('.github/scripts/runtime_smoke_suite.sh')
-MP4_SMOKE_SUITE = Path('.github/scripts/mp4_smoke_suite.sh')
-SOURCE_TEST_VECTOR_CHECK = Path('.github/scripts/check_source_test_vectors.py')
-SOURCE_TEST_VECTOR_TEST = Path('.github/scripts/test_check_source_test_vectors.py')
-DEPENDENCY_SUFFIX_CHECK = Path('.github/scripts/check_dependency_patch_suffixes.py')
-WINDOWS_DEPS_ACTION = Path('.github/actions/setup-windows-deps/action.yml')
-UPDATE_DEPS_WORKFLOW = Path('.github/workflows/update-deps.yml')
-BUILD_WORKFLOW = Path('.github/workflows/build.yml')
-BUILD_PROFILING_WORKFLOW = Path('.github/workflows/build-profiling.yml')
-BUILD_PROFILING_ACTION = Path('.github/actions/build-x265-profiling/action.yml')
-
-UPDATE_DEPS_ANCHORS = (
-    'ffmpeg-ref',
-    'mimalloc-ref',
-    'obuparse-ref',
-    'lsmash-ref',
-    'lsmash-cache-suffix',
-    'gop-muxer-ref',
-    'gop-muxer-cache-suffix',
+from check_ci_guards_data import (
+    ACTION_DIR,
+    BUILD_PGO_WORKFLOW,
+    BUILD_PROFILING_ACTION,
+    BUILD_PROFILING_WORKFLOW,
+    BUILD_WORKFLOW,
+    DEPENDENCY_SUFFIX_CHECK,
+    GOP_SMOKE_FLAGS,
+    GOP_SMOKE_OPTIONS,
+    LAVF_GENERATOR_OPTIONS,
+    LAVF_SMOKE_OPTIONS,
+    LINUX_GCC_SMOKE_OPTIONS,
+    MKV_SMOKE_OPTIONS,
+    MP4_AUD_SMOKE_FLAGS,
+    MP4_AUD_SMOKE_OPTIONS,
+    MP4_BPYRAMID_SMOKE_FLAGS,
+    MP4_BPYRAMID_SMOKE_OPTIONS,
+    MP4_CRA_SMOKE_FLAGS,
+    MP4_CRA_SMOKE_OPTIONS,
+    MP4_EOS_SMOKE_FLAGS,
+    MP4_EOS_SMOKE_OPTIONS,
+    MP4_FRAC_SMOKE_FLAGS,
+    MP4_FRAC_SMOKE_OPTIONS,
+    MP4_OPEN_GOP_SMOKE_FLAGS,
+    MP4_OPEN_GOP_SMOKE_OPTIONS,
+    MP4_RECOVERY_SMOKE_FLAGS,
+    MP4_RECOVERY_SMOKE_OPTIONS,
+    MP4_SINGLE_FRAME_SMOKE_OPTIONS,
+    MP4_SMOKE_FLAGS,
+    MP4_SMOKE_HELPER,
+    MP4_SMOKE_OPTIONS,
+    MP4_SMOKE_SUITE,
+    MP4_VUI_SMOKE_OPTIONS,
+    MP4_ZERO_FRAMES_SMOKE_OPTIONS,
+    PR_SKIPPED_BUILD_JOBS,
+    PR_TRIGGER_PATHS,
+    PROFILING_SMOKE_HELPER,
+    REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS,
+    REQUIRED_UPDATE_DEPS_SNIPPETS,
+    REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS,
+    RUNTIME_SMOKE_SUITE,
+    SCAN_HELPER,
+    SOURCE_TEST_VECTOR_CHECK,
+    SOURCE_TEST_VECTOR_TEST,
+    TME_SMOKE_FLAGS,
+    TME_SMOKE_OPTIONS,
+    TME_STRESS_FLAGS,
+    TME_STRESS_OPTIONS,
+    UPDATE_DEPS_ANCHORS,
+    UPDATE_DEPS_WORKFLOW,
+    VERIFY_CI_ARCHIVE_HELPER,
+    WARNING_SCAN_SMOKES,
+    WINDOWS_DEPS_ACTION,
+    WORKFLOW_DIR,
+    ZIMG_SMOKE_OPTIONS,
+    build_step_requirements,
+    pgo_step_requirements,
+    profiling_step_requirements,
 )
-REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS = (
-    'CXX20_CHECK_SCRIPT="${{ github.action_path }}/../../scripts/check_compile_commands.py"',
-    '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
-    'check_cxx20_commands_profiling build/8b',
-    'check_cxx20_commands_profiling build/12b',
-    'check_cxx20_commands_profiling .',
-    'enable-lsmash',
-    "if [ \"${{ inputs.enable-lsmash }}\" = 'true' ] || [ \"${{ inputs.enable-lsmash }}\" = 'ON' ]; then",
-    'lsmash_args=(-DENABLE_LSMASH=ON)',
+from check_ci_guards_helpers import (
+    GuardFailure,
+    bash_path,
+    clear_runtime_caches,
+    collect_run_blocks,
+    fail,
+    load_yaml,
+    read_text,
+    report_failure,
+    run_guard,
+    shell_active_lines,
+    shell_active_logical_lines,
+    validate_bash_file,
+    validate_python_file,
+    validate_run_blocks,
+    validate_yaml_parse,
+    validate_yaml_text,
+    workflow_jobs,
+    workflow_on,
 )
-REQUIRED_UPDATE_DEPS_SNIPPETS = (
-    'python .github/scripts/check_ci_guards.py',
-    'python .github/scripts/test_check_ci_guards.py',
-    'python .github/scripts/check_dependency_patch_suffixes.py',
-    'for anchor in ffmpeg-ref mimalloc-ref obuparse-ref lsmash-ref lsmash-cache-suffix gop-muxer-ref gop-muxer-cache-suffix; do',
-    'lsmash_suffix=$(sed -n',
-    'gop_muxer_suffix=$(sed -n',
-    'Current L-SMASH cache suffix: ${lsmash_suffix}',
-    'Current GOP muxer cache suffix: ${gop_muxer_suffix}',
-    'Unexpected dependency update diff paths:',
+from check_ci_guards_checks import (
+    option_value,
+    piped_x265_command,
+    require_active_command_prefix,
+    require_active_line_contains,
+    require_x265_command,
+    runtime_smoke_active_lines,
+    smoke_suite_function_lines,
+    validate_mp4_smoke_step,
+    validate_required_action_steps,
+    validate_required_workflow_steps,
+    workflow_step,
+    workflow_step_run,
 )
-REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS = (
-    'case "${MSYSTEM:-}" in',
-    'CLANG64) ;;',
-    '/clang64/bin/*|/usr/bin/*) ;;',
-    'lsmash=${{ inputs.lsmash-repository }}@${{ inputs.lsmash-ref }} suffix=${{ inputs.lsmash-cache-suffix }} patch=${{ inputs.lsmash-patch-path }}',
-    'gop_muxer=${{ inputs.gop-muxer-repository }}@${{ inputs.gop-muxer-ref }} suffix=${{ inputs.gop-muxer-cache-suffix }} patch=${{ inputs.gop-muxer-patch-path }}',
-    'git -c core.autocrlf=false reset --hard HEAD',
-    'git apply --ignore-whitespace --check ${{ inputs.lsmash-patch-path }}',
-    "grep -Fq \"LSMASH_4CC( 'h', 'v', 'c', 'C' )\" codecs/hevc.c",
-    "grep -Fq 'lsmash_isom_box_type_value' core/box.c",
-    'git -c core.autocrlf=false reset --hard HEAD',
-    'git apply ${{ inputs.gop-muxer-patch-path }}',
-    'c++ -O2 --std=gnu++20 -I/usr/local/include -c gop_muxer.cpp -o gop_muxer.o',
-)
-TME_SMOKE_FLAGS = (
-    '--threaded-me',
-    '--no-wpp',
-    '--no-progress',
-)
-TME_SMOKE_OPTIONS = (
-    ('--input', 'smoke_threaded_me.y4m'),
-    ('--input-res', '160x90'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--preset', 'medium'),
-    ('--pools', '32'),
-    ('--frame-threads', '1'),
-    ('--output', 'smoke_threaded_me.hevc'),
-)
-TME_GENERATOR_OPTIONS = (
-    ('-i', 'testsrc2=size=160x90:rate=24'),
-    ('-frames:v', '16'),
-    ('-pix_fmt', 'yuv420p'),
-)
-TME_STRESS_FLAGS = (
-    '--threaded-me',
-    '--no-wpp',
-    '--no-progress',
-)
-TME_STRESS_OPTIONS = (
-    ('--input', 'smoke_threaded_me_stress.y4m'),
-    ('--input-res', '160x90'),
-    ('--fps', '24'),
-    ('--frames', '2'),
-    ('--preset', 'medium'),
-    ('--pools', '32'),
-    ('--frame-threads', '1'),
-)
-TME_STRESS_GENERATOR_OPTIONS = (
-    ('-i', 'testsrc2=size=160x90:rate=24'),
-    ('-frames:v', '2'),
-    ('-pix_fmt', 'yuv420p'),
-)
-MKV_SMOKE_OPTIONS = (
-    ('--input', 'smoke_mkv.y4m'),
-    ('--input-res', '160x90'),
-    ('--fps', '24'),
-    ('--frames', '12'),
-    ('--output', 'smoke_mkv.mkv'),
-)
-MKV_GENERATOR_OPTIONS = (
-    ('-i', 'testsrc2=size=160x90:rate=24'),
-    ('-frames:v', '12'),
-    ('-pix_fmt', 'yuv420p'),
-)
-LAVF_SMOKE_OPTIONS = (
-    ('--input', 'smoke_lavf_input.mkv'),
-    ('--frames', '12'),
-    ('--output', 'smoke_lavf_output.hevc'),
-)
-LAVF_GENERATOR_OPTIONS = (
-    ('-f', 'lavfi'),
-    ('-i', 'testsrc2=size=160x90:rate=24'),
-    ('-frames:v', '12'),
-    ('-pix_fmt', 'yuv420p'),
-    ('-c:v', 'ffv1'),
-)
-GOP_SMOKE_FLAGS = (
-    '--no-open-gop',
-)
-GOP_SMOKE_OPTIONS = (
-    ('--input', 'smoke_gop.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '0'),
-    ('--keyint', '8'),
-    ('--min-keyint', '8'),
-    ('--output', 'smoke_gop.gop'),
-)
-GOP_GENERATOR_OPTIONS = (
-    ('-f', 'lavfi'),
-    ('-i', 'testsrc2=size=128x72:rate=24'),
-    ('-frames:v', '16'),
-    ('-pix_fmt', 'yuv420p'),
-)
-MP4_SMOKE_FLAGS = (
-    '--no-open-gop',
-)
-MP4_SMOKE_OPTIONS = (
-    ('--input', 'smoke.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '4'),
-    ('--keyint', '8'),
-    ('--min-keyint', '8'),
-    ('--output', 'smoke.mp4'),
-)
-MP4_OPEN_GOP_SMOKE_FLAGS = (
-    '--open-gop',
-)
-MP4_OPEN_GOP_SMOKE_OPTIONS = (
-    ('--input', 'smoke_open.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '4'),
-    ('--keyint', '8'),
-    ('--min-keyint', '8'),
-    ('--output', 'smoke_open.mp4'),
-)
-MP4_CRA_SMOKE_FLAGS = (
-    '--cra-nal',
-)
-MP4_CRA_SMOKE_OPTIONS = (
-    ('--input', 'smoke_cra.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '0'),
-    ('--keyint', '1'),
-    ('--min-keyint', '1'),
-    ('--output', 'smoke_cra.mp4'),
-)
-MP4_SINGLE_FRAME_SMOKE_OPTIONS = (
-    ('--input', 'smoke_single.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '1'),
-    ('--bframes', '0'),
-    ('--keyint', '1'),
-    ('--min-keyint', '1'),
-    ('--output', 'smoke_single.mp4'),
-)
-MP4_ZERO_FRAMES_SMOKE_OPTIONS = (
-    ('--input', 'smoke_zero.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '0'),
-    ('--bframes', '0'),
-    ('--keyint', '1'),
-    ('--min-keyint', '1'),
-    ('--output', 'smoke_zero.mp4'),
-)
-MP4_VUI_SMOKE_OPTIONS = (
-    ('--input', 'smoke_vui.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '4'),
-    ('--bframes', '0'),
-    ('--keyint', '4'),
-    ('--min-keyint', '4'),
-    ('--sar', '4:3'),
-    ('--range', 'limited'),
-    ('--colorprim', 'bt709'),
-    ('--transfer', 'bt709'),
-    ('--colormatrix', 'bt709'),
-    ('--output', 'smoke_vui.mp4'),
-)
-MP4_FRAC_SMOKE_FLAGS = (
-    '--no-open-gop',
-)
-MP4_FRAC_SMOKE_OPTIONS = (
-    ('--input', 'smoke_frac.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24000/1001'),
-    ('--frames', '24'),
-    ('--bframes', '4'),
-    ('--keyint', '12'),
-    ('--min-keyint', '12'),
-    ('--output', 'smoke_frac.mp4'),
-)
-MP4_BPYRAMID_SMOKE_FLAGS = (
-    '--b-pyramid',
-    '--no-open-gop',
-)
-MP4_BPYRAMID_SMOKE_OPTIONS = (
-    ('--input', 'smoke_bpyramid.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '4'),
-    ('--keyint', '8'),
-    ('--min-keyint', '8'),
-    ('--output', 'smoke_bpyramid.mp4'),
-)
-MP4_AUD_SMOKE_FLAGS = (
-    '--aud',
-)
-MP4_AUD_SMOKE_OPTIONS = (
-    ('--input', 'smoke_aud.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '4'),
-    ('--keyint', '8'),
-    ('--min-keyint', '8'),
-    ('--output', 'smoke_aud.mp4'),
-)
-MP4_EOS_SMOKE_FLAGS = (
-    '--eos',
-    '--eob',
-)
-MP4_EOS_SMOKE_OPTIONS = (
-    ('--input', 'smoke_eos.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '4'),
-    ('--keyint', '8'),
-    ('--min-keyint', '8'),
-    ('--output', 'smoke_eos.mp4'),
-)
-MP4_RECOVERY_SMOKE_FLAGS = (
-    '--no-open-gop',
-    '--idr-recovery-sei',
-)
-MP4_RECOVERY_SMOKE_OPTIONS = (
-    ('--input', 'smoke_recovery.y4m'),
-    ('--input-res', '128x72'),
-    ('--fps', '24'),
-    ('--frames', '16'),
-    ('--bframes', '0'),
-    ('--keyint', '8'),
-    ('--min-keyint', '8'),
-    ('--output', 'smoke_recovery.mp4'),
-)
-ZIMG_SMOKE_OPTIONS = (
-    ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
-    ('--input-res', '96x96'),
-    ('--fps', '1'),
-    ('--frames', '1'),
-    ('--vf', 'zimg:lanczos(64,64)'),
-    ('--output', 'build/cxx20-warning-scan/smoke_zimg.hevc'),
-)
-LINUX_GCC_SMOKE_OPTIONS = (
-    ('--input', 'build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv'),
-    ('--input-res', '64x64'),
-    ('--fps', '1'),
-    ('--frames', '1'),
-    ('--output', 'build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc'),
-)
-WARNING_SCAN_SMOKES = (
-    (
-        '12-bit warning-scan smoke',
-        'build/cxx20-warning-scan-12bit/x265.exe',
-        (
-            ('--input', 'build/cxx20-warning-scan-12bit/smoke_12bit.yuv'),
-            ('--input-res', '64x64'),
-            ('--input-depth', '12'),
-            ('--output-depth', '12'),
-            ('--fps', '1'),
-            ('--frames', '1'),
-            ('--output', 'build/cxx20-warning-scan-12bit/smoke_12bit.hevc'),
-        ),
-        'test -s build/cxx20-warning-scan-12bit/smoke_12bit.hevc',
-    ),
-    (
-        'shared-library warning-scan smoke',
-        'build/cxx20-warning-scan-shared-library/x265.exe',
-        (
-            ('--input', 'build/cxx20-warning-scan-shared-library/smoke_shared.yuv'),
-            ('--input-res', '64x64'),
-            ('--fps', '1'),
-            ('--frames', '1'),
-            ('--output', 'build/cxx20-warning-scan-shared-library/smoke_shared.hevc'),
-        ),
-        'test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc',
-    ),
-    (
-        'all-bit-depth warning-scan smoke',
-        'build/cxx20-warning-scan-all/x265.exe',
-        (
-            ('--input', 'build/cxx20-warning-scan-all/smoke_all.yuv'),
-            ('--input-res', '64x64'),
-            ('--input-depth', '10'),
-            ('--output-depth', '10'),
-            ('--fps', '1'),
-            ('--frames', '1'),
-            ('--output', 'build/cxx20-warning-scan-all/smoke_all.hevc'),
-        ),
-        'test -s build/cxx20-warning-scan-all/smoke_all.hevc',
-    ),
-)
-PR_TRIGGER_PATHS = (
-    '.github/workflows/**',
-    '.github/actions/**',
-    '.github/patches/**',
-    '.github/scripts/**',
-    'source/**',
-    'x265Version.txt',
-)
-PR_SKIPPED_BUILD_JOBS = (
-    'cxx20-warning-scan',
-    'cxx20-gcc-compile-commands',
-    'cxx20-linux-gcc-compile-commands',
-    'build',
-)
-GITHUB_EXPR = re.compile(r'\$\{\{.*?\}\}', re.DOTALL)
-RUN_LINE = re.compile(r'^(?P<indent>\s*)run:\s*(?P<value>.*)$')
-
-
-class GuardFailure(Exception):
-    def __init__(self, message, path=None, line=None):
-        super().__init__(message)
-        self.message = message
-        self.path = path
-        self.line = line
-
-
-def annotation_path(path):
-    return Path(path).as_posix()
-
-
-def fail(message, path=None, line=None):
-    raise GuardFailure(message, path, line)
-
-
-def report_failure(exc):
-    if exc.path is not None:
-        location = f' file={annotation_path(exc.path)}'
-        if exc.line is not None:
-            location += f',line={exc.line}'
-        print(f'::error{location}::{exc.message}')
-        raise SystemExit(f'{exc.message}: {annotation_path(exc.path)}')
-    print(f'::error::{exc.message}')
-    raise SystemExit(exc.message)
-
-
-def read_text(path):
-    return Path(path).read_text(encoding='utf-8')
-
-
-def yaml_files(repo_root):
-    workflow_files = sorted((repo_root / WORKFLOW_DIR).glob('*.yml'))
-    action_files = sorted((repo_root / ACTION_DIR).glob('*/action.yml'))
-    return workflow_files + action_files
-
-
-def validate_yaml_parse_with_pyyaml(repo_root):
-    import yaml
-
-    for path in yaml_files(repo_root):
-        try:
-            parsed = yaml.safe_load(read_text(path))
-        except yaml.YAMLError as exc:
-            line = getattr(getattr(exc, 'problem_mark', None), 'line', None)
-            fail(str(exc), path, None if line is None else line + 1)
-        if not isinstance(parsed, dict):
-            fail('YAML file did not parse to a mapping', path)
-        if WORKFLOW_DIR.as_posix() in path.as_posix().replace('\\', '/') and 'jobs' not in parsed:
-            fail('workflow YAML is missing a jobs mapping', path)
-        if path.name == 'action.yml' and 'runs' not in parsed:
-            fail('action YAML is missing a runs mapping', path)
-
-
-def validate_yaml_parse_with_ruby(repo_root, ruby):
-    for path in yaml_files(repo_root):
-        result = subprocess.run(
-            [ruby, '-e', 'require "yaml"; YAML.load_file(ARGV[0])', str(path)],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        if result.returncode != 0:
-            fail(result.stdout.strip() or 'Ruby YAML parser failed', path)
-
-
-def validate_yaml_parse(repo_root):
-    try:
-        validate_yaml_parse_with_pyyaml(repo_root)
-        print('YAML files parsed with PyYAML')
-        return
-    except ModuleNotFoundError:
-        ruby = shutil.which('ruby')
-        if not ruby:
-            fail('PyYAML is unavailable and ruby was not found for YAML parsing')
-        validate_yaml_parse_with_ruby(repo_root, ruby)
-        print('YAML files parsed with ruby')
-
-
-def validate_yaml_text(repo_root):
-    for path in yaml_files(repo_root):
-        text = read_text(path)
-        for index, line in enumerate(text.splitlines(), 1):
-            if '\t' in line:
-                fail('YAML indentation must not contain tab characters', path, index)
-        if path.suffix != '.yml':
-            continue
-        if path.parent == repo_root / WORKFLOW_DIR and 'jobs:' not in text:
-            fail('workflow text is missing jobs:', path)
-
-
-def load_yaml(repo_root, relative_path):
-    import yaml
-
-    path = repo_root / relative_path
-    try:
-        parsed = yaml.safe_load(read_text(path))
-    except yaml.YAMLError as exc:
-        line = getattr(getattr(exc, 'problem_mark', None), 'line', None)
-        fail(str(exc), path, None if line is None else line + 1)
-    if not isinstance(parsed, dict):
-        fail('YAML file did not parse to a mapping', path)
-    return parsed
-
-
-def workflow_jobs(parsed, path):
-    jobs = parsed.get('jobs')
-    if not isinstance(jobs, dict):
-        fail('workflow YAML is missing a jobs mapping', path)
-    return jobs
-
-
-def workflow_on(parsed, path):
-    # PyYAML follows YAML 1.1 and may parse the key "on" as boolean True.
-    value = parsed.get('on')
-    if value is None:
-        value = parsed.get(True)
-    if not isinstance(value, dict):
-        fail('workflow YAML is missing an on mapping', path)
-    return value
-
-
-def workflow_steps(parsed, path, job_name):
-    job = workflow_jobs(parsed, path).get(job_name)
-    if not isinstance(job, dict):
-        fail(f'missing workflow job: {job_name}', path)
-    steps = job.get('steps')
-    if not isinstance(steps, list):
-        fail(f'workflow job {job_name} is missing a steps list', path)
-    return steps
-
-
-def action_steps(parsed, path):
-    runs = parsed.get('runs')
-    if not isinstance(runs, dict):
-        fail('action YAML is missing a runs mapping', path)
-    steps = runs.get('steps')
-    if not isinstance(steps, list):
-        fail('action YAML is missing a runs.steps list', path)
-    return steps
-
-
-def named_step(steps, step_name, path, required_items=(), job_name=None):
-    for step in steps:
-        if isinstance(step, dict) and step.get('name') == step_name:
-            return step
-    for step in steps:
-        if not isinstance(step, dict):
-            continue
-        run = step.get('run')
-        if isinstance(run, str) and any(required in run for required in required_items):
-            return step
-    prefix = f'job {job_name} ' if job_name else ''
-    fail(f'missing {prefix}step: {step_name}', path)
-
-
-def required_run(step, path, step_name):
-    run = step.get('run')
-    if not isinstance(run, str) or not run.strip():
-        fail(f'step {step_name} is missing a run block', path)
-    return run
-
-
-def require_run_text(script, required, path, context):
-    if required not in script:
-        fail(f'missing required {context} snippet: {required}', path)
-
-
-def require_active_run_text(script, required, path, context):
-    active_lines = shell_active_logical_lines(script)
-    if not any(required in line for line in active_lines):
-        fail(f'missing required {context} snippet: {required}', path)
-
-
-def block_scalar(lines, start_index, base_indent):
-    collected = []
-    index = start_index + 1
-    while index < len(lines):
-        line = lines[index]
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip(' '))
-        if stripped and indent <= base_indent:
-            break
-        collected.append(line)
-        index += 1
-
-    nonblank_indents = [len(line) - len(line.lstrip(' ')) for line in collected if line.strip()]
-    dedent = min(nonblank_indents, default=base_indent + 2)
-    script = '\n'.join(line[dedent:] if len(line) >= dedent else '' for line in collected)
-    return script, index
-
-
-def collect_run_blocks(path):
-    lines = read_text(path).splitlines()
-    blocks = []
-    index = 0
-    while index < len(lines):
-        match = RUN_LINE.match(lines[index])
-        if not match:
-            index += 1
-            continue
-
-        value = match.group('value').strip()
-        base_indent = len(match.group('indent'))
-        line_number = index + 1
-        if value.startswith('|') or value.startswith('>'):
-            script, index = block_scalar(lines, index, base_indent)
-            if script.strip():
-                blocks.append((path, line_number, script))
-            continue
-        if value:
-            blocks.append((path, line_number, value))
-        index += 1
-    return blocks
-
-
-def sanitize_github_expressions(script):
-    return GITHUB_EXPR.sub('github_expr', script)
-
-
-def bash_path(args_bash):
-    candidate = args_bash or os.environ.get('CI_GUARD_BASH') or shutil.which('bash')
-    if not candidate:
-        fail('bash executable not found; set CI_GUARD_BASH or pass --bash')
-    return candidate
-
-
-def bash_check(bash, script_path, source_path, line):
-    result = subprocess.run(
-        [bash, '-n', str(script_path)],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    if result.returncode != 0:
-        message = result.stdout.strip() or 'bash -n failed'
-        fail(message, source_path, line)
-
-
-def validate_run_blocks(repo_root, bash):
-    blocks = []
-    for path in yaml_files(repo_root):
-        blocks.extend(collect_run_blocks(path))
-    if not blocks:
-        fail('no CI run blocks found')
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_root = Path(temp_dir)
-        for number, (path, line, script) in enumerate(blocks, 1):
-            script_path = temp_root / f'run-block-{number}.sh'
-            script_path.write_text(sanitize_github_expressions(script) + '\n', encoding='utf-8')
-            bash_check(bash, script_path, path, line)
-    print(f'Validated bash syntax for {len(blocks)} CI run blocks')
 
 
 def validate_scan_helper(repo_root, bash):
@@ -717,6 +193,9 @@ def validate_runtime_smoke_suite(repo_root, bash):
             'smoke_recon()',
             'smoke_video_signal_type_preset_oversized()',
             'smoke_gop_output()',
+            'run_runtime_smoke_target()',
+            'run_runtime_smoke_targets()',
+            'run_runtime_smoke_targets raw cli-long-input mkv lavf threaded-me threaded-me-stress qpfile zonefile zonefile-oversized recon video-signal-type-preset-oversized gop-output',
             'case "${1:-}" in',
         ),
         required_message='Runtime smoke suite missing function or dispatch',
@@ -744,60 +223,13 @@ def validate_mp4_smoke_suite(repo_root, bash):
             'smoke_mp4_aud()',
             'smoke_mp4_eos_eob()',
             'smoke_mp4_idr_recovery()',
+            'run_mp4_smoke_target()',
+            'run_mp4_smoke_targets()',
+            'run_mp4_smoke_targets smoke open-gop cra single-frame frames-zero single-frame-24000-1001 vui strict-cbr-fails frac-24000-1001 b-pyramid aud eos-eob idr-recovery',
             'case "${1:-}" in',
         ),
         required_message='MP4 smoke suite missing function or dispatch',
     )
-
-
-def run_guard(repo_root, *command):
-    result = subprocess.run(
-        command,
-        cwd=repo_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    if result.returncode != 0:
-        raise SystemExit(result.stdout)
-    print(result.stdout, end='')
-
-
-def validate_bash_file(repo_root, bash, relative_path, missing_message, required_text=(), required_tokens=(), required_message='missing required bash detail'):
-    path = repo_root / relative_path
-    if not path.is_file():
-        fail(missing_message, path)
-    bash_check(bash, path, path, 1)
-    text = read_text(path)
-    for required in required_text:
-        if required not in text:
-            fail(f'{required_message}: {required}', path)
-    if required_tokens:
-        tokens = shlex.split(sanitize_github_expressions(text))
-        for required in required_tokens:
-            if required not in tokens:
-                fail(f'{required_message}: {required}', path)
-    print(f'{relative_path.as_posix()}: bash syntax validated')
-
-
-def validate_python_file(repo_root, relative_path, missing_message, required_text=(), required_message='missing required python detail'):
-    path = repo_root / relative_path
-    if not path.is_file():
-        fail(missing_message, path)
-    result = subprocess.run(
-        [sys.executable, '-m', 'py_compile', str(path)],
-        cwd=repo_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    if result.returncode != 0:
-        fail(f'python syntax check failed: {result.stdout.strip()}', path)
-    text = read_text(path)
-    for required in required_text:
-        if required not in text:
-            fail(f'{required_message}: {required}', path)
-    print(f'{relative_path.as_posix()}: python syntax validated')
 
 
 def validate_source_test_vector_scripts(repo_root):
@@ -849,131 +281,6 @@ def validate_dependency_update_anchors(repo_root):
     print('Dependency update anchors validated')
 
 
-def strip_shell_comment(line):
-    stripped = []
-    in_single_quote = False
-    in_double_quote = False
-    escaped = False
-    for char in line:
-        if escaped:
-            stripped.append(char)
-            escaped = False
-            continue
-        if char == '\\' and in_double_quote:
-            stripped.append(char)
-            escaped = True
-            continue
-        if char == "'" and not in_double_quote:
-            in_single_quote = not in_single_quote
-            stripped.append(char)
-            continue
-        if char == '"' and not in_single_quote:
-            in_double_quote = not in_double_quote
-            stripped.append(char)
-            continue
-        if char == '#' and not in_single_quote and not in_double_quote:
-            break
-        stripped.append(char)
-    return ''.join(stripped).strip()
-
-
-def shell_active_lines(script):
-    lines = []
-    for line in script.splitlines():
-        stripped = strip_shell_comment(line)
-        if stripped:
-            lines.append(stripped)
-    return lines
-
-
-def shell_active_logical_lines(script):
-    logical_lines = []
-    current = ''
-    for line in shell_active_lines(script):
-        if current:
-            current += ' ' + line
-        else:
-            current = line
-        if current.endswith('\\'):
-            current = current[:-1].rstrip()
-            continue
-        logical_lines.append(current)
-        current = ''
-    if current:
-        logical_lines.append(current)
-    return logical_lines
-
-
-def smoke_suite_active_lines(repo_root, relative_path, missing_message):
-    path = repo_root / relative_path
-    if not path.is_file():
-        fail(missing_message, path)
-    return shell_active_logical_lines(read_text(path))
-
-
-def smoke_suite_function_lines(repo_root, relative_path, function_name, missing_message):
-    path = repo_root / relative_path
-    if not path.is_file():
-        fail(missing_message, path)
-    lines = read_text(path).splitlines()
-    start = None
-    header = f'{function_name}() {{'
-    for index, line in enumerate(lines):
-        if line == header:
-            start = index + 1
-            break
-    if start is None:
-        fail(f'missing function {function_name} in {relative_path.as_posix()}', path)
-    end = None
-    for index in range(start, len(lines)):
-        if lines[index] == '}':
-            end = index
-            break
-    if end is None:
-        fail(f'missing closing brace for {function_name} in {relative_path.as_posix()}', path)
-    return shell_active_logical_lines('\n'.join(lines[start:end]))
-
-
-def require_build_step_invocation(repo_root, step_name, expected_run, context):
-    build = repo_root / BUILD_WORKFLOW
-    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
-    step = named_step(
-        workflow_steps(parsed, build, 'build'),
-        step_name,
-        build,
-        job_name='build',
-    )
-    script = required_run(step, build, step_name)
-    active_lines = shell_active_logical_lines(script)
-    if active_lines != [expected_run]:
-        fail(f'{context} must delegate via: {expected_run}', build)
-
-
-def require_active_line_contains(active_lines, required, path, message):
-    if not any(required in line for line in active_lines):
-        fail(message, path)
-
-
-def require_active_command_prefix(active_lines, expected_tokens, path, message):
-    for line in active_lines:
-        try:
-            tokens = shlex.split(line)
-        except ValueError:
-            continue
-        if tuple(tokens[:len(expected_tokens)]) == expected_tokens:
-            return
-    fail(message, path)
-
-
-def option_value(args, option, expected, build, context):
-    try:
-        actual = args[args.index(option) + 1]
-    except (ValueError, IndexError):
-        fail(f'missing {context} value for {option}', build)
-    if actual != expected:
-        fail(f'{context} {option} must be {expected}, got {actual}', build)
-
-
 def validate_pgo_consume_helper(repo_root):
     build = repo_root / BUILD_WORKFLOW
     blocks = [block for path, line, block in collect_run_blocks(build) if 'check_pgo_consume_commands()' in block]
@@ -988,34 +295,17 @@ def validate_pgo_consume_helper(repo_root):
 
 def validate_raw_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'RAW Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh raw',
-        'RAW smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_raw', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_raw')
     if 'make_runtime_y4m smoke_raw.y4m 160 90 24 12 yuv420p' not in active_lines:
         fail('RAW smoke must generate 12-frame yuv420p input', build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_raw' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one RAW x265 command, found {len(command_lines)}', build)
-    try:
-        args = shlex.split(command_lines[0])
-    except ValueError as exc:
-        fail(f'could not parse RAW smoke command: {exc}', build)
-    if not args or args[0] != 'build/all/x265.exe':
-        actual = args[0] if args else '<empty>'
-        fail(f'RAW smoke must run build/all/x265.exe, got {actual}', build)
-    for option, expected in (
+    require_x265_command(active_lines, build, 'RAW smoke', 'smoke_raw', 'build/all/x265.exe', (
         ('--input', 'smoke_raw.y4m'),
         ('--input-res', '160x90'),
         ('--fps', '24'),
         ('--frames', '12'),
         ('--output', 'smoke_raw.hevc'),
-    ):
-        option_value(args, option, expected, build, 'RAW smoke')
+    ))
     for required, message in {
         'test -s smoke_raw.hevc': 'RAW smoke must require non-empty HEVC output',
         'ffprobe -v error -show_entries stream=codec_name,codec_type,width,height -select_streams v:0 -of default=noprint_wrappers=1 smoke_raw.hevc > smoke_raw_probe.txt': 'RAW smoke must capture HEVC probe output',
@@ -1031,29 +321,12 @@ def validate_raw_smoke(repo_root):
 
 def validate_threaded_me_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'Threaded ME Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh threaded-me',
-        'Threaded ME smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_threaded_me', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_threaded_me')
     generator_line = 'make_runtime_y4m smoke_threaded_me.y4m 160 90 24 16 yuv420p'
     if generator_line not in active_lines:
         fail('Threaded ME smoke must generate 16-frame yuv420p input', build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_threaded_me' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one Threaded ME x265 command, found {len(command_lines)}', build)
-
-    command = command_lines[0]
-    before_pipe = command.split('|', 1)[0].strip()
-    try:
-        tokens = shlex.split(before_pipe)
-    except ValueError as exc:
-        fail(f'could not parse Threaded ME smoke command: {exc}', build)
-
-    args = [token for token in tokens if token not in ('2>&1',)]
+    command, args = piped_x265_command(active_lines, build, 'Threaded ME smoke', 'smoke_threaded_me')
     if not args or args[0] != 'build/all/x265.exe':
         actual = args[0] if args else '<empty>'
         fail(f'Threaded ME smoke must run build/all/x265.exe, got {actual}', build)
@@ -1081,13 +354,7 @@ def validate_threaded_me_smoke(repo_root):
 
 def validate_threaded_me_stress_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'Threaded ME Stress Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh threaded-me-stress',
-        'Threaded ME stress smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_threaded_me_stress', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_threaded_me_stress')
     generator_line = 'make_runtime_y4m smoke_threaded_me_stress.y4m 160 90 24 2 yuv420p'
     if generator_line not in active_lines:
         fail('Threaded ME stress smoke must generate 2-frame yuv420p input', build)
@@ -1107,20 +374,7 @@ def validate_threaded_me_stress_smoke(repo_root):
         if required not in active_lines:
             fail(message, build)
 
-    command_lines = [
-        line for line in active_lines
-        if 'build/all/x265.exe' in line and 'smoke_threaded_me_stress.y4m' in line
-    ]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one Threaded ME stress x265 command, found {len(command_lines)}', build)
-    command = command_lines[0]
-    before_pipe = command.split('|', 1)[0].strip()
-    try:
-        tokens = shlex.split(before_pipe)
-    except ValueError as exc:
-        fail(f'could not parse Threaded ME stress smoke command: {exc}', build)
-
-    args = [token for token in tokens if token not in ('2>&1',)]
+    command, args = piped_x265_command(active_lines, build, 'Threaded ME stress smoke', 'smoke_threaded_me_stress.y4m')
     if not args or args[0] != 'build/all/x265.exe':
         actual = args[0] if args else '<empty>'
         fail(f'Threaded ME stress smoke must run build/all/x265.exe, got {actual}', build)
@@ -1142,28 +396,11 @@ def validate_threaded_me_stress_smoke(repo_root):
 
 def validate_mkv_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'MKV Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh mkv',
-        'MKV smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_mkv', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_mkv')
     if 'make_runtime_y4m smoke_mkv.y4m 160 90 24 12 yuv420p' not in active_lines:
         fail('MKV smoke must generate 12-frame yuv420p input', build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_mkv' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one MKV x265 command, found {len(command_lines)}', build)
-    try:
-        args = shlex.split(command_lines[0])
-    except ValueError as exc:
-        fail(f'could not parse MKV smoke command: {exc}', build)
-    if not args or args[0] != 'build/all/x265.exe':
-        actual = args[0] if args else '<empty>'
-        fail(f'MKV smoke must run build/all/x265.exe, got {actual}', build)
-    for option, expected in MKV_SMOKE_OPTIONS:
-        option_value(args, option, expected, build, 'MKV smoke')
+    require_x265_command(active_lines, build, 'MKV smoke', 'smoke_mkv', 'build/all/x265.exe', MKV_SMOKE_OPTIONS)
 
     active_required = {
         'test -s smoke_mkv.mkv': 'MKV smoke must require non-empty MKV output',
@@ -1185,12 +422,6 @@ def validate_mkv_smoke(repo_root):
 
 def validate_cli_long_input_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'CLI Long Input Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh cli-long-input',
-        'CLI long-input smoke',
-    )
     active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_cli_long_input', 'missing runtime smoke suite')
 
     required_active = {
@@ -1210,13 +441,7 @@ def validate_cli_long_input_smoke(repo_root):
 
 def validate_lavf_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'LAVF Input Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh lavf',
-        'LAVF smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_lavf', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_lavf')
 
     generator_lines = [line for line in active_lines if 'ffmpeg ' in line and 'smoke_lavf_input.mkv' in line]
     if len(generator_lines) != 1:
@@ -1230,16 +455,7 @@ def validate_lavf_smoke(repo_root):
     if generator_args[-1] != 'smoke_lavf_input.mkv':
         fail(f'LAVF input generator must write smoke_lavf_input.mkv, got {generator_args[-1]}', build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_lavf' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one LAVF x265 command, found {len(command_lines)}', build)
-    command = command_lines[0]
-    before_pipe = command.split('|', 1)[0].strip()
-    try:
-        tokens = shlex.split(before_pipe)
-    except ValueError as exc:
-        fail(f'could not parse LAVF smoke command: {exc}', build)
-    args = [token for token in tokens if token not in ('2>&1',)]
+    command, args = piped_x265_command(active_lines, build, 'LAVF smoke', 'smoke_lavf')
     if not args or args[0] != 'build/all/x265.exe':
         actual = args[0] if args else '<empty>'
         fail(f'LAVF smoke must run build/all/x265.exe, got {actual}', build)
@@ -1267,13 +483,7 @@ def validate_lavf_smoke(repo_root):
 
 def validate_qpfile_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'QPFile Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh qpfile',
-        'QPFile smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_qpfile', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_qpfile')
 
     for required, message in {
         "cat > smoke_qpfile.txt <<'EOF'": 'QPFile smoke must create smoke_qpfile.txt via heredoc',
@@ -1290,37 +500,20 @@ def validate_qpfile_smoke(repo_root):
         if required not in active_lines:
             fail(message, build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_qpfile' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one QPFile x265 command, found {len(command_lines)}', build)
-    try:
-        args = shlex.split(command_lines[0])
-    except ValueError as exc:
-        fail(f'could not parse QPFile smoke command: {exc}', build)
-    if not args or args[0] != 'build/all/x265.exe':
-        actual = args[0] if args else '<empty>'
-        fail(f'QPFile smoke must run build/all/x265.exe, got {actual}', build)
-    for option, expected in (
+    require_x265_command(active_lines, build, 'QPFile smoke', 'smoke_qpfile', 'build/all/x265.exe', (
         ('--input', 'smoke_qpfile.y4m'),
         ('--input-res', '160x90'),
         ('--fps', '24'),
         ('--frames', '12'),
         ('--qpfile', 'smoke_qpfile.txt'),
         ('--output', 'smoke_qpfile.hevc'),
-    ):
-        option_value(args, option, expected, build, 'QPFile smoke')
+    ))
     print('QPFile smoke guard validated')
 
 
 def validate_zonefile_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'Zonefile Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh zonefile',
-        'Zonefile smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_zonefile', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_zonefile')
 
     for required, message in {
         "cat > smoke_zonefile.txt <<'EOF'": 'Zonefile smoke must create smoke_zonefile.txt via heredoc',
@@ -1335,17 +528,7 @@ def validate_zonefile_smoke(repo_root):
         if required not in active_lines:
             fail(message, build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_zonefile' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one Zonefile x265 command, found {len(command_lines)}', build)
-    try:
-        args = shlex.split(command_lines[0])
-    except ValueError as exc:
-        fail(f'could not parse Zonefile smoke command: {exc}', build)
-    if not args or args[0] != 'build/all/x265.exe':
-        actual = args[0] if args else '<empty>'
-        fail(f'Zonefile smoke must run build/all/x265.exe, got {actual}', build)
-    for option, expected in (
+    require_x265_command(active_lines, build, 'Zonefile smoke', 'smoke_zonefile', 'build/all/x265.exe', (
         ('--input', 'smoke_zonefile.y4m'),
         ('--input-res', '160x90'),
         ('--fps', '24'),
@@ -1353,19 +536,12 @@ def validate_zonefile_smoke(repo_root):
         ('--bitrate', '400'),
         ('--zonefile', 'smoke_zonefile.txt'),
         ('--output', 'smoke_zonefile.hevc'),
-    ):
-        option_value(args, option, expected, build, 'Zonefile smoke')
+    ))
     print('Zonefile smoke guard validated')
 
 
 def validate_zonefile_oversized_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'Zonefile Oversized Argument Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh zonefile-oversized',
-        'Zonefile oversized smoke',
-    )
     active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_zonefile_oversized', 'missing runtime smoke suite')
 
     for required, message in {
@@ -1383,35 +559,18 @@ def validate_zonefile_oversized_smoke(repo_root):
 
 def validate_recon_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'Recon Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh recon',
-        'Recon smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_recon', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_recon')
     if 'make_runtime_y4m smoke_recon.y4m 160 90 24 12 yuv420p' not in active_lines:
         fail('Recon smoke must generate 12-frame yuv420p input', build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_recon' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one Recon x265 command, found {len(command_lines)}', build)
-    try:
-        args = shlex.split(command_lines[0])
-    except ValueError as exc:
-        fail(f'could not parse Recon smoke command: {exc}', build)
-    if not args or args[0] != 'build/all/x265.exe':
-        actual = args[0] if args else '<empty>'
-        fail(f'Recon smoke must run build/all/x265.exe, got {actual}', build)
-    for option, expected in (
+    require_x265_command(active_lines, build, 'Recon smoke', 'smoke_recon', 'build/all/x265.exe', (
         ('--input', 'smoke_recon.y4m'),
         ('--input-res', '160x90'),
         ('--fps', '24'),
         ('--frames', '12'),
         ('--recon', 'smoke_recon_out.y4m'),
         ('--output', 'smoke_recon.hevc'),
-    ):
-        option_value(args, option, expected, build, 'Recon smoke')
+    ))
     for required, message in {
         'test -s smoke_recon.hevc': 'Recon smoke must require non-empty HEVC output',
         'test -s smoke_recon_out.y4m': 'Recon smoke must require non-empty recon output',
@@ -1424,12 +583,6 @@ def validate_recon_smoke(repo_root):
 
 def validate_video_signal_type_preset_oversized_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'Video Signal Type Preset Oversized Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh video-signal-type-preset-oversized',
-        'Video-signal-type-preset oversized smoke',
-    )
     active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_video_signal_type_preset_oversized', 'missing runtime smoke suite')
 
     for required, message in {
@@ -1446,31 +599,14 @@ def validate_video_signal_type_preset_oversized_smoke(repo_root):
 
 def validate_gop_output_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
-    require_build_step_invocation(
-        repo_root,
-        'GOP Output Smoke (All CLI)',
-        'bash x265/.github/scripts/runtime_smoke_suite.sh gop-output',
-        'GOP smoke',
-    )
-    active_lines = smoke_suite_function_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_gop_output', 'missing runtime smoke suite')
+    active_lines = runtime_smoke_active_lines(repo_root, RUNTIME_SMOKE_SUITE, 'smoke_gop_output')
     if 'make_runtime_y4m smoke_gop.y4m 128 72 24 16 yuv420p' not in active_lines:
         fail('GOP smoke must generate 16-frame yuv420p input', build)
 
-    command_lines = [line for line in active_lines if 'x265.exe' in line and 'smoke_gop' in line]
-    if len(command_lines) != 1:
-        fail(f'expected exactly one GOP x265 command, found {len(command_lines)}', build)
-    try:
-        args = shlex.split(command_lines[0])
-    except ValueError as exc:
-        fail(f'could not parse GOP smoke command: {exc}', build)
-    if not args or args[0] != 'build/all/x265.exe':
-        actual = args[0] if args else '<empty>'
-        fail(f'GOP smoke must run build/all/x265.exe, got {actual}', build)
+    args = require_x265_command(active_lines, build, 'GOP smoke', 'smoke_gop', 'build/all/x265.exe', GOP_SMOKE_OPTIONS)
     for expected in GOP_SMOKE_FLAGS:
         if expected not in args:
             fail(f'missing GOP smoke argument: {expected}', build)
-    for option, expected in GOP_SMOKE_OPTIONS:
-        option_value(args, option, expected, build, 'GOP smoke')
 
     mux_lines = [line for line in active_lines if line == 'gop_muxer.exe smoke_gop.gop']
     if len(mux_lines) != 1:
@@ -1780,48 +916,9 @@ def validate_mp4_smokes(repo_root):
         ),
     )
 
-    for context, step_name, function_name, target, input_prefix, output, probe_fields, generator_fps, generator_frames, generator_pix_fmt, required_flags, required_options, required_lines in smoke_steps:
-        require_build_step_invocation(
-            repo_root,
-            step_name,
-            f'bash x265/.github/scripts/mp4_smoke_suite.sh {target}',
-            context,
-        )
-        active_lines = smoke_suite_function_lines(repo_root, MP4_SMOKE_SUITE, function_name, 'missing MP4 smoke suite')
-        generator_line = f'make_y4m {input_prefix}.y4m {generator_fps} {generator_frames} {generator_pix_fmt}'
-        if generator_line not in active_lines:
-            fail(f'{context} must generate {generator_frames}-frame {generator_pix_fmt} input', build)
+    for smoke_step in smoke_steps:
+        validate_mp4_smoke_step(build, repo_root, MP4_SMOKE_SUITE, *smoke_step)
 
-        command_lines = [line for line in active_lines if 'build/all/x265.exe' in line and output in line]
-        if len(command_lines) != 1:
-            fail(f'expected exactly one {context} x265 command, found {len(command_lines)}', build)
-        before_pipe = command_lines[0].split('|', 1)[0].strip()
-        if before_pipe.startswith('if '):
-            before_pipe = before_pipe[3:].strip()
-            before_pipe = before_pipe.split('; then', 1)[0].strip()
-        try:
-            args = shlex.split(before_pipe)
-        except ValueError as exc:
-            fail(f'could not parse {context} command: {exc}', build)
-        if not args or args[0] != 'build/all/x265.exe':
-            actual = args[0] if args else '<empty>'
-            fail(f'{context} must run build/all/x265.exe, got {actual}', build)
-        for expected in required_flags:
-            if expected not in args:
-                fail(f'missing {context} argument: {expected}', build)
-        for option, expected in required_options:
-            option_value(args, option, expected, build, context)
-
-        for required, message in required_lines.items():
-            if required not in active_lines:
-                fail(message, build)
-
-    require_build_step_invocation(
-        repo_root,
-        'MP4 Smoke (All CLI Strict-CBR Fails)',
-        'bash x265/.github/scripts/mp4_smoke_suite.sh strict-cbr-fails',
-        'MP4 strict-CBR smoke',
-    )
     active_lines = smoke_suite_function_lines(repo_root, MP4_SMOKE_SUITE, 'smoke_mp4_strict_cbr_fails', 'missing MP4 smoke suite')
     generator_line = 'ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 16 -pix_fmt yuv420p smoke_strict_cbr.y4m'
     if generator_line not in active_lines:
@@ -1953,13 +1050,12 @@ def validate_zimg_smoke(repo_root):
 def validate_linux_gcc_smoke(repo_root):
     build = repo_root / BUILD_WORKFLOW
     parsed = load_yaml(repo_root, BUILD_WORKFLOW)
-    step = named_step(
-        workflow_steps(parsed, build, 'cxx20-linux-gcc-compile-commands'),
-        'Run Linux GCC C++20 compile command diagnostics',
+    active_lines = shell_active_logical_lines(workflow_step_run(
+        parsed,
         build,
-        job_name='cxx20-linux-gcc-compile-commands',
-    )
-    active_lines = shell_active_logical_lines(required_run(step, build, 'Run Linux GCC C++20 compile command diagnostics'))
+        'cxx20-linux-gcc-compile-commands',
+        'Run Linux GCC C++20 compile command diagnostics',
+    ))
     command_lines = [line for line in active_lines if 'build/cxx20-linux-gcc-compile-commands/x265 ' in line]
     if len(command_lines) != 1:
         fail(f'expected exactly one Linux GCC x265 smoke command, found {len(command_lines)}', build)
@@ -2185,151 +1281,21 @@ def validate_gnu20_diagnostic_steps(repo_root):
         ),
     )
     for job_name, step_name, required_items in requirements:
-        step = named_step(workflow_steps(parsed, build, job_name), step_name, build, job_name=job_name)
-        active_lines = shell_active_logical_lines(required_run(step, build, step_name))
+        active_lines = shell_active_logical_lines(workflow_step_run(parsed, build, job_name, step_name))
         for required, message in required_items:
             require_active_line_contains(active_lines, required, build, message)
     for job_name, step_name, required_commands in exact_command_requirements:
-        step = named_step(workflow_steps(parsed, build, job_name), step_name, build, job_name=job_name)
-        active_lines = shell_active_logical_lines(required_run(step, build, step_name))
+        active_lines = shell_active_logical_lines(workflow_step_run(parsed, build, job_name, step_name))
         for expected_tokens, message in required_commands:
             require_active_command_prefix(active_lines, expected_tokens, build, message)
     print('GNU++20 diagnostic step active commands validated')
 
 
-def build_step_requirements():
-    return (
-        ('validate-deps-cache-suffix', 'Check CI guardrails', (
-            'python .github/scripts/check_ci_guards.py',
-            'python .github/scripts/test_check_ci_guards.py',
-        )),
-        ('validate-deps-cache-suffix', 'Check CMake C++20 contract', (
-            'python .github/scripts/check_cmake_cxx20_contract.py source',
-        )),
-        ('validate-deps-cache-suffix', 'Check CMake C++20 contract guardrails', (
-            'python .github/scripts/test_check_cmake_cxx20_contract.py',
-        )),
-        ('validate-deps-cache-suffix', 'Check C++20 compile command guardrails', (
-            'python .github/scripts/test_check_compile_commands.py',
-        )),
-        ('validate-deps-cache-suffix', 'Check source test vector guardrails', (
-            'python .github/scripts/check_source_test_vectors.py source/test',
-            'python .github/scripts/test_check_source_test_vectors.py',
-        )),
-        ('validate-deps-cache-suffix', 'Check dependency patch cache suffixes', (
-            'python .github/scripts/check_dependency_patch_suffixes.py --before "$before" --after "$after"',
-        )),
-        ('validate-deps-cache-suffix', 'Check dependency patch suffix guardrails', (
-            'python .github/scripts/test_check_dependency_patch_suffixes.py',
-        )),
-        ('validate-deps-cache-suffix', 'Check release needs guardrails', (
-            'python .github/scripts/check_release_needs.py',
-        )),
-        ('validate-deps-cache-suffix', 'Check PGO metadata/consume guardrails', (
-            'python .github/scripts/test_check_pgo_consume_chain.py',
-        )),
-        ('build', 'Get Latest Tag', (
-            'No numeric version tag found; using $version as CI fallback',
-        )),
-        ('build', 'Compile X265', (
-            'check_cxx20_commands_pgo_consume "$build_dir" --min-cpp-commands="$min_cpp_commands"',
-            'check_pgo_consume_commands build/8b-lib "$PGO_8B_LIB_FLAG" 50',
-            'check_pgo_consume_commands build/12b-lib "$PGO_12B_LIB_FLAG" 50',
-            'check_pgo_consume_commands build/all-8b-lib "$PGO_ALL_FLAG" 50',
-            'check_pgo_consume_commands build/all-12b-lib "$PGO_ALL_FLAG" 50',
-            'check_pgo_consume_commands build/all "$PGO_ALL_FLAG" 60',
-        )),
-        ('build', 'RAW Smoke (All CLI)', (
-            'bash x265/.github/scripts/runtime_smoke_suite.sh raw',
-        )),
-        ('build', 'Threaded ME Smoke (All CLI)', (
-            'bash x265/.github/scripts/runtime_smoke_suite.sh threaded-me',
-        )),
-        ('build', 'Threaded ME Stress Smoke (All CLI)', (
-            'bash x265/.github/scripts/runtime_smoke_suite.sh threaded-me-stress',
-        )),
-        ('build', 'GOP Output Smoke (All CLI)', (
-            'bash x265/.github/scripts/runtime_smoke_suite.sh gop-output',
-        )),
-        ('build', 'MP4 Smoke (All CLI)', (
-            'bash x265/.github/scripts/mp4_smoke_suite.sh smoke',
-        )),
-        ('build', 'Verify Package Artifact', (
-            'expected_count=4',
-            'bash x265/.github/scripts/verify_ci_archive.sh x265-release "x265-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z" artifact-check "${{ matrix.target_cpu }}" "$expected_count"',
-        )),
-        ('cxx20-linux-gcc-compile-commands', 'Run Linux GCC C++20 compile command diagnostics', (
-            'check_cxx20_commands_gcc build/cxx20-linux-gcc-compile-commands',
-        )),
-        ('cxx20-warning-scan', 'Run C++20 CLI and dependency warning scans', (
-            '-DENABLE_ZIMG=ON',
-        )),
-        ('cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans', (
-            'check_cxx20_commands_clang build/cxx20-warning-scan-shared-library',
-        )),
-        ('cxx20-gcc-compile-commands', 'Run GCC C++20 compile command diagnostics', (
-            'check_cxx20_commands_gcc build/cxx20-gcc-compile-commands',
-        )),
-    )
-
-
-def profiling_step_requirements():
-    return (
-        ('validate-guardrails', 'Check CI guardrails', (
-            'python .github/scripts/check_ci_guards.py',
-            'python .github/scripts/test_check_ci_guards.py',
-        )),
-        ('build', 'Get Latest Tag', (
-            'if [[ "${GITHUB_REF:-}" == refs/tags/[0-9].[0-9]* ]]; then',
-            'version="0.0"',
-        )),
-        ('build', 'Get CI Version', (
-            'head_hash=$(git rev-parse --short HEAD)',
-            'version="${{ steps.tag.outputs.version }}-g${head_hash}"',
-        )),
-        ('build', 'Package LLVM Profdata Tool', (
-            'cp "$llvm_profdata" profdata-dist/',
-            'strip -s profdata-dist/llvm-profdata.exe',
-        )),
-        ('build', 'Smoke, Package, and Verify 8b-lib', (
-            'TARGET_CPU="${{ matrix.target_cpu }}" bash x265/.github/scripts/profiling_smoke_package_verify.sh 8b-lib',
-        )),
-        ('build', 'Smoke, Package, and Verify 12b-lib', (
-            'TARGET_CPU="${{ matrix.target_cpu }}" bash x265/.github/scripts/profiling_smoke_package_verify.sh 12b-lib',
-        )),
-        ('build', 'Smoke, Package, and Verify All', (
-            'TARGET_CPU="${{ matrix.target_cpu }}" bash x265/.github/scripts/profiling_smoke_package_verify.sh all',
-        )),
-        ('build', 'Compress Profiling Build', (
-            '7za a -t7z -mx=9 ../x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z ./*.exe',
-        )),
-        ('build', 'Compress LLVM Profdata', (
-            '7za a -t7z -mx=9 ../llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}.7z ./*',
-        )),
-        ('build', 'Verify Profiling Artifact', (
-            'bash x265/.github/scripts/verify_ci_archive.sh x265-profiling "x265-profiling-win64-${{ matrix.target_cpu }}-clang.${{ steps.package_version.outputs.version }}.7z" artifact-check-profiling "${{ matrix.target_cpu }}"',
-        )),
-        ('build', 'Verify LLVM Profdata Artifact', (
-            'bash x265/.github/scripts/verify_ci_archive.sh llvm-profdata "llvm-profdata-win64-clang.${{ steps.llvm_profdata.outputs.version }}.7z" artifact-check-profdata',
-        )),
-    )
-
-
-def validate_workflow_steps(repo_root, relative_path, context, requirements):
-    path = repo_root / relative_path
-    parsed = load_yaml(repo_root, relative_path)
-    for job_name, step_name, required_items in requirements:
-        step = named_step(workflow_steps(parsed, path, job_name), step_name, path, required_items, job_name)
-        script = required_run(step, path, step_name)
-        for required in required_items:
-            require_active_run_text(script, required, path, context)
-    return parsed
-
-
 def validate_required_snippets(repo_root):
-    validate_workflow_steps(repo_root, BUILD_WORKFLOW, 'Build workflow guard', build_step_requirements())
-    build_profiling = validate_workflow_steps(repo_root, BUILD_PROFILING_WORKFLOW, 'Build Profiling workflow guard', profiling_step_requirements())
-    validate_workflow_steps(repo_root, UPDATE_DEPS_WORKFLOW, 'update-deps guard', (
+    validate_required_workflow_steps(repo_root, BUILD_WORKFLOW, 'Build workflow guard', build_step_requirements())
+    build_profiling = validate_required_workflow_steps(repo_root, BUILD_PROFILING_WORKFLOW, 'Build Profiling workflow guard', profiling_step_requirements())
+    build_pgo = validate_required_workflow_steps(repo_root, BUILD_PGO_WORKFLOW, 'Build PGO workflow guard', pgo_step_requirements())
+    validate_required_workflow_steps(repo_root, UPDATE_DEPS_WORKFLOW, 'update-deps guard', (
         ('update-deps', 'Check CI guardrails', REQUIRED_UPDATE_DEPS_SNIPPETS[:3]),
         ('update-deps', 'Update Dependency Refs', REQUIRED_UPDATE_DEPS_SNIPPETS[3:8]),
         ('update-deps', 'Validate Dependency Ref Diff', REQUIRED_UPDATE_DEPS_SNIPPETS[8:]),
@@ -2341,29 +1307,35 @@ def validate_required_snippets(repo_root):
         fail('Build Profiling build job must need validate-guardrails', build_profiling_path)
     if jobs.get('publish-release', {}).get('needs') != ['build', 'validate-guardrails']:
         fail('Build Profiling publish-release job must need build and validate-guardrails', build_profiling_path)
-    profiling_action = load_yaml(repo_root, BUILD_PROFILING_ACTION)
-    profiling_action_path = repo_root / BUILD_PROFILING_ACTION
-    for step_name, required_items in (
+
+    build_pgo_path = repo_root / BUILD_PGO_WORKFLOW
+    pgo_jobs = workflow_jobs(build_pgo, build_pgo_path)
+    if pgo_jobs.get('generate', {}).get('needs') != 'validate-guardrails':
+        fail('Build PGO generate job must need validate-guardrails', build_pgo_path)
+    build_pgo_step = workflow_step(build_pgo, build_pgo_path, 'generate', 'Build Profiling Binaries')
+    with_values = build_pgo_step.get('with')
+    if not isinstance(with_values, dict):
+        fail('Build PGO profiling action step is missing with inputs', build_pgo_path)
+    for key, value in {
+        'target-cpu': 'x86-64',
+        'profile-class': "${{ inputs.profile_target || 'all' }}",
+        'output-name': "x265-profiling-win64-x86-64-${{ inputs.profile_target || 'all' }}.exe",
+        'use-mimalloc': 'ON',
+        'enable-lsmash': 'ON',
+        }.items():
+        if with_values.get(key) != value:
+            fail(f'Build PGO profiling action must set {key}={value}', build_pgo_path)
+
+    validate_required_action_steps(repo_root, BUILD_PROFILING_ACTION, 'Build Profiling action guard', (
         ('Build 8b-lib profiling CLI', REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[:3] + REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[5:]),
         ('Build 12b-lib profiling CLI', REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[:2] + REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[3:4]),
         ('Build all profiling CLI', REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[:2] + REQUIRED_BUILD_PROFILING_ACTION_SNIPPETS[4:5]),
-    ):
-        step = named_step(action_steps(profiling_action, profiling_action_path), step_name, profiling_action_path)
-        script = required_run(step, profiling_action_path, step_name)
-        for required in required_items:
-            require_active_run_text(script, required, profiling_action_path, 'Build Profiling action guard')
-
-    windows_deps = load_yaml(repo_root, WINDOWS_DEPS_ACTION)
-    windows_deps_path = repo_root / WINDOWS_DEPS_ACTION
-    for step_name, required_items in (
+    ))
+    validate_required_action_steps(repo_root, WINDOWS_DEPS_ACTION, 'setup-windows-deps guard', (
         ('Verify MSYS2 Toolchain', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[:5]),
         ('Compile L-SMASH', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[5:9]),
         ('Compile GOP muxer', REQUIRED_WINDOWS_DEPS_ACTION_SNIPPETS[9:]),
-    ):
-        step = named_step(action_steps(windows_deps, windows_deps_path), step_name, windows_deps_path)
-        script = required_run(step, windows_deps_path, step_name)
-        for required in required_items:
-            require_active_run_text(script, required, windows_deps_path, 'setup-windows-deps guard')
+    ))
     print('Required CI guard steps validated')
 
 
@@ -2402,13 +1374,12 @@ def validate_build_pr_fast_gate(repo_root):
     if sanitizer.get('runs-on') != 'ubuntu-latest':
         fail('linux-clang-sanitizers must run on ubuntu-latest', build_path)
 
-    step = named_step(
-        workflow_steps(parsed, build_path, 'linux-clang-sanitizers'),
-        'Build and smoke-test with ASan and UBSan',
+    active_lines = shell_active_logical_lines(workflow_step_run(
+        parsed,
         build_path,
-        job_name='linux-clang-sanitizers',
-    )
-    active_lines = shell_active_logical_lines(required_run(step, build_path, 'Build and smoke-test with ASan and UBSan'))
+        'linux-clang-sanitizers',
+        'Build and smoke-test with ASan and UBSan',
+    ))
     for required, message in {
         'if [ "${{ github.event_name }}" = "pull_request" ]; then': 'sanitizer job must branch on pull_request for fast gate mode',
         'min_cpp_commands=50': 'sanitizer PR fast gate must use reduced compile-command threshold',
@@ -2441,7 +1412,7 @@ def validate_build_pr_fast_gate(repo_root):
 def validate_warning_scan_dependencies(repo_root):
     build_path = repo_root / BUILD_WORKFLOW
     parsed = load_yaml(repo_root, BUILD_WORKFLOW)
-    step = named_step(workflow_steps(parsed, build_path, 'cxx20-warning-scan'), 'Setup Shared Dependencies', build_path, job_name='cxx20-warning-scan')
+    step = workflow_step(parsed, build_path, 'cxx20-warning-scan', 'Setup Shared Dependencies')
     with_values = step.get('with')
     if not isinstance(with_values, dict):
         fail('C++20 warning scan dependency setup is missing with inputs', build_path)
@@ -2451,50 +1422,145 @@ def validate_warning_scan_dependencies(repo_root):
     print('C++20 warning scan dependency setup validated')
 
 
+def validate_job_timeouts(repo_root):
+    for relative_path in (BUILD_WORKFLOW, BUILD_PROFILING_WORKFLOW, BUILD_PGO_WORKFLOW, UPDATE_DEPS_WORKFLOW):
+        path = repo_root / relative_path
+        jobs = workflow_jobs(load_yaml(repo_root, relative_path), path)
+        for job_name, job in jobs.items():
+            if not isinstance(job, dict):
+                fail(f'workflow job {job_name} must map to a job definition', path)
+            timeout = job.get('timeout-minutes')
+            if not isinstance(timeout, int) or timeout <= 0:
+                fail(f'{path.name} job {job_name} must declare a positive timeout-minutes', path)
+    print('Workflow job timeouts validated')
+
+
+def validate_update_deps_concurrency(repo_root):
+    path = repo_root / UPDATE_DEPS_WORKFLOW
+    parsed = load_yaml(repo_root, UPDATE_DEPS_WORKFLOW)
+    concurrency = parsed.get('concurrency')
+    if not isinstance(concurrency, dict):
+        fail('Update-deps workflow must declare concurrency', path)
+    if concurrency.get('group') != '${{ github.workflow }}-${{ github.ref }}':
+        fail('Update-deps workflow concurrency group must serialize by workflow/ref', path)
+    if concurrency.get('cancel-in-progress') is not False:
+        fail('Update-deps workflow concurrency must not cancel in-progress runs', path)
+    print('Update-deps concurrency validated')
+
+
+def build_validators(repo_root, args, bash):
+    return {
+        'yaml-text': lambda: validate_yaml_text(repo_root, WORKFLOW_DIR, ACTION_DIR),
+        'yaml-parse': lambda: validate_yaml_parse(repo_root, WORKFLOW_DIR, ACTION_DIR),
+        'run-blocks': lambda: validate_run_blocks(repo_root, WORKFLOW_DIR, ACTION_DIR, bash),
+        'scan-helper': lambda: validate_scan_helper(repo_root, bash),
+        'mp4-smoke-helper': lambda: validate_mp4_smoke_helper(repo_root, bash),
+        'profiling-smoke-helper': lambda: validate_profiling_smoke_helper(repo_root, bash),
+        'verify-ci-archive-helper': lambda: validate_verify_ci_archive_helper(repo_root, bash),
+        'runtime-smoke-suite': lambda: validate_runtime_smoke_suite(repo_root, bash),
+        'mp4-smoke-suite': lambda: validate_mp4_smoke_suite(repo_root, bash),
+        'source-test-vector-scripts': lambda: validate_source_test_vector_scripts(repo_root),
+        'dependency-update-anchors': lambda: validate_dependency_update_anchors(repo_root),
+        'required-snippets': lambda: validate_required_snippets(repo_root),
+        'build-pr-fast-gate': lambda: validate_build_pr_fast_gate(repo_root),
+        'warning-scan-dependencies': lambda: validate_warning_scan_dependencies(repo_root),
+        'job-timeouts': lambda: validate_job_timeouts(repo_root),
+        'update-deps-concurrency': lambda: validate_update_deps_concurrency(repo_root),
+        'pgo-consume-helper': lambda: validate_pgo_consume_helper(repo_root),
+        'raw-smoke': lambda: validate_raw_smoke(repo_root),
+        'threaded-me-smoke': lambda: validate_threaded_me_smoke(repo_root),
+        'threaded-me-stress-smoke': lambda: validate_threaded_me_stress_smoke(repo_root),
+        'cli-long-input-smoke': lambda: validate_cli_long_input_smoke(repo_root),
+        'mkv-smoke': lambda: validate_mkv_smoke(repo_root),
+        'lavf-smoke': lambda: validate_lavf_smoke(repo_root),
+        'qpfile-smoke': lambda: validate_qpfile_smoke(repo_root),
+        'zonefile-smoke': lambda: validate_zonefile_smoke(repo_root),
+        'zonefile-oversized-smoke': lambda: validate_zonefile_oversized_smoke(repo_root),
+        'recon-smoke': lambda: validate_recon_smoke(repo_root),
+        'video-signal-type-preset-oversized-smoke': lambda: validate_video_signal_type_preset_oversized_smoke(repo_root),
+        'gop-output-smoke': lambda: validate_gop_output_smoke(repo_root),
+        'mp4-smokes': lambda: validate_mp4_smokes(repo_root),
+        'zimg-smoke': lambda: validate_zimg_smoke(repo_root),
+        'linux-gcc-smoke': lambda: validate_linux_gcc_smoke(repo_root),
+        'warning-scan-runtime-smokes': lambda: validate_warning_scan_runtime_smokes(repo_root),
+        'gnu20-diagnostic-steps': lambda: validate_gnu20_diagnostic_steps(repo_root),
+        'dependency-suffixes': lambda: validate_dependency_suffixes(repo_root, args.before, args.after),
+    }
+
+
+VALIDATOR_BASH_REQUIREMENTS = {
+    'yaml-text': False,
+    'yaml-parse': False,
+    'run-blocks': True,
+    'scan-helper': True,
+    'mp4-smoke-helper': True,
+    'profiling-smoke-helper': True,
+    'verify-ci-archive-helper': True,
+    'runtime-smoke-suite': True,
+    'mp4-smoke-suite': True,
+    'source-test-vector-scripts': False,
+    'dependency-update-anchors': False,
+    'required-snippets': False,
+    'build-pr-fast-gate': False,
+    'warning-scan-dependencies': False,
+    'job-timeouts': False,
+    'update-deps-concurrency': False,
+    'pgo-consume-helper': False,
+    'raw-smoke': False,
+    'threaded-me-smoke': False,
+    'threaded-me-stress-smoke': False,
+    'cli-long-input-smoke': False,
+    'mkv-smoke': False,
+    'lavf-smoke': False,
+    'qpfile-smoke': False,
+    'zonefile-smoke': False,
+    'zonefile-oversized-smoke': False,
+    'recon-smoke': False,
+    'video-signal-type-preset-oversized-smoke': False,
+    'gop-output-smoke': False,
+    'mp4-smokes': False,
+    'zimg-smoke': False,
+    'linux-gcc-smoke': False,
+    'warning-scan-runtime-smokes': False,
+    'gnu20-diagnostic-steps': False,
+    'dependency-suffixes': False,
+}
+VALIDATOR_NAMES = tuple(VALIDATOR_BASH_REQUIREMENTS)
+BASH_VALIDATOR_NAMES = {name for name, needs_bash in VALIDATOR_BASH_REQUIREMENTS.items() if needs_bash}
+
+
 def main():
     parser = argparse.ArgumentParser(description='Check CI workflow guardrails that are easy to miss by hand')
     parser.add_argument('--repo-root', type=Path, default=Path.cwd())
     parser.add_argument('--before')
     parser.add_argument('--after')
     parser.add_argument('--bash', help='bash executable used for syntax checks')
+    parser.add_argument(
+        '--only',
+        action='append',
+        default=[],
+        metavar='CHECK',
+        help='run only the named validation; may be specified multiple times',
+    )
     args = parser.parse_args()
 
     repo_root = args.repo_root.resolve()
+    unknown = [name for name in args.only if name not in VALIDATOR_NAMES]
+    if unknown:
+        parser.error(f'unknown check(s): {", ".join(unknown)}')
+
+    clear_runtime_caches()
     try:
-        validate_yaml_text(repo_root)
-        validate_yaml_parse(repo_root)
-        bash = bash_path(args.bash)
-        validate_run_blocks(repo_root, bash)
-        validate_scan_helper(repo_root, bash)
-        validate_mp4_smoke_helper(repo_root, bash)
-        validate_profiling_smoke_helper(repo_root, bash)
-        validate_verify_ci_archive_helper(repo_root, bash)
-        validate_runtime_smoke_suite(repo_root, bash)
-        validate_mp4_smoke_suite(repo_root, bash)
-        validate_source_test_vector_scripts(repo_root)
-        validate_dependency_update_anchors(repo_root)
-        validate_required_snippets(repo_root)
-        validate_build_pr_fast_gate(repo_root)
-        validate_warning_scan_dependencies(repo_root)
-        validate_pgo_consume_helper(repo_root)
-        validate_raw_smoke(repo_root)
-        validate_threaded_me_smoke(repo_root)
-        validate_threaded_me_stress_smoke(repo_root)
-        validate_cli_long_input_smoke(repo_root)
-        validate_mkv_smoke(repo_root)
-        validate_lavf_smoke(repo_root)
-        validate_qpfile_smoke(repo_root)
-        validate_zonefile_smoke(repo_root)
-        validate_zonefile_oversized_smoke(repo_root)
-        validate_recon_smoke(repo_root)
-        validate_video_signal_type_preset_oversized_smoke(repo_root)
-        validate_gop_output_smoke(repo_root)
-        validate_mp4_smokes(repo_root)
-        validate_zimg_smoke(repo_root)
-        validate_linux_gcc_smoke(repo_root)
-        validate_warning_scan_runtime_smokes(repo_root)
-        validate_gnu20_diagnostic_steps(repo_root)
-        validate_dependency_suffixes(repo_root, args.before, args.after)
+        requested = set(args.only)
+        needs_bash = not requested or bool(BASH_VALIDATOR_NAMES & requested)
+        bash = bash_path(args.bash) if needs_bash else None
+        validators = build_validators(repo_root, args, bash)
+        if set(validators) != set(VALIDATOR_NAMES):
+            fail('validator registry drift detected')
+        for name in VALIDATOR_NAMES:
+            if requested and name not in requested:
+                continue
+            validators[name]()
     except GuardFailure as exc:
         report_failure(exc)
     print('CI guardrails validated')
