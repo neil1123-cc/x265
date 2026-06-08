@@ -119,7 +119,7 @@ typedef struct x265_lookahead_data
 typedef struct x265_analysis_validate
 {
     int     maxNumReferences;
-    int     analysisReuseLevel;
+    int     analysisSaveReuseLevel;
     int     sourceWidth;
     int     sourceHeight;
     int     keyframeMax;
@@ -609,6 +609,7 @@ typedef enum
 #define X265_AQ_AUTO_VARIANCE        2
 #define X265_AQ_AUTO_VARIANCE_BIASED 3
 #define X265_AQ_EDGE                 4
+#define X265_AQ_EDGE_BIASED          5
 #define x265_ADAPT_RD_STRENGTH   4
 #define X265_REFINE_INTER_LEVELS 3
 /* NOTE! For this release only X265_CSP_I420 and X265_CSP_I444 are supported */
@@ -1185,9 +1186,6 @@ typedef struct x265_param
 
     /*== Logging Features ==*/
 
-    /* Enable analysis and logging distribution of CUs. Now deprecated */
-    int       bLogCuStats;
-
     /* Enable the measurement and reporting of PSNR. Default is enabled */
     int       bEnablePsnr;
 
@@ -1198,6 +1196,18 @@ typedef struct x265_param
      * X265_LOG_FULL, default is X265_LOG_INFO */
     int       logLevel;
 
+    /* Optional general log filename. Messages are appended to this file when
+     * their level is less than or equal to logfLevel */
+    char*     logfn;
+
+    /* The verbosity threshold for the general log file. Uses X265_LOG_NONE to
+     * X265_LOG_FULL, default is X265_LOG_INFO */
+    int       logfLevel;
+
+    /* Optional progress report filename. The CLI rewrites this file with the
+     * latest periodic JSON progress status */
+    char*     pgfn;
+
     /* Level of csv logging. 0 is summary, 1 is frame level logging,
      * 2 is frame level logging with performance statistics */
     int       csvLogLevel;
@@ -1207,6 +1217,9 @@ typedef struct x265_param
      * encoder will emit per-stream statistics into the log file when
      * x265_encoder_log is called (presumably at the end of the encode) */
     char      csvfn[X265_MAX_STRING_SIZE];
+
+    /* Enable x264-style compact progress indicator in the CLI. Default disabled */
+    int       bStylish;
 
     /*== Internal Picture Specification ==*/
 
@@ -1654,21 +1667,21 @@ typedef struct x265_param
     double    psyRd;
 
     /* Strength of psycho-visual optimizations in quantization. Only has an
-     * effect when RDOQ is enabled (presets slow, slower and veryslow). The 
+     * effect when RDOQ is enabled (presets slow, slower and veryslow). The
      * value must be between 0 and 50, 1.0 is typical. Default 0 */
     double    psyRdoq;
+
+    /* Strength of psycho-visual optimization in RDO quantization for B/P/I slices.
+     * The value must be between 0 and 300. */
+    int       psyScaleB;
+    int       psyScaleP;
+    int       psyScaleI;
 
     /* Perform quantisation parameter based RD refinement. RD cost is calculated
      * on the best CU partitions, chosen after the CU analysis, for a range of QPs
      * to find the optimal rounding effect. Only effective at rd-levels 5 and 6.
      * Default disabled */
     int       bEnableRdRefine;
-
-    /* If save, write per-frame analysis information into analysis buffers.
-     * If load, read analysis information into analysis buffer and use this
-     * analysis information to reduce the amount of work the encoder must perform.
-     * Default disabled. Now deprecated*/
-    int       analysisReuseMode;
 
     /* Filename for multi-pass-opt-analysis/distortion. Default name is "x265_analysis.dat" */
     char      analysisReuseFileName[X265_MAX_STRING_SIZE];
@@ -1752,6 +1765,9 @@ typedef struct x265_param
          * AQ is enabled. Default value: 1.0. Acceptable values between 0.0 and 3.0 */
         double    aqStrength;
 
+        /* Sets the AQ bias strength in AQ modes 3 and 5. Default value: 1.0. */
+        double    aqBiasStrength;
+
         /* Delta QP range by QP adaptation based on a psycho-visual model.
          * Acceptable values between 1.0 to 6.0 */
         double    qpAdaptationRange;
@@ -1772,6 +1788,20 @@ typedef struct x265_param
          * across frames and assigns more bits to these CUs. Improves encode efficiency.
          * Default: enabled */
         int       cuTree;
+
+        /* Override the strength and QP offset bounds of cuTree. */
+        double    cuTreeStrength;
+        double    cuTreeMinQpOffset;
+        double    cuTreeMaxQpOffset;
+
+        /* Override the qScale estimation mode used by rate control. */
+        int       qScaleMode;
+
+        /* Use AQ mode 1 as the upper QP offset bound for AQ modes 2-5. */
+        int       limitAq1;
+
+        /* Sets the aq-strength for AQ mode 1 when limit-aq1 is enabled. */
+        double    limitAq1Strength;
 
         /* In CRF mode, maximum CRF as caused by VBV. 0 implies no limit */
         double    rfConstantMax;
@@ -2022,20 +2052,6 @@ typedef struct x265_param
 
     /* Increase RD at points where bitrate drops due to vbv. Default 0 */
     double    dynamicRd;
-
-    /* Enables the emitting of HDR SEI packets which contains HDR-specific params.
-     * Auto-enabled when max-cll, max-fall, or mastering display info is specified.
-     * Default is disabled. Now deprecated.*/
-    int       bEmitHDRSEI;
-
-    /* Enable luma and chroma offsets for HDR/WCG content.
-     * Default is disabled. Now deprecated.*/
-    int       bHDROpt;
-
-    /* A value between 1 and 10 (both inclusive) determines the level of
-    * information stored/reused in analysis save/load. Higher the refine
-    * level higher the information stored/reused. Default is 5. Now deprecated. */
-    int       analysisReuseLevel;
 
      /* Limit Sample Adaptive Offset filter computation by early terminating SAO
      * process based on inter prediction mode, CTU spatial-domain correlations,
@@ -2456,7 +2472,7 @@ static const char * const x265_preset_names[] = { "ultrafast", "superfast", "ver
  *      100 times faster than placebo!
  *
  *      Currently available tunings are: */
-static const char * const x265_tune_names[] = { "psnr", "ssim", "grain", "zerolatency", "fastdecode", "animation", 0 };
+static const char * const x265_tune_names[] = { "psnr", "ssim", "grain", "zerolatency", "fastdecode", "animation", "littlepox", "vcb-s", 0 };
 
 /*      returns 0 on success, negative on failure (e.g. invalid preset/tune name). */
 int x265_param_default_preset(x265_param *, const char *preset, const char *tune);

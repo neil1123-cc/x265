@@ -91,6 +91,53 @@ Logging/Statistic Options
 
 	**CLI ONLY**
 
+.. option:: --log-file <filename>
+
+	Append general encoder log output to a file. The file is opened in append
+	mode for each write, so existing contents are preserved. Default none.
+
+	Messages written through this file follow the threshold set by
+	:option:`--log-file-level` and are independent of the console threshold set
+	by :option:`--log-level`.
+
+	**CLI ONLY**
+
+.. option:: --log-file-level <integer|string>
+
+	Controls the level of information written to :option:`--log-file`.
+	Accepted values match :option:`--log-level`.
+
+	0. error
+	1. warning
+	2. info **(default)**
+	3. debug
+	4. full
+
+	When :option:`--log-file` is not specified, this option has no effect.
+
+	**CLI ONLY**
+
+.. option:: --progress-file <filename>
+
+	Write periodic JSON progress updates to a file. The file is rewritten on
+	each update and contains a single JSON object describing the latest encode
+	status.
+
+	The progress record includes the current frame number, total frame count,
+	instantaneous fps, bitrate, output size in bytes, completion percentage,
+	and estimated time remaining in seconds.
+
+	**CLI ONLY**
+
+.. option:: --stylish
+
+	Enable x264-style compact progress output on the console. This affects the
+	periodic CLI progress display only.
+
+	This option has no effect when :option:`--no-progress` is used.
+
+	**CLI ONLY**
+
 .. option:: --csv <filename>
 
 	Write encoding statistics to a Comma Separated Values log file. Creates
