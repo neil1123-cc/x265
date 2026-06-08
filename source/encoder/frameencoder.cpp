@@ -1790,7 +1790,7 @@ void FrameEncoder::processRowEncoder(int intRow, ThreadLocalData& tld, int layer
         }
 
         // Completed CU processing
-        curRow.completed++;
+        curRow.completed = curRow.completed + 1;
 
         FrameStats frameLog;
         curEncData.m_rowStat[row].sumQpAq += collectCTUStatistics(*ctu, &frameLog);

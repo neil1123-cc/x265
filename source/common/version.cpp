@@ -95,6 +95,12 @@
 #define CHECKED " "
 #endif
 
+#ifdef MOD_BUILD
+#define MOD XSTR(MOD_BUILD) " "
+#else
+#define MOD ""
+#endif
+
 #if X265_DEPTH == 12
 
 #define BITDEPTH "12bit"
@@ -128,5 +134,9 @@ const int PFX(max_bit_depth) = 8;
 #define ADD12 ""
 #endif
 
+#ifndef X265_CPU_OPT
+#define X265_CPU_OPT ""
+#endif
+
 const char* PFX(version_str) = XSTR(X265_VERSION);
-const char* PFX(build_info_str) = ONOS COMPILEDBY BITS ASM ATOMICS CHECKED BITDEPTH ADD8 ADD10 ADD12;
+const char* PFX(build_info_str) = ONOS COMPILEDBY BITS X265_CPU_OPT ASM ATOMICS CHECKED MOD BITDEPTH ADD8 ADD10 ADD12;

@@ -3959,6 +3959,7 @@ void Lookahead::cuTreeFinish(Lowres *frame, double averageDuration, int ref0Dist
                     if (intracost)
                     {
                         int propagateCost = ((frame->propagateCost[cuXY]) / 4 * fpsFactor + 128) >> 8;
+                        double log2_ratio = X265_LOG2(intracost + propagateCost) - X265_LOG2(intracost) + weightdelta;
                         double qp_offset = x265_clip3(m_cuTreeMinQpOffset, m_cuTreeMaxQpOffset, m_cuTreeStrength * log2_ratio);
                         frame->qpCuTreeOffset[cuX * 2 + cuY * m_8x8Width * 4] = frame->qpAqOffset[cuX * 2 + cuY * m_8x8Width * 4] - qp_offset;
                         frame->qpCuTreeOffset[cuX * 2 + cuY * m_8x8Width * 4 + 1] = frame->qpAqOffset[cuX * 2 + cuY * m_8x8Width * 4 + 1] - qp_offset;

@@ -4,6 +4,7 @@
 #  LSMASH_INCLUDE_DIRS - The L-SMASH include directories
 #  LSMASH_LIBRARIES - The libraries needed to use L-SMASH
 #  LSMASH_LIBRARY_DIRS - The directory to find L-SMASH libraries
+#  OBUPARSE_LIBRARY - Optional obuparse library used by L-SMASH AV1 helpers
 
 include(FindPackageHandleStandardArgs)
 find_package(PkgConfig)
@@ -20,11 +21,18 @@ find_library(LSMASH_LIBRARY
     NAMES lsmash
     HINTS ${PC_LSMASH_LIBDIR} ${PC_LSMASH_LIBRARY_DIRS})
 
+find_library(OBUPARSE_LIBRARY
+    NAMES obuparse
+    HINTS ${PC_LSMASH_LIBDIR} ${PC_LSMASH_LIBRARY_DIRS})
+
 set(LSMASH_INCLUDE_DIRS ${LSMASH_INCLUDE_DIR})
 set(LSMASH_LIBRARIES ${LSMASH_LIBRARY})
+if(OBUPARSE_LIBRARY)
+    list(APPEND LSMASH_LIBRARIES ${OBUPARSE_LIBRARY})
+endif()
 get_filename_component(LSMASH_LIBRARY_DIRS "${LSMASH_LIBRARY}" DIRECTORY)
 
 find_package_handle_standard_args(LSMASH DEFAULT_MSG
     LSMASH_LIBRARY LSMASH_INCLUDE_DIR)
 
-mark_as_advanced(LSMASH_INCLUDE_DIR LSMASH_LIBRARY)
+mark_as_advanced(LSMASH_INCLUDE_DIR LSMASH_LIBRARY OBUPARSE_LIBRARY)

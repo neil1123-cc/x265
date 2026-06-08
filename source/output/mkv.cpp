@@ -23,10 +23,17 @@
  *****************************************************************************/
 
 #include "mkv.h"
+#include <stdio.h>
 #include <vector>
 
 using namespace X265_NS;
 using namespace std;
+
+#if defined(_LP64) || defined(_WIN64)
+#define X265_OUTPUT_BITS "64bit"
+#else
+#define X265_OUTPUT_BITS "32bit"
+#endif
 
 #define ERR(...) general_log(NULL, "mkv", X265_LOG_ERROR, __VA_ARGS__)
 
@@ -246,7 +253,10 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
         phc += sei_size;
     }
 
-    ret = mk_write_header(p_mkv->w, "x265", "V_MPEGH/ISO/HEVC",
+    char writingApp[64];
+    snprintf(writingApp, sizeof(writingApp), "x265 %s %s", x265_version_str, X265_OUTPUT_BITS);
+
+    ret = mk_write_header(p_mkv->w, writingApp, "V_MPEGH/ISO/HEVC",
                           hevcC.data(), hevcC_len, p_mkv->frame_duration, 50000,
                           p_mkv->width, p_mkv->height,
                           p_mkv->d_width, p_mkv->d_height, p_mkv->display_size_units, p_mkv->stereo_mode);

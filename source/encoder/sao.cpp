@@ -1549,7 +1549,7 @@ void SAO::saoLumaComponentParamDist(SAOParam* saoParam, int32_t addr, int64_t& r
     currentRDCost += costClasses[3];
     int64_t bestRDCostBO = currentRDCost;
 
-    for (int i = 1; i < MAX_NUM_SAO_CLASS - SAO_NUM_OFFSET + 1; i++)
+    for (int i = 1; i < (int)MAX_NUM_SAO_CLASS - (int)SAO_NUM_OFFSET + 1; i++)
     {
         currentRDCost -= costClasses[i - 1];
         currentRDCost += costClasses[i + 3];
@@ -1686,7 +1686,7 @@ void SAO::saoChromaComponentParamDist(SAOParam* saoParam, int32_t addr, int64_t&
             estIterOffset(SAO_BO, lambda[1], count, offsetOrg, offsetOut, distClasses[classIdx], costClasses[classIdx]);
         }
 
-        for (int i = 0; i < MAX_NUM_SAO_CLASS - SAO_NUM_OFFSET + 1; i++)
+        for (int i = 0; i < (int)MAX_NUM_SAO_CLASS - (int)SAO_NUM_OFFSET + 1; i++)
         {
             int64_t currentRDCost = 0;
             for (int j = i; j < i + SAO_NUM_OFFSET; j++)
