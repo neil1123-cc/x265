@@ -1,14 +1,16 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-04-30T02:28:00Z",
+  "generated_at": "2026-06-08T05:05:08Z",
   "repository": "neil1123-cc/x265",
   "workflow": "Generate Baseline PGO Profdata (x86-64)",
-  "run_id": "25143146208",
+  "run_id": "27115738554",
   "run_attempt": "1",
   "source_ref": "master",
-  "source_commit": "643240e1ddf2fd640c20095b8024f9711aee1c3f",
+  "source_commit": "1132d64110ae31da8616d42b8ee9376ccdf767be",
   "profile_target": "12b-lib",
   "profdata_branch": "profdata-x86-64-12b-lib",
+  "profdata_toolchain": "llvm-22.1",
+  "llvm_profdata_version": "22.1",
   "layout": "per-target-bounded-window",
   "window": {
     "slots": 4,
@@ -17,10 +19,15 @@
   },
   "dependencies": {
     "ffmpeg_ref": "n8.1",
-    "mimalloc_ref": "v3.3.1",
+    "ffmpeg_cache_key": "ffmpeg-n8.1-pgo-v1-clang",
+    "mimalloc_ref": "v3.3.2",
     "obuparse_ref": "v2.0.2",
     "obuparse_cache_key": "obuparse-v2.0.2-clang-v1",
     "lsmash_repository": "vimeo/l-smash",
-    "lsmash_ref": "master"
+    "lsmash_ref": "04e39f1fb232c332d4b04a1043c02c7c2d282d00",
+    "lsmash_cache_key": "lsmash-vimeo/l-smash-04e39f1fb232c332d4b04a1043c02c7c2d282d00-clang-coff-refptr-v2",
+    "gop_muxer_repository": "msg7086/gop_muxer",
+    "gop_muxer_ref": "5677cf5ef905c2412ed31de300cd1a08b341d21d",
+    "gop_muxer_cache_key": "gop-muxer-msg7086/gop_muxer-5677cf5ef905c2412ed31de300cd1a08b341d21d-lsmash-add-box-v2-clang-gnu20"
   }
 }
