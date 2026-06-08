@@ -3549,9 +3549,8 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
 
 } /* end extern "C" or namespace */
 
+#if EXPORT_C_API
 namespace X265_NS {
-// internal encoder functions
-
 bool isAllocatedParamInstance(const x265_param* param)
 {
     return ::isAllocatedParamInstance(param);
@@ -3561,6 +3560,12 @@ void finalizeZoneParamCopy(x265_param* zoneParam, const x265_param* src)
 {
     ::finalizeZoneParamCopy(zoneParam, src);
 }
+
+} // namespace X265_NS
+#endif
+
+namespace X265_NS {
+// internal encoder functions
 
 int x265_atoi(const char* str, bool& bError)
 {

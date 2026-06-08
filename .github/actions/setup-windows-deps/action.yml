@@ -308,7 +308,7 @@ runs:
       working-directory: ffmpeg
       run: |
         make install
-        mkdir -p ffmpeg-install/include ffmpeg-install/lib/pkgconfig ffmpeg-install/bin
+        mkdir -p ffmpeg-install/include ffmpeg-install/lib/pkgconfig ffmpeg-install/bin /clang64/bin
         for dir in /usr/local/include/libav* /usr/local/include/libsw*; do
           [ -d "$dir" ] || continue
           cp -R "$dir" ffmpeg-install/include/
@@ -323,6 +323,7 @@ runs:
         done
         for file in /usr/local/bin/ffmpeg* /usr/local/bin/ffprobe*; do
           [ -f "$file" ] || continue
+          install -v "$file" /clang64/bin/
           cp "$file" ffmpeg-install/bin/
         done
         mv ffmpeg-install "$GITHUB_WORKSPACE/"
@@ -334,8 +335,9 @@ runs:
         cp -R ffmpeg-install/include/. /usr/local/include/
         cp -R ffmpeg-install/lib/. /usr/local/lib/
         if [ -d ffmpeg-install/bin ]; then
-          mkdir -p /usr/local/bin
+          mkdir -p /usr/local/bin /clang64/bin
           cp -R ffmpeg-install/bin/. /usr/local/bin/
+          cp -R ffmpeg-install/bin/. /clang64/bin/
         fi
 
     - name: Verify FFmpeg Install
@@ -362,6 +364,14 @@ runs:
           ls -l /usr/local/lib/pkgconfig/libswscale.pc
         else
           echo "::warning::FFmpeg libswscale.pc is missing; static LAVF discovery may rely on aggregate pkg-config metadata"
+        fi
+        if [ -x /clang64/bin/ffmpeg ]; then
+          /clang64/bin/ffmpeg -hide_banner -version | head -1
+        else
+          echo "FFmpeg CLI not installed for this cache profile"
+        fi
+        if [ -x /clang64/bin/ffprobe ]; then
+          /clang64/bin/ffprobe -hide_banner -version | head -1
         fi
 
     - name: Compile mimalloc

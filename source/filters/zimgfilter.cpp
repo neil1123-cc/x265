@@ -313,16 +313,20 @@ ZimgFilter::ZimgFilter(char* paramString)
         const char* parts[4];
         size_t lengths[4];
         int count = splitZimgCommaTokens(pValue, parts, lengths, 4);
+        int parsedWidth = 0;
+        int parsedHeight = 0;
         if (!((count == 2 || count == 4) &&
-              parseZimgIntToken(parts[0], lengths[0], rWidth) &&
-              parseZimgIntToken(parts[1], lengths[1], rHeight) &&
+              parseZimgIntToken(parts[0], lengths[0], parsedWidth) &&
+              parseZimgIntToken(parts[1], lengths[1], parsedHeight) &&
               (count == 2 || (parseZimgDoubleToken(parts[2], lengths[2], param1) &&
-                              parseZimgDoubleToken(parts[3], lengths[3], param2)))))
+                               parseZimgDoubleToken(parts[3], lengths[3], param2)))))
         {
             general_log(nullptr, "zimg", X265_LOG_ERROR, "Resize: invalid parameters: (%s), should be (W,H[,P1,P2])\n", pValue);
             bFail = true;
             return;
         }
+        rWidth = (uint32_t)parsedWidth;
+        rHeight = (uint32_t)parsedHeight;
     }
 }
 

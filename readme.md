@@ -18,8 +18,8 @@
 | 输入扩展 | 源码支持 FFmpeg/LAVF、AviSynth、VapourSynth 输入路径；当前 Windows CI 发布链路默认启用 LAVF，AVS/VPY 默认关闭。 |
 | 容器输出 | 支持 RAW HEVC、MKV、MP4、GOP 输出；MP4 由 L-SMASH 支撑。 |
 | 编码增强 | 保留并维护 Yuuki / Kyouko 系增强内容，覆盖 AQ、GOP/lookahead、场景切换、码控、SEI、日志和进度显示等方向。 |
-| CI 验证 | 覆盖 L-SMASH patch/build/smoke、RAW/MKV/MP4/LAVF/GOP smoke、open-GOP、CRA、strict-CBR、时间基和封装边界用例；另含 Build workflow 的 C++20 warning scan：8bit CLI、12bit CLI、Unity CLI、LAVF/L-SMASH shared-deps CLI、启用 ASM 的 shared-deps CLI、shared library、all-bit-depth helper libs、linked all CLI、CPU 目标和 TestBench，检查 GNU++20 编译命令并对关键产物做最小 RAW smoke；Windows 与 Linux GCC 诊断分支会检查 CLI、lib-only 或核心库 GNU++20 编译命令并阻断发布。 |
-| Profiling / PGO | 提供 profiling 构建和 per-target bounded-window PGO profdata 维护链路，用于性能验证和发布维护；profiling action 复用同一套 GNU++20 / compile_commands 校验，metadata 会记录构建来源、profdata 布局和 FFmpeg / mimalloc / obuparse / L-SMASH / GOP muxer 关键依赖 cache key。 |
+| CI 验证 | 覆盖 L-SMASH patch/build/smoke、RAW/MKV/MP4/LAVF/GOP smoke、open-GOP、CRA、strict-CBR、时间基和封装边界用例；另含 Build workflow 的 C++20 warning scan：8bit CLI、12bit CLI、Unity CLI、LAVF/L-SMASH shared-deps CLI、启用 ASM 的 shared-deps CLI、shared library、all-bit-depth helper libs、linked all CLI、CPU 目标和 TestBench，检查 GNU++20 编译命令并对关键产物做轻量 RAW/LAVF smoke；Windows 与 Linux GCC 诊断分支会检查 CLI、lib-only 或核心库 GNU++20 编译命令并阻断发布，Linux Clang sanitizer 分支覆盖 ASan/UBSan smoke。 |
+| Profiling / PGO | 提供 profiling 构建和 PGO profdata 维护链路，用于性能验证和发布维护；当前 profdata 发布 workflow 只生成 `x86-64` generic baseline，并按 `profdata-x86-64-<profile_target>` 分支维护。Build 消费侧仍按 `profdata-<cpu>-<profile_target>` 优先探测目标 CPU 分支，缺失或不可用时回退到 `x86-64` baseline。metadata 记录构建来源、目标 CPU、LLVM profdata 工具链、bounded-window 布局和 FFmpeg / mimalloc / obuparse / L-SMASH / GOP muxer 关键依赖 cache key。 |
 
 ## 适合谁
 
@@ -46,7 +46,7 @@
 
 ### Profiling / PGO 用户
 
-profiling 和 `llvm-profdata` 相关资产主要用于 profile 采集、PGO 维护和工具链验证；这些构建也会检查同一套 GNU++20 约束，普通编码用户通常不需要下载。
+profiling 和 `llvm-profdata` 相关资产主要用于 profile 采集、PGO 维护和工具链验证；这些构建也会检查同一套 GNU++20 约束，普通编码用户通常不需要下载。PGO profdata 的消费分支维度是目标 CPU 和 `profile_target`，其中 `profile_target` 目前为 `8b-lib`、`12b-lib` 和 `all`；当前发布 workflow 只生成 `x86-64` baseline，它是所有目标 CPU 的 generic 兜底来源，不额外按 LLVM 版本拆分分支。Build 仍会优先探测非 `x86-64` CPU 专属 profdata 分支，消费构建会追加对应 `-march=<cpu>`，metadata 也必须记录匹配的 `target_cpu`，否则 Build 会拒绝该分支并继续回退到 `x86-64` baseline。CPU 专属 profdata 通常由本地更新脚本基于 Build Profiling 产物生成，因此其 dependency metadata 使用 `profiling-v1-clang`；`x86-64` baseline 由 Build PGO workflow 生成，使用 `pgo-v1-clang`。
 
 ### CPU 架构怎么选
 
@@ -227,15 +227,16 @@ python .github/scripts/check_ci_guards.py --repo-root .
 
 ## CI 覆盖
 
-主构建 workflow 会覆盖：
+主要 CI / 维护 workflow 会覆盖：
 
 - L-SMASH patch / build / smoke test
 - 多 bit-depth CLI 编译
 - RAW / MKV / MP4 / LAVF 输入 smoke tests
 - open-GOP、CRA、strict-CBR、时间基和封装边界用例
-- profiling / PGO 相关构建链路，以及按 `profdata-<cpu>-<profile_target>` 分支维护的 per-target bounded-window profdata；Build 会在目标 CPU 分支不可用时回退到 x86-64 baseline，并校验记录构建来源、profdata 布局和 FFmpeg / mimalloc / obuparse / L-SMASH / GOP muxer 关键依赖 cache key 的 metadata
-- Build workflow 的 C++20 warning scan：按 CLI/shared-deps、shared/all-bit-depth、CPU/ASM 三组运行，覆盖 8bit CLI、12bit CLI、Unity CLI、LAVF/L-SMASH shared-deps CLI、启用 ASM 的 shared-deps CLI、shared library、all-bit-depth helper libs、linked all CLI、CPU 目标和 TestBench，检查 compile_commands 中的 GNU++20 标准标志、depth define 及 warning-as-error 相关告警标志，并对 12bit、shared-library 和 linked all warning-scan CLI 做最小 RAW 编码 smoke。
+- profiling / PGO 相关构建链路，以及按 `profdata-x86-64-<profile_target>` 分支维护的 bounded-window baseline profdata；Build 消费侧会先探测 `profdata-<cpu>-<profile_target>`，目标 CPU 分支缺失或不可用时回退到 `profdata-x86-64-<profile_target>` generic baseline，分支不按 LLVM 版本拆分。非 `x86-64` consume 构建会追加对应 `-march=<cpu>`；Build 在 push 路径只消费 `all` profdata，在 workflow_dispatch/tag full 路径消费 `8b-lib`、`12b-lib`、`all` 三类 profdata；metadata 会校验构建来源、目标 CPU、LLVM profdata 工具链、profdata 布局和 FFmpeg / mimalloc / obuparse / L-SMASH / GOP muxer 关键依赖 cache key，其中工具链或 source commit 差异作为 warning/summary 提示，CPU 专属分支缺少匹配 `target_cpu`、metadata 不匹配或依赖 cache 不匹配都会拒绝使用并触发 fallback。
+- Build workflow 的 C++20 warning scan：按 CLI/shared-deps、shared/all-bit-depth、CPU/ASM 三组运行，覆盖 8bit CLI、12bit CLI、Unity CLI、LAVF/L-SMASH shared-deps CLI、启用 ASM 的 shared-deps CLI、shared library、all-bit-depth helper libs、linked all CLI、CPU 目标和 TestBench，检查 compile_commands 中的 GNU++20 标准标志、depth define 及 warning-as-error 相关告警标志，并对 zimg、12bit、shared-deps ASM、shared-library 和 linked all warning-scan CLI 做轻量 RAW/LAVF 编码 smoke。
 - GCC C++20 compile command diagnostics：Windows MinGW GCC 覆盖 CLI、12bit lib-only、8bit lib-only 和 linked-all CLI 配置，Linux GCC 覆盖核心库配置；两条 job 都校验 GNU++20、GCC C++20 迁移告警、depth define 或旧标准回退，并和 Clang warning scan 一起阻断正式 release 发布。
+- Linux Clang sanitizer：使用 ASan/UBSan 构建 8-bit CLI，并在 smoke 中检查输出、recon、CSV 和 sanitizer runtime 报告。
 
 ## 来源和致谢
 

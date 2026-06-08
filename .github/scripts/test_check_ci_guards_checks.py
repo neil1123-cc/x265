@@ -168,11 +168,12 @@ def test_require_active_line_contains_and_action_step_run():
 
 
 def test_option_value():
-    args = ['build/all/x265.exe', '--input', 'smoke.y4m', '--frames', '2']
+    args = ['build/all/x265.exe', '--input', 'smoke.y4m', '--frames', '2', '--no-progress']
     build = Path('build.sh')
 
     checks.option_value(args, '--input', 'smoke.y4m', build, 'smoke command')
     checks.option_value(args, '--frames', '2', build, 'smoke command')
+    checks.option_value(args, '--no-progress', None, build, 'smoke command')
 
     expect_guard_failure(
         lambda: checks.option_value(args, '--frames', '3', build, 'smoke command'),
@@ -182,6 +183,11 @@ def test_option_value():
     expect_guard_failure(
         lambda: checks.option_value(args, '--output', 'smoke.hevc', build, 'smoke command'),
         'missing smoke command value for --output',
+        build,
+    )
+    expect_guard_failure(
+        lambda: checks.option_value(args, '--repeat-headers', None, build, 'smoke command'),
+        'missing smoke command flag --repeat-headers',
         build,
     )
 

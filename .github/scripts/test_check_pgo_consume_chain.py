@@ -8,6 +8,7 @@ from ci_guard_script_runner import run_python_script_main
 CHECKER = Path(__file__).with_name('check_pgo_consume_chain.py')
 
 VALID_METADATA = {
+    'target_cpu': 'x86-64',
     'profile_target': '8b-lib',
     'profdata_branch': 'profdata-x86-64-8b-lib',
     'profdata_toolchain': 'llvm-20.1',
@@ -79,9 +80,10 @@ def run_checker(metadata, profdata, build, *extra_args, require_dependency_field
         str(profdata),
         '--build-dir',
         str(build),
+        '--expected-cpu=x86-64',
         '--expected-target=8b-lib',
         '--expected-branch=profdata-x86-64-8b-lib',
-        '--expected-toolchain=llvm-20.1',
+        '--current-toolchain=llvm-20.1',
         '--required-ffmpeg-cache-suffix=full-v4-clang',
         '--required-obuparse-cache-suffix=clang-v1',
         '--required-lsmash-cache-suffix=clang-coff-refptr-v2',
@@ -119,6 +121,20 @@ def expect_metadata_failure(mutator, expected, *extra_args):
         expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', *extra_args), expected)
 
 
+def expect_metadata_warning(mutator, expected, *extra_args):
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        profdata_flag_path = '/tmp/x265.profdata'
+        metadata, profdata, build = write_chain(root, f'-fprofile-instr-use={profdata_flag_path}')
+        mutated_metadata = clone_metadata()
+        mutator(mutated_metadata)
+        write_metadata(metadata, mutated_metadata)
+        result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}', *extra_args)
+        expect_pass(result)
+        if expected not in result.stdout:
+            raise AssertionError(result.stdout)
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -154,6 +170,8 @@ def main():
 
     expect_metadata_failure(lambda metadata: metadata.pop('layout'), 'missing profdata metadata field: layout')
     expect_metadata_failure(lambda metadata: metadata.pop('window'), 'missing profdata metadata field: window')
+    expect_metadata_warning(lambda metadata: metadata.pop('target_cpu'), 'missing profdata metadata field: target_cpu')
+    expect_metadata_failure(lambda metadata: metadata.__setitem__('target_cpu', 'haswell'), 'target_cpu mismatch')
     expect_metadata_failure(lambda metadata: metadata.pop('profile_target'), 'missing profdata metadata field: profile_target')
     expect_metadata_failure(lambda metadata: metadata.__setitem__('layout', 'single-branch'), 'profdata layout mismatch')
     expect_metadata_failure(lambda metadata: metadata['window'].__setitem__('slots', 8), 'profdata window mismatch field=slots')
@@ -161,7 +179,7 @@ def main():
     expect_metadata_failure(lambda metadata: metadata['window'].__setitem__('weights_newest_to_oldest', [1, 1, 1, 1]), 'profdata window mismatch field=weights_newest_to_oldest')
     expect_metadata_failure(lambda metadata: metadata.__setitem__('profdata_branch', 'profdata-x86-64-all'), 'profdata_branch mismatch')
     expect_metadata_failure(lambda metadata: metadata.__setitem__('profile_target', 'all'), 'profile_target mismatch')
-    expect_metadata_failure(lambda metadata: metadata.pop('llvm_profdata_version'), 'missing profdata metadata field: llvm_profdata_version')
+    expect_metadata_warning(lambda metadata: metadata.pop('llvm_profdata_version'), 'PGO profdata metadata missing llvm_profdata_version')
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -234,7 +252,10 @@ def main():
         stale_toolchain_metadata = clone_metadata()
         stale_toolchain_metadata['profdata_toolchain'] = 'llvm-19.1'
         write_metadata(metadata, stale_toolchain_metadata)
-        expect_fail(run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}'), 'profdata_toolchain mismatch')
+        result = run_checker(metadata, profdata, build, f'--profdata-flag-path={profdata_flag_path}')
+        expect_pass(result)
+        if 'PGO profdata toolchain differs from local llvm-profdata' not in result.stdout:
+            raise AssertionError(result.stdout)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

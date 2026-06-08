@@ -45,12 +45,12 @@ def main():
                 'source/x265cli.cpp': '\n'.join((
                     'OPT("pme")',
                     '{',
-                    '    x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
+                    '    x265_log(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
                     '    return true;',
                     '}',
                     'OPT("pmode")',
                     '{',
-                    '    x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
+                    '    x265_log(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
                     '    return true;',
                     '}',
                     'OPT("dolby-vision-rpu")',
@@ -71,14 +71,14 @@ def main():
                     '}',
                     'OPT("pmode")',
                     '{',
-                    '    x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
+                    '    x265_log(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
                     '    return true;',
                     '}',
                     'OPT("dolby-vision-rpu")',
                 )) + '\n',
             },
         )
-        expect_fail(run_checker(root), 'missing deprecated parallel log guardrail: x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");')
+        expect_fail(run_checker(root), 'missing deprecated parallel log guardrail: x265_log(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");')
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -111,11 +111,11 @@ def main():
                     'OPT("pme")',
                     '{',
                     '    return true;',
-                    '    x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
+                    '    x265_log(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
                     '}',
                     'OPT("pmode")',
                     '{',
-                    '    x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
+                    '    x265_log(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
                     '    return true;',
                     '}',
                     'OPT("dolby-vision-rpu")',

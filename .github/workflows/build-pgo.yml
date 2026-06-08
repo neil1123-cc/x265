@@ -292,19 +292,21 @@ jobs:
         ls -la ../x265.profdata
         llvm-profdata show --summary ../x265.profdata || llvm-profdata show --detailed-summary ../x265.profdata
 
-    - name: Push Baseline Profdata to Branch
+    - name: Push Profdata to Branch
       run: |
         set -euo pipefail
 
         llvm_profdata_version=$(llvm-profdata --version | sed -nE 's/.*LLVM version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
         test -n "$llvm_profdata_version"
         profdata_toolchain="llvm-${llvm_profdata_version//[^A-Za-z0-9_.-]/_}"
+        target_cpu=x86-64
         profile_target="${{ github.event.inputs.profile_target || 'all' }}"
-        profdata_branch="profdata-x86-64-${profile_target}-${profdata_toolchain}"
+        profdata_branch="profdata-x86-64-${profile_target}"
         profdata_push_dir=$(mktemp -d)
         remote_url="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
         trap 'rm -rf "$profdata_push_dir"' EXIT
 
+        echo "Publishing profdata for CPU: $target_cpu"
         echo "Publishing profdata for target: $profile_target"
         echo "Destination branch: $profdata_branch"
         echo "Destination path: x265.profdata + profiles/*.profdata + metadata.json"
@@ -425,6 +427,7 @@ jobs:
           "run_attempt": "${GITHUB_RUN_ATTEMPT}",
           "source_ref": "${source_ref}",
           "source_commit": "${source_commit}",
+          "target_cpu": "${target_cpu}",
           "profile_target": "${profile_target}",
           "profdata_branch": "${profdata_branch}",
           "profdata_toolchain": "${profdata_toolchain}",
@@ -451,6 +454,7 @@ jobs:
         }
         EOF
         python x265/.github/scripts/check_profdata_metadata.py "$profdata_push_dir/metadata.json" \
+          --expected-cpu="$target_cpu" \
           --expected-target="$profile_target" \
           --expected-branch="$profdata_branch" \
           --expected-toolchain="$profdata_toolchain" \
@@ -459,6 +463,7 @@ jobs:
           --required-obuparse-cache-suffix="$obuparse_cache_suffix" \
           --required-lsmash-cache-suffix="$lsmash_cache_suffix" \
           --required-gop-muxer-cache-suffix="$gop_muxer_cache_suffix" \
+          --require-target-cpu \
           --require-dependency-fields \
           --require-fresh-slot
 

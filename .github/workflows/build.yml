@@ -112,7 +112,7 @@ jobs:
       - name: Setup Shared Dependencies
         uses: ./x265/.github/actions/setup-windows-deps
         with:
-          ffmpeg-cache-suffix: lavf-v3-clang
+          ffmpeg-cache-suffix: lavf-v4-clang
           use-ffmpeg: ${{ env.CI_FULL_EVENT }}
           ffmpeg-configure: |
             ./configure --prefix=/usr/local --enable-gpl \
@@ -132,7 +132,14 @@ jobs:
         run: cp x265/.github/scripts/cxx20_scan_helpers.sh ./cxx20-scan-helpers.sh
 
       - name: Install ZIMG for warning scan
-        run: pacman -S --needed --noconfirm mingw-w64-clang-x86_64-zimg
+        run: |
+          if [ "${CI_FULL_EVENT}" = 'true' ]; then
+            pacman -S --needed --noconfirm mingw-w64-clang-x86_64-zimg mingw-w64-clang-x86_64-ffmpeg
+            test -x /clang64/bin/ffmpeg
+            /clang64/bin/ffmpeg -hide_banner -version | head -1
+          else
+            pacman -S --needed --noconfirm mingw-w64-clang-x86_64-zimg
+          fi
 
       - name: Check GNU++20 downgrade guardrail
         run: |
@@ -300,26 +307,26 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
-          width = height = 96
+          width = height = 128
           frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
           Path('build/cxx20-warning-scan/smoke_zimg.yuv').write_bytes(frame)
           PY
-          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:lanczos(64,64)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log
+          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 128x128 --fps 1 --frames 1 --vf "zimg:lanczos(96,96)" --output build/cxx20-warning-scan/smoke_zimg.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg.log
           test -s build/cxx20-warning-scan/smoke_zimg.hevc
-          grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log
+          grep -Fq 'zimg [info]: Resize: 96x96' build/cxx20-warning-scan/smoke_zimg.log
           grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log
-          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "zimg:crop(0,0,-0,-0)" --output build/cxx20-warning-scan/smoke_zimg_bypass.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg_bypass.log
+          build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 128x128 --fps 1 --frames 1 --vf "zimg:crop(0,0,-0,-0)" --output build/cxx20-warning-scan/smoke_zimg_bypass.hevc 2>&1 | tee build/cxx20-warning-scan/smoke_zimg_bypass.log
           test -s build/cxx20-warning-scan/smoke_zimg_bypass.hevc
           grep -Fq 'zimg [info]: Nothing to do. Bypassing' build/cxx20-warning-scan/smoke_zimg_bypass.log
           grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg_bypass.log
           long_zimg_vf="$(python -c "print('zimg:lanczos(' + '1' * 1100 + ')')")"
-          if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_zimg_vf" --output build/cxx20-warning-scan/smoke_zimg_longparam.hevc > build/cxx20-warning-scan/smoke_zimg_longparam.log 2>&1; then
+          if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 128x128 --fps 1 --frames 1 --vf "$long_zimg_vf" --output build/cxx20-warning-scan/smoke_zimg_longparam.hevc > build/cxx20-warning-scan/smoke_zimg_longparam.log 2>&1; then
             echo "ZIMG long-parameter smoke unexpectedly succeeded"
             exit 1
           fi
           grep -Fq 'Filter parameters exceeds supported length' build/cxx20-warning-scan/smoke_zimg_longparam.log
           long_filter_name_vf="$(python -c "print('a' * 1100 + ':x')")"
-          if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_filter_name_vf" --output build/cxx20-warning-scan/smoke_filter_longname.hevc > build/cxx20-warning-scan/smoke_filter_longname.log 2>&1; then
+          if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 128x128 --fps 1 --frames 1 --vf "$long_filter_name_vf" --output build/cxx20-warning-scan/smoke_filter_longname.hevc > build/cxx20-warning-scan/smoke_filter_longname.log 2>&1; then
             echo "Filter long-name smoke unexpectedly succeeded"
             exit 1
           fi
@@ -327,12 +334,12 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
-          width = height = 64
+          width = height = 96
           y = (512).to_bytes(2, 'little') * (width * height)
           uv = (2048).to_bytes(2, 'little') * (width * height // 2)
           Path('build/cxx20-warning-scan-12bit/smoke_12bit.yuv').write_bytes(y + uv)
           PY
-          build/cxx20-warning-scan-12bit/x265.exe --input build/cxx20-warning-scan-12bit/smoke_12bit.yuv --input-res 64x64 --input-depth 12 --output-depth 12 --fps 1 --frames 1 --output build/cxx20-warning-scan-12bit/smoke_12bit.hevc
+          build/cxx20-warning-scan-12bit/x265.exe --input build/cxx20-warning-scan-12bit/smoke_12bit.yuv --input-res 96x96 --input-depth 12 --output-depth 12 --fps 1 --frames 1 --output build/cxx20-warning-scan-12bit/smoke_12bit.hevc
           test -s build/cxx20-warning-scan-12bit/smoke_12bit.hevc
 
           if is_full_warning_scan; then
@@ -341,10 +348,10 @@ jobs:
               "$warning_scan_shared_deps_pid" \
               "$warning_scan_shared_deps_asm_pid"
 
-            ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=64x64:rate=1 -frames:v 1 -pix_fmt yuv420p build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps.mp4
-            build/cxx20-warning-scan-shared-deps-asm/x265.exe build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps.mp4 --frames 1 --no-progress -o build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_out.mp4
-            test -s build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_out.mp4
-            build/cxx20-warning-scan-shared-deps-asm/x265.exe build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps.mp4 --frames 1 --no-progress -o build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_out.mkv
+            test -x /clang64/bin/ffmpeg
+            /clang64/bin/ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 4 -pix_fmt yuv420p build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_seed.mp4
+            test -s build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_seed.mp4
+            build/cxx20-warning-scan-shared-deps-asm/x265.exe build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_seed.mp4 --frames 4 --bframes 0 --keyint 1 --min-keyint 1 --no-progress -o build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_out.mkv
             test -s build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_out.mkv
           fi
 
@@ -452,11 +459,11 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
-          width = height = 64
+          width, height, frames = 128, 72, 4
           frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
-          Path('build/cxx20-warning-scan-shared-library/smoke_shared.yuv').write_bytes(frame)
+          Path('build/cxx20-warning-scan-shared-library/smoke_shared.yuv').write_bytes(frame * frames)
           PY
-          build/cxx20-warning-scan-shared-library/x265.exe --input build/cxx20-warning-scan-shared-library/smoke_shared.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-warning-scan-shared-library/smoke_shared.hevc
+          build/cxx20-warning-scan-shared-library/x265.exe --input build/cxx20-warning-scan-shared-library/smoke_shared.yuv --input-res 128x72 --fps 24 --frames 4 --bframes 0 --keyint 1 --min-keyint 1 --no-progress --output build/cxx20-warning-scan-shared-library/smoke_shared.hevc
           test -s build/cxx20-warning-scan-shared-library/smoke_shared.hevc
 
           mkdir -p build/cxx20-warning-scan-all
@@ -488,12 +495,12 @@ jobs:
           ninja -C build/cxx20-warning-scan-all cli
           python - <<'PY'
           from pathlib import Path
-          width = height = 64
+          width, height, frames = 128, 72, 4
           y = (512).to_bytes(2, 'little') * (width * height)
           uv = (512).to_bytes(2, 'little') * (width * height // 2)
-          Path('build/cxx20-warning-scan-all/smoke_all.yuv').write_bytes(y + uv)
+          Path('build/cxx20-warning-scan-all/smoke_all.yuv').write_bytes((y + uv) * frames)
           PY
-          build/cxx20-warning-scan-all/x265.exe --input build/cxx20-warning-scan-all/smoke_all.yuv --input-res 64x64 --input-depth 10 --output-depth 10 --fps 1 --frames 1 --output build/cxx20-warning-scan-all/smoke_all.hevc
+          build/cxx20-warning-scan-all/x265.exe --input build/cxx20-warning-scan-all/smoke_all.yuv --input-res 128x72 --input-depth 10 --output-depth 10 --fps 24 --frames 4 --bframes 0 --keyint 1 --min-keyint 1 --no-progress --output build/cxx20-warning-scan-all/smoke_all.hevc
           test -s build/cxx20-warning-scan-all/smoke_all.hevc
 
 
@@ -738,11 +745,11 @@ jobs:
           ninja -C build/cxx20-linux-gcc-compile-commands cli
           python - <<'PY'
           from pathlib import Path
-          width = height = 64
+          width = height = 96
           frame = bytes([0]) * (width * height) + bytes([128]) * (width * height // 2)
           Path('build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv').write_bytes(frame)
           PY
-          build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 64x64 --fps 1 --frames 1 --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc 2>&1 | tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
+          build/cxx20-linux-gcc-compile-commands/x265 --input build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.yuv --input-res 96x96 --fps 1 --frames 1 --output build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc 2>&1 | tee build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
           test -s build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.hevc
           grep -Fq 'encoded 1 frames' build/cxx20-linux-gcc-compile-commands/smoke_linux_gcc.log
@@ -944,18 +951,18 @@ jobs:
         if: matrix.target_cpu == 'x86-64'
         uses: ./x265/.github/actions/setup-windows-deps
         with:
-          ffmpeg-cache-suffix: lavf-cli-v3-clang
+          ffmpeg-cache-suffix: lavf-cli-v5-clang
           ffmpeg-configure: |
             ./configure --prefix=/usr/local --enable-gpl \
               --disable-runtime-cpudetect --disable-all --disable-autodetect \
               --disable-everything --disable-network \
               --enable-ffmpeg --enable-ffprobe --enable-avdevice --enable-avfilter \
-              --enable-indev=lavfi --enable-filter=testsrc2 \
+              --enable-indev=lavfi --enable-filter=testsrc2,scale \
               --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
               --enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf,yuv4mpegpipe,hevc \
               --enable-decoder=h264,hevc,ffv1,ffvhuff,huffyuv,rawvideo,wrapped_avframe,aac,ac3,mp3 \
               --enable-parser=h264,hevc \
-              --enable-encoder=wrapped_avframe,ffv1,rawvideo --enable-muxer=matroska,yuv4mpegpipe \
+              --enable-encoder=wrapped_avframe,ffv1,rawvideo --enable-muxer=matroska,rawvideo,yuv4mpegpipe \
               --enable-protocol=file \
               --cc=cc --cxx=c++ --cpu=x86-64
           use-mimalloc: 'true'
@@ -968,7 +975,7 @@ jobs:
         if: matrix.target_cpu != 'x86-64'
         uses: ./x265/.github/actions/setup-windows-deps
         with:
-          ffmpeg-cache-suffix: lavf-v3-clang
+          ffmpeg-cache-suffix: lavf-v4-clang
           ffmpeg-configure: |
             ./configure --prefix=/usr/local --enable-gpl \
               --disable-runtime-cpudetect --disable-all --disable-autodetect \
@@ -983,15 +990,6 @@ jobs:
           use-lsmash: ${{ env.CI_FULL_EVENT }}
           use-gop-muxer: 'false'
           extra-msys2-packages: ''
-
-      - name: Detect LLVM Profdata Identity
-        id: llvm_profdata
-        run: |
-          version=$(llvm-profdata --version | sed -nE 's/.*LLVM version ([0-9]+\.[0-9]+).*/\1/p' | head -1)
-          test -n "$version"
-          safe_version=${version//[^A-Za-z0-9_.-]/_}
-          echo "id=llvm-${safe_version}" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Fetch PGO Profdata
         shell: bash
@@ -1016,6 +1014,14 @@ jobs:
           test -n "$obuparse_cache_suffix"
           test -n "$lsmash_cache_suffix"
           test -n "$gop_muxer_cache_suffix"
+          llvm_profdata_version=$(llvm-profdata --version | sed -nE 's/.*LLVM version ([0-9]+\.[0-9]+).*/\1/p' | head -1 || true)
+          current_toolchain=""
+          if [ -n "$llvm_profdata_version" ]; then
+            current_toolchain="llvm-${llvm_profdata_version//[^A-Za-z0-9_.-]/_}"
+            echo "Resolved local llvm-profdata toolchain: ${current_toolchain}"
+          else
+            echo "::warning::Unable to resolve local llvm-profdata toolchain for PGO metadata diagnostics"
+          fi
 
           append_pgo_status() {
             local profile_target="$1"
@@ -1028,123 +1034,187 @@ jobs:
 
           fetch_profdata() {
             local target="$1"
-            local primary_branch="$2"
-            local fallback_branch="$3"
+            local expected_cpu="$2"
+            local branch="$3"
             local source_path="$4"
-            local expected_toolchain="${5:-}"
-            local report_unavailable="${6:-true}"
+            local report_unavailable="${5:-true}"
             local destination="../build/x265-${target}.profdata"
-            local branch last_branch="" status="unavailable" summary_branch="" summary_note="no matching profdata branch"
+            local summary_note="branch unavailable"
 
-            if [ -s "$destination" ]; then
-              echo "PGO profdata already selected for ${target}: ${destination}"
-              append_pgo_status "$target" selected previous "already selected by newer branch identity"
-              return 0
+            local fetch_output fetch_status
+            set +e
+            fetch_output=$(timeout 180s git -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=30 fetch --quiet origin "$branch" --depth=1 2>&1)
+            fetch_status=$?
+            set -e
+            if [ "$fetch_status" -ne 0 ]; then
+              if printf '%s\n' "$fetch_output" | grep -qi "couldn't find remote ref"; then
+                echo "PGO profdata branch missing: $branch"
+                summary_note="missing branch ${branch}"
+              elif [ "$fetch_status" -eq 124 ]; then
+                if [ "$report_unavailable" = true ]; then
+                  echo "::warning::PGO profdata fetch timed out: target=${target} branch=${branch} after 180s"
+                else
+                  echo "PGO profdata fetch timed out: target=${target} branch=${branch} after 180s"
+                fi
+                summary_note="fetch timed out after 180s"
+              else
+                if [ "$report_unavailable" = true ] && [ "${CI_FULL_EVENT}" != 'true' ]; then
+                  echo "::warning::PGO profdata fetch failed: target=${target} branch=${branch} status=${fetch_status}"
+                  printf '%s\n' "$fetch_output"
+                  summary_note="fetch failed with status ${fetch_status}"
+                else
+                  echo "PGO profdata fetch failed: target=${target} branch=${branch} status=${fetch_status}"
+                  printf '%s\n' "$fetch_output"
+                  summary_note="fetch failed with status ${fetch_status}"
+                fi
+              fi
+              rm -f "$destination"
+              if [ "$report_unavailable" = true ]; then
+                echo "::warning::PGO profdata unavailable: target=${target} branch=${branch}"
+                append_pgo_status "$target" unavailable "$branch" "$summary_note"
+              else
+                echo "PGO profdata unavailable: target=${target} branch=${branch}"
+              fi
+              return 1
             fi
 
-            for branch in "$primary_branch" "$fallback_branch"; do
-              [ -n "$branch" ] || continue
-              [ "$branch" != "$last_branch" ] || continue
-              last_branch="$branch"
-              summary_branch="$branch"
+            echo "=== Fetching PGO profdata for ${target} from ${branch}:${source_path} ==="
 
-              local fetch_output fetch_status
-              set +e
-              fetch_output=$(git fetch --quiet origin "$branch" --depth=1 2>&1)
-              fetch_status=$?
-              set -e
-              if [ "$fetch_status" -ne 0 ]; then
-                if printf '%s\n' "$fetch_output" | grep -qi "couldn't find remote ref"; then
-                  echo "PGO profdata branch missing: $branch"
-                  summary_note="missing branch ${branch}"
-                  continue
-                fi
-                printf '%s\n' "$fetch_output"
-                return "$fetch_status"
+            local metadata_path="../build/x265-${target}.profdata.metadata.json"
+            rm -f "$metadata_path"
+            if git show "FETCH_HEAD:metadata.json" > "$metadata_path" 2>/dev/null; then
+              local is_cpu_specific_profdata=false
+              local required_ffmpeg_cache_suffix=pgo-v1-clang
+              if [ "$expected_cpu" != x86-64 ]; then
+                is_cpu_specific_profdata=true
+                required_ffmpeg_cache_suffix=profiling-v1-clang
               fi
-
-              echo "=== Fetching PGO profdata for ${target} from ${branch}:${source_path} ==="
-
-              local metadata_path="../build/x265-${target}.profdata.metadata.json"
-              rm -f "$metadata_path"
-              if git show "FETCH_HEAD:metadata.json" > "$metadata_path" 2>/dev/null; then
-                rm -rf ../build/profiles
-                mkdir -p ../build/profiles
-                if ! git show "FETCH_HEAD:profiles/0.profdata" > ../build/profiles/0.profdata 2>/dev/null; then
-                  rm -f ../build/profiles/0.profdata
-                fi
-                metadata_check_args=(
-                  --expected-target="$target"
-                  --expected-branch="$branch"
-                  --current-commit="${{ github.sha }}"
-                  --required-ffmpeg-cache-suffix=pgo-v1-clang
-                  --required-obuparse-cache-suffix="$obuparse_cache_suffix"
-                  --required-lsmash-cache-suffix="$lsmash_cache_suffix"
-                  --required-gop-muxer-cache-suffix="$gop_muxer_cache_suffix"
-                  --require-dependency-fields
-                  --require-fresh-slot
-                )
-                if [ -n "$expected_toolchain" ]; then
-                  metadata_check_args+=(--expected-toolchain="$expected_toolchain")
-                fi
-                if ! metadata_check_output=$(python .github/scripts/check_profdata_metadata.py "$metadata_path" "${metadata_check_args[@]}" 2>&1); then
+              rm -rf ../build/profiles
+              mkdir -p ../build/profiles
+              if ! git show "FETCH_HEAD:profiles/0.profdata" > ../build/profiles/0.profdata 2>/dev/null; then
+                rm -f ../build/profiles/0.profdata
+              fi
+              metadata_check_args=(
+                --expected-cpu="$expected_cpu"
+                --expected-target="$target"
+                --expected-branch="$branch"
+                --current-commit="${{ github.sha }}"
+                --required-ffmpeg-cache-suffix="$required_ffmpeg_cache_suffix"
+                --required-obuparse-cache-suffix="$obuparse_cache_suffix"
+                --required-lsmash-cache-suffix="$lsmash_cache_suffix"
+                --required-gop-muxer-cache-suffix="$gop_muxer_cache_suffix"
+                --require-dependency-fields
+                --require-fresh-slot
+              )
+              if [ "$is_cpu_specific_profdata" = true ]; then
+                metadata_check_args+=(--require-target-cpu)
+              fi
+              if [ -n "$current_toolchain" ]; then
+                metadata_check_args+=(--current-toolchain="$current_toolchain")
+              fi
+              if ! metadata_check_output=$(python .github/scripts/check_profdata_metadata.py "$metadata_path" "${metadata_check_args[@]}" 2>&1); then
+                if [ "$report_unavailable" = true ]; then
                   printf '%s\n' "$metadata_check_output"
-                  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-                    {
-                      echo
-                      echo "#### Rejected PGO metadata"
-                      echo
-                      echo "- target_cpu: ${{ matrix.target_cpu }}"
-                      echo "- profile_target: ${target}"
-                      echo "- branch: ${branch}"
-                      echo
-                      echo '```text'
-                      printf '%s\n' "$metadata_check_output" | head -20
-                      echo '```'
-                    } >> "$GITHUB_STEP_SUMMARY"
-                  fi
+                else
+                  printf '%s\n' "$metadata_check_output" | sed 's/^::warning::/PGO fallback probe warning: /'
+                fi
+                if [ "$report_unavailable" = true ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                  {
+                    echo
+                    echo "#### Rejected PGO metadata"
+                    echo
+                    echo "- target_cpu: ${{ matrix.target_cpu }}"
+                    echo "- profile_target: ${target}"
+                    echo "- branch: ${branch}"
+                    echo
+                    echo '```text'
+                    printf '%s\n' "$metadata_check_output" | head -20
+                    echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"
+                fi
+                if [ "$report_unavailable" = true ]; then
                   while IFS= read -r line; do
                     [ -n "$line" ] && echo "::warning::PGO profdata metadata rejected: target=${target} branch=${branch}: $line"
                   done <<< "$metadata_check_output"
-                  summary_note="metadata rejected: $(printf '%s' "$metadata_check_output" | tr '\n' ';' | cut -c1-180)"
-                  rm -f "$metadata_path"
-                  rm -rf ../build/profiles
-                  continue
+                else
+                  while IFS= read -r line; do
+                    [ -n "$line" ] && echo "PGO profdata metadata rejected during fallback probe: target=${target} branch=${branch}: $line"
+                  done <<< "$metadata_check_output"
                 fi
-                printf '%s\n' "$metadata_check_output"
-                summary_note="metadata validated"
-                rm -rf ../build/profiles
-              else
-                echo "::warning::PGO profdata metadata missing: target=${target} branch=${branch}"
-                summary_note="metadata missing"
+                summary_note="metadata rejected: $(printf '%s' "$metadata_check_output" | tr '\n' ';' | cut -c1-180)"
                 rm -f "$metadata_path"
                 rm -rf ../build/profiles
-                continue
-              fi
-
-              if ! git show "FETCH_HEAD:${source_path}" > "$destination" 2>/dev/null; then
-                echo "::warning::PGO profdata file missing: target=${target} branch=${branch} path=${source_path}"
                 rm -f "$destination"
-                summary_note="profdata file missing at ${source_path}"
-                continue
+                if [ "$report_unavailable" = true ]; then
+                  append_pgo_status "$target" unavailable "$branch" "$summary_note"
+                fi
+                return 1
               fi
-
-              if [ "$branch" = "$fallback_branch" ] && [ "$primary_branch" != "$fallback_branch" ]; then
-                echo "PGO profdata fallback hit: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
-                status="fallback"
+              printf '%s\n' "$metadata_check_output"
+              summary_note="metadata validated"
+              rm -rf ../build/profiles
+            else
+              if [ "$report_unavailable" = true ]; then
+                echo "::warning::PGO profdata metadata missing: target=${target} branch=${branch}"
               else
-                echo "PGO profdata hit: target=${target} branch=${branch}"
-                status="hit"
+                echo "PGO profdata metadata missing: target=${target} branch=${branch}"
               fi
-              echo "PGO profdata path: source=${source_path} destination=${destination}"
-              append_pgo_status "$target" "$status" "$branch" "$summary_note"
-              return 0
-            done
-
-            echo "::warning::PGO profdata unavailable: target=${target} primary=${primary_branch} fallback=${fallback_branch}"
-            if [ "$report_unavailable" = true ]; then
-              append_pgo_status "$target" unavailable "${summary_branch:-none}" "$summary_note"
+              summary_note="metadata missing"
+              rm -f "$metadata_path"
+              rm -rf ../build/profiles
+              rm -f "$destination"
+              if [ "$report_unavailable" = true ]; then
+                append_pgo_status "$target" unavailable "$branch" "$summary_note"
+              fi
+              return 1
             fi
+
+            if ! git show "FETCH_HEAD:${source_path}" > "$destination" 2>/dev/null; then
+              if [ "$report_unavailable" = true ]; then
+                echo "::warning::PGO profdata file missing: target=${target} branch=${branch} path=${source_path}"
+              else
+                echo "PGO profdata file missing: target=${target} branch=${branch} path=${source_path}"
+              fi
+              rm -f "$destination"
+              summary_note="profdata file missing at ${source_path}"
+              if [ "$report_unavailable" = true ]; then
+                append_pgo_status "$target" unavailable "$branch" "$summary_note"
+              fi
+              return 1
+            fi
+
+            echo "PGO profdata hit: target=${target} branch=${branch}"
+            echo "PGO profdata path: source=${source_path} destination=${destination}"
+            append_pgo_status "$target" hit "$branch" "$summary_note"
+            return 0
+          }
+
+          profdata_branch_for() {
+            local target_cpu="$1"
+            local profile_target="$2"
+            printf 'profdata-%s-%s\n' "$target_cpu" "$profile_target"
+          }
+
+          fetch_profdata_with_fallback() {
+            local target="$1"
+            local source_path="$2"
+            local target_cpu="${{ matrix.target_cpu }}"
+            local target_branch baseline_branch
+
+            target_branch=$(profdata_branch_for "$target_cpu" "$target")
+            baseline_branch=$(profdata_branch_for x86-64 "$target")
+
+            if [ "$target_branch" = "$baseline_branch" ]; then
+              fetch_profdata "$target" "$target_cpu" "$target_branch" "$source_path"
+              return
+            fi
+
+            if fetch_profdata "$target" "$target_cpu" "$target_branch" "$source_path" false; then
+              return 0
+            fi
+
+            echo "Falling back to x86-64 PGO profdata: target=${target} branch=${baseline_branch}"
+            fetch_profdata "$target" x86-64 "$baseline_branch" "$source_path"
           }
 
           {
@@ -1155,16 +1225,13 @@ jobs:
           } > ../build/pgo-status.md
 
           if [ "${CI_FULL_EVENT}" = 'true' ]; then
-            fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-8b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
-            fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib profdata-x86-64-8b-lib x265.profdata
-            fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-12b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
-            fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib profdata-x86-64-12b-lib x265.profdata
+            fetch_profdata_with_fallback 8b-lib x265.profdata || true
+            fetch_profdata_with_fallback 12b-lib x265.profdata || true
           else
             append_pgo_status 8b-lib skipped push "push path only consumes all-target profdata"
             append_pgo_status 12b-lib skipped push "push path only consumes all-target profdata"
           fi
-          fetch_profdata all profdata-${{ matrix.target_cpu }}-all-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-all-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false
-          fetch_profdata all profdata-${{ matrix.target_cpu }}-all profdata-x86-64-all x265.profdata
+          fetch_profdata_with_fallback all x265.profdata || true
           if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
             cat ../build/pgo-status.md >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -1386,6 +1453,25 @@ jobs:
           echo "Ninja job limits: single=${NPROC}, pair=${NINJA_JOBS_PAIR}, triple=${NINJA_JOBS_TRIPLE}"
 
           BASE_CXX_FLAGS="-O3 -flto=thin -fmerge-all-constants -I/usr/local/include"
+          resolve_cpu_march_flag() {
+            case "$1" in
+              x86-64)
+                return 0
+                ;;
+              haswell|skylake|alderlake|raptorlake|arrowlake|znver2|znver3|znver4|znver5)
+                printf -- '-march=%s\n' "$1"
+                ;;
+              *)
+                echo "Unsupported target CPU for -march: $1" >&2
+                return 2
+                ;;
+            esac
+          }
+
+          CPU_CXX_FLAG=$(resolve_cpu_march_flag "$CPU")
+          if [ -n "$CPU_CXX_FLAG" ]; then
+            BASE_CXX_FLAGS="${BASE_CXX_FLAGS} ${CPU_CXX_FLAG}"
+          fi
           cmake_common_args=(
             -GNinja x265/source
             -DCMAKE_PREFIX_PATH=/usr/local

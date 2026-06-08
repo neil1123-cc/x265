@@ -273,7 +273,7 @@ smoke_video_signal_type_preset_oversized() {
     echo "Video-signal-type-preset oversized smoke unexpectedly succeeded"
     exit 1
   fi
-  grep -Fq 'Incorrect system-id, aborting' smoke_vst_oversized.log
+  grep -Fq 'Incorrect video-signal-type-preset, aborting' smoke_vst_oversized.log
 }
 
 smoke_gop_output() {

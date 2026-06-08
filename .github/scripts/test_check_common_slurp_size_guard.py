@@ -41,6 +41,7 @@ def valid_text():
         'char* x265_slurp_file(const char *filename)',
         '{',
         '    size_t fSize = 0;',
+        '    size_t readBytes = 0;',
         '    long fileSize = 0;',
         '    bError |= std::fseek(fh, 0, SEEK_END) < 0;',
         '    fileSize = std::ftell(fh);',
@@ -52,8 +53,10 @@ def valid_text():
         '            fSize = (size_t)fileSize;',
         '    }',
         '    bError |= std::fseek(fh, 0, SEEK_SET) < 0;',
+        '    if (bError)',
+        '        goto error;',
         '    buf = X265_MALLOC(char, fSize + 2);',
-        '    size_t readBytes = std::fread(buf, 1, fSize, fh);',
+        '    readBytes = std::fread(buf, 1, fSize, fh);',
         '    bError |= readBytes != fSize;',
         "    if (!bError && buf[fSize - 1] != '\\n')",
         '        buf[fSize++] = \'\\n\';',
@@ -110,7 +113,7 @@ def main():
             root,
             {
                 'source/common/common.cpp': valid_text().replace(
-                    '    size_t readBytes = std::fread(buf, 1, fSize, fh);\n'
+                    '    readBytes = std::fread(buf, 1, fSize, fh);\n'
                     '    bError |= readBytes != fSize;\n'
                     "    if (!bError && buf[fSize - 1] != '\\n')\n"
                     "        buf[fSize++] = '\\n';\n"
@@ -132,13 +135,34 @@ def main():
             root,
             {
                 'source/common/common.cpp': valid_text().replace(
-                    '    size_t readBytes = std::fread(buf, 1, fSize, fh);\n'
+                    '    size_t readBytes = 0;\n',
+                    '',
+                    1,
+                ).replace(
+                    '    if (bError)\n'
+                    '        goto error;\n',
+                    '    if (bError)\n'
+                    '        goto error;\n'
+                    '    size_t readBytes = 0;\n',
+                    1,
+                ),
+            },
+        )
+        expect_fail(run_checker(root), 'x265_slurp_file must declare read length state before cleanup goto targets')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_targets(
+            root,
+            {
+                'source/common/common.cpp': valid_text().replace(
+                    '    readBytes = std::fread(buf, 1, fSize, fh);\n'
                     '    bError |= readBytes != fSize;\n'
                     "    if (!bError && buf[fSize - 1] != '\\n')\n"
                     "        buf[fSize++] = '\\n';\n"
                     '    if (!bError)\n'
                     '        buf[fSize] = 0;\n',
-                    '    size_t readBytes = std::fread(buf, 1, fSize, fh);\n'
+                    '    readBytes = std::fread(buf, 1, fSize, fh);\n'
                     '    if (!bError)\n'
                     '        buf[fSize] = 0;\n'
                     '    bError |= readBytes != fSize;\n'

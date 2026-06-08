@@ -10,7 +10,8 @@ FORBIDDEN_SNIPPETS = (
 )
 REQUIRED_SNIPPETS = (
     'else if (std::ferror(fh))',
-    'bool closeFailed = std::ferror(fh) != 0;',
+    'bool closeFailed = false;',
+    'closeFailed = std::ferror(fh) != 0;',
     'if (std::fclose(fh))',
     'closeFailed = true;',
     'x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
@@ -32,7 +33,9 @@ def check_repo(repo_root):
         return [(TARGET.as_posix(), 0, 'missing file')]
 
     text = path.read_text(encoding='utf-8', errors='ignore')
-    region_start = text.find('FILE *fh = x265_fopen(filename, "rb");')
+    region_start = text.find('bool closeFailed = false;')
+    if region_start == -1:
+        region_start = text.find('FILE *fh = x265_fopen(filename, "rb");')
     error_label = text.find('error:', region_start)
     region_end = text.find('return nullptr;', error_label)
     region = text[region_start:region_end] if -1 not in (region_start, error_label, region_end) else text
@@ -43,20 +46,26 @@ def check_repo(repo_root):
     for snippet in REQUIRED_SNIPPETS:
         if snippet not in region:
             failures.append((TARGET.as_posix(), 0, f'missing common slurp close guardrail: {snippet}'))
-    if region.count('bool closeFailed = std::ferror(fh) != 0;') != 3:
+    if region.count('bool closeFailed = false;') != 1:
+        failures.append((TARGET.as_posix(), 0, 'expected common slurp close state to be declared once before cleanup gotos'))
+    if region.count('closeFailed = std::ferror(fh) != 0;') != 3:
         failures.append((TARGET.as_posix(), 0, 'expected guarded common slurp close handling in the open-failure, read-complete, and error-cleanup paths'))
     if region.count('if (std::fclose(fh))') != 3:
         failures.append((TARGET.as_posix(), 0, 'expected three guarded common slurp fclose calls'))
 
     error_branch = region.find('else if (std::ferror(fh))')
     seek_line = region.find('bError |= std::fseek(fh, 0, SEEK_END) < 0;')
-    first_close = region.find('bool closeFailed = std::ferror(fh) != 0;')
-    second_close = region.find('bool closeFailed = std::ferror(fh) != 0;', first_close + 1)
+    close_decl = region.find('bool closeFailed = false;')
+    first_close = region.find('closeFailed = std::ferror(fh) != 0;')
+    second_close = region.find('closeFailed = std::ferror(fh) != 0;', first_close + 1)
     return_buf = region.find('return buf;')
     error_label = region.find('error:')
-    third_close = region.find('bool closeFailed = std::ferror(fh) != 0;', second_close + 1)
-    if -1 not in (error_branch, seek_line, first_close, second_close, return_buf, error_label, third_close):
-        if not (error_branch < first_close < seek_line < second_close < return_buf < error_label < third_close):
+    third_close = region.find('closeFailed = std::ferror(fh) != 0;', second_close + 1)
+    first_cleanup_goto = region.find('goto error;')
+    if -1 not in (close_decl, first_cleanup_goto) and not (close_decl < first_cleanup_goto):
+        failures.append((TARGET.as_posix(), 0, 'common slurp close state must be declared before cleanup gotos'))
+    if -1 not in (close_decl, error_branch, seek_line, first_close, second_close, return_buf, error_label, third_close):
+        if not (close_decl < error_branch < first_close < seek_line < second_close < return_buf < error_label < third_close):
             failures.append((TARGET.as_posix(), 0, 'common slurp close guards must preserve the early open-failure, read-complete, and error-cleanup ordering'))
 
     return failures

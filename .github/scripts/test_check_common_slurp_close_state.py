@@ -36,38 +36,42 @@ def expect_fail(result, expected):
         raise AssertionError(result.stdout)
 
 
+def valid_text():
+    return '\n'.join((
+        'bool closeFailed = false;',
+        'FILE *fh = x265_fopen(filename, "rb");',
+        'else if (std::ferror(fh))',
+        '    closeFailed = std::ferror(fh) != 0;',
+        'if (std::fclose(fh))',
+        '    closeFailed = true;',
+        'if (closeFailed)',
+        '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
+        'x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\\n", filename);',
+        'bError |= std::fseek(fh, 0, SEEK_END) < 0;',
+        'if (bError)',
+        '    goto error;',
+        'closeFailed = std::ferror(fh) != 0;',
+        'if (std::fclose(fh))',
+        '    closeFailed = true;',
+        'bError |= closeFailed;',
+        'if (closeFailed)',
+        '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
+        'x265_log(nullptr, X265_LOG_ERROR, "unable to read the file\\n");',
+        'return buf;',
+        'error:',
+        'closeFailed = std::ferror(fh) != 0;',
+        'if (std::fclose(fh))',
+        '    closeFailed = true;',
+        'if (closeFailed)',
+        '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
+        'return nullptr;',
+    )) + '\n'
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        write_targets(
-            root,
-            {
-                'source/common/common.cpp': '\n'.join((
-                    'else if (std::ferror(fh))',
-                    '    bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
-                    'x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\\n", filename);',
-                    'bError |= std::fseek(fh, 0, SEEK_END) < 0;',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'bError |= closeFailed;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                    'x265_log(nullptr, X265_LOG_ERROR, "unable to read the file\\n");',
-                    'return buf;',
-                    'error:',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                )) + '\n',
-            },
-        )
+        write_targets(root, {'source/common/common.cpp': valid_text()})
         expect_pass(run_checker(root))
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -80,31 +84,12 @@ def main():
         write_targets(
             root,
             {
-                'source/common/common.cpp': '\n'.join((
-                    'else if (std::ferror(fh))',
-                    '    bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
-                    'x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\\n", filename);',
-                    'bError |= std::fseek(fh, 0, SEEK_END) < 0;',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'bError |= closeFailed;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                    'x265_log(nullptr, X265_LOG_ERROR, "unable to read the file\\n");',
-                    'return buf;',
-                    'error:',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                    'bError |= std::ferror(fh) || std::fclose(fh);',
-                )) + '\n',
+                'source/common/common.cpp': valid_text().replace(
+                    'return nullptr;\n',
+                    'bError |= std::ferror(fh) || std::fclose(fh);\n'
+                    'return nullptr;\n',
+                    1,
+                ),
             },
         )
         expect_fail(run_checker(root), 'forbidden common slurp short-circuit close regression: bError |= std::ferror(fh) || std::fclose(fh);')
@@ -114,29 +99,18 @@ def main():
         write_targets(
             root,
             {
-                'source/common/common.cpp': '\n'.join((
-                    'else if (std::ferror(fh))',
-                    '    bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
-                    'x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\\n", filename);',
-                    'bError |= std::fseek(fh, 0, SEEK_END) < 0;',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'bError |= closeFailed;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                    'x265_log(nullptr, X265_LOG_ERROR, "unable to read the file\\n");',
-                    'return buf;',
-                    'error:',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'std::fclose(fh);',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                )) + '\n',
+                'source/common/common.cpp': valid_text().replace(
+                    'if (std::fclose(fh))\n'
+                    '    closeFailed = true;\n'
+                    'if (closeFailed)\n'
+                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);\n'
+                    'return nullptr;\n',
+                    'std::fclose(fh);\n'
+                    'if (closeFailed)\n'
+                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);\n'
+                    'return nullptr;\n',
+                    1,
+                ),
             },
         )
         expect_fail(run_checker(root), 'expected three guarded common slurp fclose calls')
@@ -146,28 +120,13 @@ def main():
         write_targets(
             root,
             {
-                'source/common/common.cpp': '\n'.join((
-                    'else if (std::ferror(fh))',
-                    '    bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
-                    'x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\\n", filename);',
-                    'bError |= std::fseek(fh, 0, SEEK_END) < 0;',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'bError |= closeFailed;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                    'x265_log(nullptr, X265_LOG_ERROR, "unable to read the file\\n");',
-                    'return buf;',
-                    'error:',
-                    'fclose(fh);',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                )) + '\n',
+                'source/common/common.cpp': valid_text().replace(
+                    'error:\n'
+                    'closeFailed = std::ferror(fh) != 0;\n',
+                    'error:\n'
+                    'fclose(fh);\n',
+                    1,
+                ),
             },
         )
         expect_fail(run_checker(root), 'expected guarded common slurp close handling in the open-failure, read-complete, and error-cleanup paths')
@@ -177,30 +136,17 @@ def main():
         write_targets(
             root,
             {
-                'source/common/common.cpp': '\n'.join((
-                    'else if (std::ferror(fh))',
-                    '    bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
-                    'x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\\n", filename);',
-                    'bError |= std::fseek(fh, 0, SEEK_END) < 0;',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'bError |= closeFailed;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                    'x265_log(nullptr, X265_LOG_ERROR, "unable to read the file\\n");',
-                    'error:',
-                    'bool closeFailed = std::ferror(fh) != 0;',
-                    'if (std::fclose(fh))',
-                    '    closeFailed = true;',
-                    'if (closeFailed)',
-                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\\n", filename);',
-                    'return buf;',
-                )) + '\n',
+                'source/common/common.cpp': valid_text().replace(
+                    'return buf;\n'
+                    'error:\n',
+                    'error:\n',
+                    1,
+                ).replace(
+                    'return nullptr;\n',
+                    'return buf;\n'
+                    'return nullptr;\n',
+                    1,
+                ),
             },
         )
         expect_fail(run_checker(root), 'common slurp close guards must preserve the early open-failure, read-complete, and error-cleanup ordering')

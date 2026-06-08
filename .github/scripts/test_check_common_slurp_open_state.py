@@ -43,9 +43,10 @@ def main():
             root,
             {
                 'source/common/common.cpp': '\n'.join((
+                    'bool closeFailed = false;',
                     'FILE *fh = x265_fopen(filename, "rb");',
                     'else if (std::ferror(fh))',
-                    'bool closeFailed = std::ferror(fh) != 0;',
+                    'closeFailed = std::ferror(fh) != 0;',
                     'if (std::fclose(fh))',
                     '    closeFailed = true;',
                     'if (closeFailed)',
@@ -65,6 +66,26 @@ def main():
             },
         )
         expect_fail(run_checker(root), 'missing common slurp open-state guardrail: else if (std::ferror(fh))')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_targets(
+            root,
+            {
+                'source/common/common.cpp': '\n'.join((
+                    'FILE *fh = x265_fopen(filename, "rb");',
+                    'bool closeFailed = false;',
+                    'else if (std::ferror(fh))',
+                    'closeFailed = std::ferror(fh) != 0;',
+                    'if (std::fclose(fh))',
+                    '    closeFailed = true;',
+                    'if (closeFailed)',
+                    '    x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\\n", filename);',
+                    'x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\\n", filename);',
+                )) + '\n',
+            },
+        )
+        expect_fail(run_checker(root), 'common slurp open-state guard must preserve close-state initialization before open-failure cleanup')
 
     print('Common slurp open-state guard tests passed')
 

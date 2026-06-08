@@ -10,6 +10,7 @@ CHECKER = Path(__file__).with_name('check_profdata_metadata.py')
 
 VALID_METADATA = {
     'layout': 'per-target-bounded-window',
+    'target_cpu': 'x86-64',
     'profile_target': '8b-lib',
     'profdata_branch': 'profdata-x86-64-8b-lib',
     'profdata_toolchain': 'llvm-20.1',
@@ -62,9 +63,25 @@ def write_metadata(path, metadata):
 def metadata_args(metadata_path, *extra_args):
     return (
         str(metadata_path),
+        '--expected-cpu=x86-64',
         '--expected-target=8b-lib',
         '--expected-branch=profdata-x86-64-8b-lib',
         '--expected-toolchain=llvm-20.1',
+        '--required-ffmpeg-cache-suffix=full-v4-clang',
+        '--required-obuparse-cache-suffix=clang-v1',
+        '--required-lsmash-cache-suffix=clang-coff-refptr-v2',
+        '--required-gop-muxer-cache-suffix=lsmash-add-box-v2-clang-gnu20',
+        *extra_args,
+    )
+
+
+def current_toolchain_metadata_args(metadata_path, *extra_args):
+    return (
+        str(metadata_path),
+        '--expected-cpu=x86-64',
+        '--expected-target=8b-lib',
+        '--expected-branch=profdata-x86-64-8b-lib',
+        '--current-toolchain=llvm-19.1',
         '--required-ffmpeg-cache-suffix=full-v4-clang',
         '--required-obuparse-cache-suffix=clang-v1',
         '--required-lsmash-cache-suffix=clang-coff-refptr-v2',
@@ -127,12 +144,41 @@ def main():
         expect_fail(run_checker(*metadata_args(metadata_path, '--require-fresh-slot')), 'missing profdata fresh slot: profiles/0.profdata')
 
         fresh_slot.write_text('fresh profdata\n', encoding='utf-8')
+        missing_target_cpu = clone_metadata()
+        missing_target_cpu.pop('target_cpu')
+        write_metadata(metadata_path, missing_target_cpu)
+        warning_result = run_checker(*metadata_args(metadata_path))
+        expect_pass(warning_result)
+        if 'missing profdata metadata field: target_cpu' not in warning_result.stdout:
+            raise AssertionError(warning_result.stdout)
+        expect_fail(run_checker(*metadata_args(metadata_path, '--require-target-cpu')), 'missing profdata metadata field: target_cpu')
+
+        stale_target_cpu = clone_metadata()
+        stale_target_cpu['target_cpu'] = 'haswell'
+        write_metadata(metadata_path, stale_target_cpu)
+        expect_fail(run_checker(*metadata_args(metadata_path)), 'target_cpu mismatch')
+
         commit_warning = clone_metadata()
         commit_warning['source_commit'] = 'old-commit'
         write_metadata(metadata_path, commit_warning)
         warning_result = run_checker(*metadata_args(metadata_path, '--current-commit=new-commit'))
         expect_pass(warning_result)
         if 'PGO profdata source_commit differs from build commit' not in warning_result.stdout:
+            raise AssertionError(warning_result.stdout)
+
+        toolchain_warning = clone_metadata()
+        write_metadata(metadata_path, toolchain_warning)
+        warning_result = run_checker(*current_toolchain_metadata_args(metadata_path))
+        expect_pass(warning_result)
+        if 'PGO profdata toolchain differs from local llvm-profdata' not in warning_result.stdout:
+            raise AssertionError(warning_result.stdout)
+
+        missing_toolchain_version = clone_metadata()
+        missing_toolchain_version.pop('llvm_profdata_version')
+        write_metadata(metadata_path, missing_toolchain_version)
+        warning_result = run_checker(*current_toolchain_metadata_args(metadata_path))
+        expect_pass(warning_result)
+        if 'PGO profdata metadata missing llvm_profdata_version' not in warning_result.stdout:
             raise AssertionError(warning_result.stdout)
 
     print('Profdata metadata tests passed')

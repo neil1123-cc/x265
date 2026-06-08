@@ -39,13 +39,14 @@ def check_repo(repo_root):
     failures = []
     snippets = (
         'size_t fSize = 0;',
+        'size_t readBytes = 0;',
         'long fileSize = 0;',
         'fileSize = std::ftell(fh);',
         'bError |= fileSize <= 0;',
         'bError |= (uint64_t)fileSize > (uint64_t)SIZE_MAX - 2;',
         'fSize = (size_t)fileSize;',
         'buf = X265_MALLOC(char, fSize + 2);',
-        'size_t readBytes = std::fread(buf, 1, fSize, fh);',
+        'readBytes = std::fread(buf, 1, fSize, fh);',
         'bError |= readBytes != fSize;',
         "if (!bError && buf[fSize - 1] != '\\n')",
         'if (!bError)',
@@ -61,18 +62,28 @@ def check_repo(repo_root):
     forbidden = 'bError |= std::fread(buf, 1, fSize, fh) != fSize;'
     if forbidden in func_text:
         failures.append((TARGET.as_posix(), 0, f'forbidden common slurp size regression: {forbidden}'))
+    forbidden = 'size_t readBytes = std::fread(buf, 1, fSize, fh);'
+    if forbidden in func_text:
+        failures.append((TARGET.as_posix(), 0, f'forbidden common slurp size regression: {forbidden}'))
 
+    f_size_decl_pos = func_text.find('size_t fSize = 0;')
+    read_decl_pos = func_text.find('size_t readBytes = 0;', f_size_decl_pos if f_size_decl_pos != -1 else 0)
+    first_cleanup_goto_pos = func_text.find('goto error;')
     file_size_pos = func_text.find('fileSize = std::ftell(fh);')
     nonpositive_pos = func_text.find('bError |= fileSize <= 0;', file_size_pos if file_size_pos != -1 else 0)
     overflow_pos = func_text.find('bError |= (uint64_t)fileSize > (uint64_t)SIZE_MAX - 2;', nonpositive_pos if nonpositive_pos != -1 else 0)
     cast_pos = func_text.find('fSize = (size_t)fileSize;', overflow_pos if overflow_pos != -1 else 0)
     alloc_pos = func_text.find('buf = X265_MALLOC(char, fSize + 2);', cast_pos if cast_pos != -1 else 0)
-    read_pos = func_text.find('size_t readBytes = std::fread(buf, 1, fSize, fh);', alloc_pos if alloc_pos != -1 else 0)
+    read_pos = func_text.find('readBytes = std::fread(buf, 1, fSize, fh);', alloc_pos if alloc_pos != -1 else 0)
     short_read_pos = func_text.find('bError |= readBytes != fSize;', read_pos if read_pos != -1 else 0)
     newline_pos = func_text.find("if (!bError && buf[fSize - 1] != '\\n')", short_read_pos if short_read_pos != -1 else 0)
     terminator_guard_pos = func_text.find('if (!bError)', newline_pos if newline_pos != -1 else 0)
     terminator_pos = func_text.find('buf[fSize] = 0;', terminator_guard_pos if terminator_guard_pos != -1 else 0)
+    if -1 not in (read_decl_pos, first_cleanup_goto_pos) and not (read_decl_pos < first_cleanup_goto_pos):
+        failures.append((TARGET.as_posix(), 0, 'x265_slurp_file must declare read length state before cleanup goto targets'))
     if -1 in (
+        f_size_decl_pos,
+        read_decl_pos,
         file_size_pos,
         nonpositive_pos,
         overflow_pos,
@@ -84,7 +95,7 @@ def check_repo(repo_root):
         terminator_guard_pos,
         terminator_pos,
     ) or not (
-        file_size_pos < nonpositive_pos < overflow_pos < cast_pos < alloc_pos < read_pos <
+        f_size_decl_pos < read_decl_pos < file_size_pos < nonpositive_pos < overflow_pos < cast_pos < alloc_pos < read_pos <
         short_read_pos < newline_pos < terminator_guard_pos < terminator_pos
     ):
         failures.append((TARGET.as_posix(), 0, 'x265_slurp_file must validate read length before inspecting or terminating the slurped buffer'))

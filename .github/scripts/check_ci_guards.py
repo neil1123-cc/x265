@@ -4116,7 +4116,7 @@ def validate_video_signal_type_preset_oversized_smoke(repo_root):
         'long_vst="$(python -c "print(\'A\' * 200 + \':P3D65x1000n0005\')")"': 'Video-signal-type-preset oversized smoke must synthesize oversized preset',
         'if build/all/x265.exe --input smoke_recon.y4m --input-res 160x90 --fps 24 --frames 1 --video-signal-type-preset "$long_vst" --output smoke_vst_oversized.hevc > smoke_vst_oversized.log 2>&1; then': 'Video-signal-type-preset oversized smoke must actively require failure',
         'echo "Video-signal-type-preset oversized smoke unexpectedly succeeded"': 'Video-signal-type-preset oversized smoke must report unexpected success',
-        "grep -Fq 'Incorrect system-id, aborting' smoke_vst_oversized.log": 'Video-signal-type-preset oversized smoke must require invalid system-id log',
+        "grep -Fq 'Incorrect video-signal-type-preset, aborting' smoke_vst_oversized.log": 'Video-signal-type-preset oversized smoke must require malformed preset log',
     }.items():
         if required not in active_lines:
             fail(message, build)
@@ -4538,7 +4538,7 @@ def validate_zimg_smoke(repo_root):
         resize_command,
         ZIMG_SMOKE_OPTIONS,
         'test -s build/cxx20-warning-scan/smoke_zimg.hevc',
-        "grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log",
+        "grep -Fq 'zimg [info]: Resize: 96x96' build/cxx20-warning-scan/smoke_zimg.log",
         'build/cxx20-warning-scan/smoke_zimg.log',
         'ZIMG smoke',
     )
@@ -4546,7 +4546,7 @@ def validate_zimg_smoke(repo_root):
         bypass_command,
         (
             ('--input', 'build/cxx20-warning-scan/smoke_zimg.yuv'),
-            ('--input-res', '96x96'),
+            ('--input-res', '128x128'),
             ('--fps', '1'),
             ('--frames', '1'),
             ('--vf', 'zimg:crop(0,0,-0,-0)'),
@@ -4560,11 +4560,11 @@ def validate_zimg_smoke(repo_root):
 
     for required, message in {
         'long_zimg_vf="$(python -c "print(\'zimg:lanczos(\' + \'1\' * 1100 + \')\')")"': 'ZIMG smoke must synthesize long-parameter vf input',
-        'if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_zimg_vf" --output build/cxx20-warning-scan/smoke_zimg_longparam.hevc > build/cxx20-warning-scan/smoke_zimg_longparam.log 2>&1; then': 'ZIMG smoke must actively require long-parameter failure',
+        'if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 128x128 --fps 1 --frames 1 --vf "$long_zimg_vf" --output build/cxx20-warning-scan/smoke_zimg_longparam.hevc > build/cxx20-warning-scan/smoke_zimg_longparam.log 2>&1; then': 'ZIMG smoke must actively require long-parameter failure',
         'echo "ZIMG long-parameter smoke unexpectedly succeeded"': 'ZIMG smoke must report unexpected long-parameter success',
         'grep -Fq \'Filter parameters exceeds supported length\' build/cxx20-warning-scan/smoke_zimg_longparam.log': 'ZIMG smoke must require long-parameter error log',
         'long_filter_name_vf="$(python -c "print(\'a\' * 1100 + \':x\')")"': 'ZIMG smoke must synthesize long filter-name vf input',
-        'if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 96x96 --fps 1 --frames 1 --vf "$long_filter_name_vf" --output build/cxx20-warning-scan/smoke_filter_longname.hevc > build/cxx20-warning-scan/smoke_filter_longname.log 2>&1; then': 'ZIMG smoke must actively require long filter-name failure',
+        'if build/cxx20-warning-scan/x265.exe --input build/cxx20-warning-scan/smoke_zimg.yuv --input-res 128x128 --fps 1 --frames 1 --vf "$long_filter_name_vf" --output build/cxx20-warning-scan/smoke_filter_longname.hevc > build/cxx20-warning-scan/smoke_filter_longname.log 2>&1; then': 'ZIMG smoke must actively require long filter-name failure',
         'echo "Filter long-name smoke unexpectedly succeeded"': 'ZIMG smoke must report unexpected long-name success',
         'grep -Fq \'Filter name exceeds supported length\' build/cxx20-warning-scan/smoke_filter_longname.log': 'ZIMG smoke must require long-name error log',
     }.items():
@@ -4843,6 +4843,41 @@ def validate_warning_scan_full_gate(repo_root):
         build,
         'C++20 warning scan full-only dependency wait must be inside is_full_warning_scan gate',
     )
+    require_single_line_in_scope(
+        cli_lines,
+        'test -x /clang64/bin/ffmpeg',
+        wait_gate_start,
+        wait_gate_end,
+        build,
+        'C++20 warning scan seed MP4 must verify CI-installed /clang64/bin/ffmpeg',
+    )
+    require_single_line_in_scope(
+        cli_lines,
+        '/clang64/bin/ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=128x72:rate=24 -frames:v 4 -pix_fmt yuv420p build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_seed.mp4',
+        wait_gate_start,
+        wait_gate_end,
+        build,
+        'C++20 warning scan seed MP4 must be generated with CI-installed /clang64/bin/ffmpeg',
+    )
+    require_single_line_in_scope(
+        cli_lines,
+        'build/cxx20-warning-scan-shared-deps-asm/x265.exe build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_seed.mp4 --frames 4 --bframes 0 --keyint 1 --min-keyint 1 --no-progress -o build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_out.mkv',
+        wait_gate_start,
+        wait_gate_end,
+        build,
+        'C++20 warning scan shared-deps ASM smoke must exercise LAVF input through MKV output',
+    )
+    require_single_line_in_scope(
+        cli_lines,
+        'test -s build/cxx20-warning-scan-shared-deps-asm/smoke_shared_deps_out.mkv',
+        wait_gate_start,
+        wait_gate_end,
+        build,
+        'C++20 warning scan shared-deps ASM smoke must require non-empty MKV output',
+    )
+    for index in range(wait_gate_start + 1, wait_gate_end):
+        if 'smoke_shared_deps_out.mp4' in cli_lines[index]:
+            fail('C++20 warning scan shared-deps ASM smoke must leave MP4 muxer runtime coverage to MP4 smoke suite', build)
 
     shared_step = workflow_step(parsed, build, 'cxx20-warning-scan', 'Run C++20 shared and all-bit-depth warning scans')
     if shared_step.get('if') != FULL_WARNING_SCAN_STEP_IF:
@@ -4978,8 +5013,8 @@ def validate_gnu20_diagnostic_steps(repo_root):
                 ('-DENABLE_ZIMG=ON', 'C++20 warning scan must actively enable ZIMG'),
                 ('--required-file-substring=source/filters/zimgfilter.cpp', 'C++20 warning scan must actively require zimgfilter.cpp'),
                 ('--required-file-flag=source/filters/zimgfilter.cpp=-DENABLE_ZIMG', 'C++20 warning scan must actively require ENABLE_ZIMG on zimgfilter.cpp'),
-                ('--vf "zimg:lanczos(64,64)"', 'C++20 warning scan must actively run ZIMG filter smoke'),
-                ("grep -Fq 'zimg [info]: Resize: 64x64' build/cxx20-warning-scan/smoke_zimg.log", 'C++20 warning scan must actively require ZIMG resize smoke log'),
+                ('--vf "zimg:lanczos(96,96)"', 'C++20 warning scan must actively run ZIMG filter smoke'),
+                ("grep -Fq 'zimg [info]: Resize: 96x96' build/cxx20-warning-scan/smoke_zimg.log", 'C++20 warning scan must actively require ZIMG resize smoke log'),
                 ("grep -Fq 'encoded 1 frames' build/cxx20-warning-scan/smoke_zimg.log", 'C++20 warning scan must actively require ZIMG encoded-frame smoke log'),
                 ('configure_cxx20_scan x265/source build/cxx20-warning-scan-12bit', 'C++20 warning scan must actively configure 12-bit CLI'),
                 ('check_cxx20_commands_clang build/cxx20-warning-scan-12bit', 'C++20 warning scan must actively check 12-bit CLI'),
@@ -5283,7 +5318,7 @@ def validate_required_snippets(repo_root, bash):
         'Build PGO workflow guard bundle must run the exact Python CI guard bundle runner with --suite pgo without softening wrappers or extra flags',
     )
     pgo_publish_lines = shell_active_logical_lines(
-        workflow_step_run(build_pgo, build_pgo_path, 'generate', 'Push Baseline Profdata to Branch')
+        workflow_step_run(build_pgo, build_pgo_path, 'generate', 'Push Profdata to Branch')
     )
     require_active_exact_command(
         pgo_publish_lines,
@@ -5291,6 +5326,7 @@ def validate_required_snippets(repo_root, bash):
             'python',
             'x265/.github/scripts/check_profdata_metadata.py',
             '$profdata_push_dir/metadata.json',
+            '--expected-cpu=$target_cpu',
             '--expected-target=$profile_target',
             '--expected-branch=$profdata_branch',
             '--expected-toolchain=$profdata_toolchain',
@@ -5299,6 +5335,7 @@ def validate_required_snippets(repo_root, bash):
             '--required-obuparse-cache-suffix=$obuparse_cache_suffix',
             '--required-lsmash-cache-suffix=$lsmash_cache_suffix',
             '--required-gop-muxer-cache-suffix=$gop_muxer_cache_suffix',
+            '--require-target-cpu',
             '--require-dependency-fields',
             '--require-fresh-slot',
         ),
@@ -5341,6 +5378,8 @@ def validate_required_snippets(repo_root, bash):
     inputs = workflow_dispatch.get('inputs')
     if not isinstance(inputs, dict):
         fail('Build PGO workflow_dispatch must define inputs', build_pgo_path)
+    if 'target_cpu' in inputs:
+        fail('Build PGO workflow_dispatch must not expose target_cpu input; generated PGO profdata is x86-64 baseline only', build_pgo_path)
     profile_target = inputs.get('profile_target')
     if not isinstance(profile_target, dict):
         fail('Build PGO workflow_dispatch must define profile_target input', build_pgo_path)
@@ -5355,7 +5394,7 @@ def validate_required_snippets(repo_root, bash):
     if not isinstance(pgo_concurrency, dict):
         fail('Build PGO workflow must declare concurrency', build_pgo_path)
     if pgo_concurrency.get('group') != "${{ github.workflow }}-${{ github.ref }}-x86-64-${{ inputs.profile_target || 'all' }}":
-        fail('Build PGO concurrency group must serialize by ref and profile_target', build_pgo_path)
+        fail('Build PGO concurrency group must serialize by ref, x86-64 baseline, and profile_target', build_pgo_path)
     if pgo_concurrency.get('cancel-in-progress') is not False:
         fail('Build PGO concurrency must not cancel in-progress profdata publications', build_pgo_path)
 
@@ -5426,14 +5465,16 @@ def validate_required_snippets(repo_root, bash):
             fail(f'Build PGO profiling action must set {key}={value}', build_pgo_path)
 
     pgo_publish_lines = shell_active_logical_lines(
-        workflow_step_run(build_pgo, build_pgo_path, 'generate', 'Push Baseline Profdata to Branch')
+        workflow_step_run(build_pgo, build_pgo_path, 'generate', 'Push Profdata to Branch')
     )
     for required, message in (
         ('llvm_profdata_version=$(llvm-profdata --version | sed -nE \'s/.*LLVM version ([0-9]+\\.[0-9]+).*/\\1/p\' | head -1)', 'Build PGO profdata publish must derive llvm_profdata_version from llvm-profdata --version'),
         ('test -n "$llvm_profdata_version"', 'Build PGO profdata publish must require a parsed llvm-profdata version before deriving the toolchain id'),
-        ('profdata_toolchain="llvm-${llvm_profdata_version//[^A-Za-z0-9_.-]/_}"', 'Build PGO profdata publish must derive the toolchain-scoped profdata branch suffix'),
-        ('profdata_branch="profdata-x86-64-${profile_target}-${profdata_toolchain}"', 'Build PGO profdata publish must isolate branches by target and LLVM toolchain'),
+        ('profdata_toolchain="llvm-${llvm_profdata_version//[^A-Za-z0-9_.-]/_}"', 'Build PGO profdata publish must derive the profdata metadata toolchain id'),
+        ('target_cpu=x86-64', 'Build PGO profdata publish must hard-code target_cpu=x86-64 because this workflow generates baseline profdata only'),
+        ('profdata_branch="profdata-x86-64-${profile_target}"', 'Build PGO profdata publish must publish to x86-64 baseline profdata branches'),
         ('remote_url="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"', 'Build PGO profdata publish must target the current repository with the GITHUB_TOKEN remote'),
+        ('echo "Publishing profdata for CPU: $target_cpu"', 'Build PGO profdata publish must announce the target CPU'),
         ('copy_if_exists "profiles/0.profdata" "$profiles_dir/1.profdata"', 'Build PGO profdata publish must rotate previous fresh profile into slot 1'),
         ('copy_if_exists "profiles/1.profdata" "$profiles_dir/2.profdata"', 'Build PGO profdata publish must rotate profile slot 1 into slot 2'),
         ('copy_if_exists "profiles/2.profdata" "$profiles_dir/3.profdata"', 'Build PGO profdata publish must rotate profile slot 2 into slot 3'),
@@ -5460,9 +5501,11 @@ def validate_required_snippets(repo_root, bash):
         ('"run_attempt": "${GITHUB_RUN_ATTEMPT}",', 'Build PGO profdata metadata must record the publishing run_attempt'),
         ('"source_ref": "${source_ref}",', 'Build PGO profdata metadata must record the normalized source_ref'),
         ('"source_commit": "${source_commit}",', 'Build PGO profdata metadata must record the publishing source_commit'),
+        ('"target_cpu": "${target_cpu}",', 'Build PGO profdata metadata must record the target CPU'),
         ('"layout": "per-target-bounded-window",', 'Build PGO profdata metadata must declare the bounded per-target layout'),
         ('"weights_newest_to_oldest": [4, 3, 2, 1]', 'Build PGO profdata metadata must record the weighted merge policy'),
         ('python x265/.github/scripts/check_profdata_metadata.py "$profdata_push_dir/metadata.json"', 'Build PGO profdata publish must validate generated metadata with the profdata checker'),
+        ('--expected-cpu="$target_cpu"', 'Build PGO profdata publish must validate metadata against the selected target CPU'),
         ('--expected-target="$profile_target"', 'Build PGO profdata publish must validate metadata against the selected profile target'),
         ('--current-commit="$source_commit"', 'Build PGO profdata publish must validate metadata against the published source commit'),
         ('--required-ffmpeg-cache-suffix=pgo-v1-clang', 'Build PGO profdata publish must validate the workflow-specific FFmpeg cache suffix'),
@@ -5471,6 +5514,7 @@ def validate_required_snippets(repo_root, bash):
         ('--required-gop-muxer-cache-suffix="$gop_muxer_cache_suffix"', 'Build PGO profdata publish must validate the workflow-specific GOP muxer cache suffix'),
         ('--expected-branch="$profdata_branch"', 'Build PGO profdata publish must validate metadata against the computed branch'),
         ('--expected-toolchain="$profdata_toolchain"', 'Build PGO profdata publish must validate metadata against the computed LLVM toolchain'),
+        ('--require-target-cpu', 'Build PGO profdata publish must require target CPU metadata fields'),
         ('--require-dependency-fields', 'Build PGO profdata publish must require dependency metadata fields'),
         ('--require-fresh-slot', 'Build PGO profdata publish must require the fresh profdata slot in metadata validation'),
         ('cp "$scratch_dir/x265.profdata" "$profdata_push_dir/x265.profdata"', 'Build PGO profdata publish must publish the merged bounded-window profdata artifact'),
@@ -5767,8 +5811,8 @@ def validate_warning_scan_dependencies(repo_root):
         fail('C++20 warning scan dependency setup is missing with inputs', build_path)
     if with_values.get('extra-msys2-packages') != '':
         fail('C++20 warning scan dependency setup must keep extra-msys2-packages empty for shared CLANG64 cache reuse', build_path)
-    if with_values.get('ffmpeg-cache-suffix') != 'lavf-v3-clang':
-        fail('C++20 warning scan dependency setup must pin ffmpeg-cache-suffix=lavf-v3-clang', build_path)
+    if with_values.get('ffmpeg-cache-suffix') != 'lavf-v4-clang':
+        fail('C++20 warning scan dependency setup must pin ffmpeg-cache-suffix=lavf-v4-clang', build_path)
     full_scan_toggle = '${{ env.CI_FULL_EVENT }}'
     if with_values.get('use-ffmpeg') != full_scan_toggle:
         fail('C++20 warning scan dependency setup must enable FFmpeg only for manual/tag full scans', build_path)
@@ -5799,7 +5843,7 @@ def validate_warning_scan_dependencies(repo_root):
         '--enable-filter=testsrc2',
         '--enable-parser=h264,hevc',
         '--enable-encoder=wrapped_avframe,ffv1,rawvideo',
-        '--enable-muxer=matroska,yuv4mpegpipe',
+        '--enable-muxer=matroska,rawvideo,yuv4mpegpipe',
         '--enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf,yuv4mpegpipe,hevc',
     ):
         if forbidden in ffmpeg_configure:
@@ -5816,6 +5860,12 @@ def validate_warning_scan_dependencies(repo_root):
         'pacman -S --needed --noconfirm mingw-w64-clang-x86_64-zimg',
         build_path,
         'C++20 warning scan must install mingw-w64-clang-x86_64-zimg in a dedicated warning-scan step',
+    )
+    require_active_line_contains(
+        install_lines,
+        'mingw-w64-clang-x86_64-ffmpeg',
+        build_path,
+        'C++20 warning scan must install MSYS2 FFmpeg CLI for full-scan seed MP4 generation',
     )
     print('C++20 warning scan dependency setup validated')
 
@@ -5998,12 +6048,27 @@ def validate_pgo_fetch_scope(repo_root):
     active_lines = shell_active_logical_lines(workflow_step_run(parsed, path, 'build', 'Fetch PGO Profdata'))
     required_lines = (
         'if [ "${CI_FULL_EVENT}" = \'true\' ]; then',
-        'fetch_output=$(git fetch --quiet origin "$branch" --depth=1 2>&1)',
+        'current_toolchain="llvm-${llvm_profdata_version//[^A-Za-z0-9_.-]/_}"',
+        'fetch_output=$(timeout 180s git -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=30 fetch --quiet origin "$branch" --depth=1 2>&1)',
+        'echo "::warning::PGO profdata fetch timed out: target=${target} branch=${branch} after 180s"',
+        'echo "PGO profdata fetch timed out: target=${target} branch=${branch} after 180s"',
+        'echo "::warning::PGO profdata fetch failed: target=${target} branch=${branch} status=${fetch_status}"',
+        'echo "PGO profdata fetch failed: target=${target} branch=${branch} status=${fetch_status}"',
+        'summary_note="fetch failed with status ${fetch_status}"',
+        'echo "::warning::PGO profdata unavailable: target=${target} branch=${branch}"',
+        'echo "PGO profdata unavailable: target=${target} branch=${branch}"',
         'if ! metadata_check_output=$(python .github/scripts/check_profdata_metadata.py "$metadata_path" "${metadata_check_args[@]}" 2>&1); then',
+        'printf \'%s\\n\' "$metadata_check_output" | sed \'s/^::warning::/PGO fallback probe warning: /\'',
+        'if [ "$report_unavailable" = true ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then',
+        '--expected-cpu="$expected_cpu"',
         '--expected-target="$target"',
         '--expected-branch="$branch"',
         '--current-commit="${{ github.sha }}"',
-        '--required-ffmpeg-cache-suffix=pgo-v1-clang',
+        'local is_cpu_specific_profdata=false',
+        'is_cpu_specific_profdata=true',
+        'local required_ffmpeg_cache_suffix=pgo-v1-clang',
+        'required_ffmpeg_cache_suffix=profiling-v1-clang',
+        '--required-ffmpeg-cache-suffix="$required_ffmpeg_cache_suffix"',
         'test -n "$obuparse_cache_suffix"',
         'test -n "$lsmash_cache_suffix"',
         'test -n "$gop_muxer_cache_suffix"',
@@ -6012,26 +6077,38 @@ def validate_pgo_fetch_scope(repo_root):
         '--required-gop-muxer-cache-suffix="$gop_muxer_cache_suffix"',
         '--require-dependency-fields',
         '--require-fresh-slot',
-        'metadata_check_args+=(--expected-toolchain="$expected_toolchain")',
+        'if [ "$is_cpu_specific_profdata" = true ]; then',
+        'metadata_check_args+=(--require-target-cpu)',
+        'metadata_check_args+=(--current-toolchain="$current_toolchain")',
         'echo "::warning::PGO profdata metadata missing: target=${target} branch=${branch}"',
         'summary_note="metadata missing"',
         'rm -f "$metadata_path"',
         'rm -rf ../build/profiles',
-        'fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-8b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false',
-        'fetch_profdata 8b-lib profdata-${{ matrix.target_cpu }}-8b-lib profdata-x86-64-8b-lib x265.profdata',
-        'fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-12b-lib-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false',
-        'fetch_profdata 12b-lib profdata-${{ matrix.target_cpu }}-12b-lib profdata-x86-64-12b-lib x265.profdata',
+        'profdata_branch_for() {',
+        'printf \'profdata-%s-%s\\n\' "$target_cpu" "$profile_target"',
+        'fetch_profdata_with_fallback() {',
+        'local target_cpu="${{ matrix.target_cpu }}"',
+        'target_branch=$(profdata_branch_for "$target_cpu" "$target")',
+        'baseline_branch=$(profdata_branch_for x86-64 "$target")',
+        'if [ "$target_branch" = "$baseline_branch" ]; then',
+        'fetch_profdata "$target" "$target_cpu" "$target_branch" "$source_path"',
+        'if fetch_profdata "$target" "$target_cpu" "$target_branch" "$source_path" false; then',
+        'echo "Falling back to x86-64 PGO profdata: target=${target} branch=${baseline_branch}"',
+        'fetch_profdata "$target" x86-64 "$baseline_branch" "$source_path"',
+        'fetch_profdata_with_fallback 8b-lib x265.profdata || true',
+        'fetch_profdata_with_fallback 12b-lib x265.profdata || true',
         'append_pgo_status 8b-lib skipped push "push path only consumes all-target profdata"',
         'append_pgo_status 12b-lib skipped push "push path only consumes all-target profdata"',
-        'fetch_profdata all profdata-${{ matrix.target_cpu }}-all-${{ steps.llvm_profdata.outputs.id }} profdata-x86-64-all-${{ steps.llvm_profdata.outputs.id }} x265.profdata ${{ steps.llvm_profdata.outputs.id }} false',
-        'fetch_profdata all profdata-${{ matrix.target_cpu }}-all profdata-x86-64-all x265.profdata',
+        'fetch_profdata_with_fallback all x265.profdata || true',
     )
     for required in required_lines:
         require_active_line_contains(active_lines, required, path, f'Build workflow Fetch PGO Profdata must include: {required}')
     for index, line in enumerate(active_lines):
         if 'summary_note="metadata missing"' in line:
-            tail = active_lines[index + 1:index + 5]
-            if not any(line == 'continue' for line in tail):
+            tail = active_lines[index + 1:index + 10]
+            if not any(line == 'append_pgo_status "$target" unavailable "$branch" "$summary_note"' for line in tail):
+                fail('Build workflow Fetch PGO Profdata must record missing metadata before returning', path)
+            if not any(line == 'return 1' for line in tail):
                 fail('Build workflow Fetch PGO Profdata must skip branches with missing metadata before copying profdata', path)
             break
     else:
@@ -6039,6 +6116,21 @@ def validate_pgo_fetch_scope(repo_root):
     if any('git ls-remote --exit-code --heads origin "$branch"' in line for line in active_lines):
         fail('Build workflow Fetch PGO Profdata must not preflight branches with git ls-remote before git fetch', path)
     print('PGO fetch scope validated')
+
+
+def validate_build_compile_cpu_flags(repo_root):
+    path = repo_root / BUILD_WORKFLOW
+    parsed = load_yaml(repo_root, BUILD_WORKFLOW)
+    active_lines = shell_active_logical_lines(workflow_step_run(parsed, path, 'build', 'Compile X265'))
+    for required in (
+        'resolve_cpu_march_flag() {',
+        'x86-64)',
+        'haswell|skylake|alderlake|raptorlake|arrowlake|znver2|znver3|znver4|znver5)',
+        'printf -- \'-march=%s\\n\' "$1"',
+        'CPU_CXX_FLAG=$(resolve_cpu_march_flag "$CPU")',
+        'BASE_CXX_FLAGS="${BASE_CXX_FLAGS} ${CPU_CXX_FLAG}"',
+    ):
+        require_active_line_contains(active_lines, required, path, f'Build workflow Compile X265 must include CPU-specific CXX flags: {required}')
 
 
 def validate_windows_dependency_smoke_scope(repo_root):
@@ -6056,8 +6148,8 @@ def validate_windows_dependency_smoke_scope(repo_root):
         fail('Build workflow Setup Shared Dependencies (Runtime Smokes) step is missing with inputs', build_path)
     if runtime_with_values.get('ffmpeg-cache-suffix') == warning_scan_with_values.get('ffmpeg-cache-suffix'):
         fail('Build workflow runtime-smoke FFmpeg cache suffix must differ from warning-scan library-only cache suffix', build_path)
-    if runtime_with_values.get('ffmpeg-cache-suffix') != 'lavf-cli-v3-clang':
-        fail('Build workflow Setup Shared Dependencies (Runtime Smokes) must pin ffmpeg-cache-suffix=lavf-cli-v3-clang', build_path)
+    if runtime_with_values.get('ffmpeg-cache-suffix') != 'lavf-cli-v5-clang':
+        fail('Build workflow Setup Shared Dependencies (Runtime Smokes) must pin ffmpeg-cache-suffix=lavf-cli-v5-clang', build_path)
     ffmpeg_configure = runtime_with_values.get('ffmpeg-configure')
     if not isinstance(ffmpeg_configure, str):
         fail('Build workflow Setup Shared Dependencies (Runtime Smokes) must provide ffmpeg-configure', build_path)
@@ -6067,11 +6159,11 @@ def validate_windows_dependency_smoke_scope(repo_root):
         '--enable-avdevice',
         '--enable-avfilter',
         '--enable-indev=lavfi',
-        '--enable-filter=testsrc2',
+        '--enable-filter=testsrc2,scale',
         '--enable-demuxer=mov,matroska,mpegts,avi,mpegvideo,m4v,mpeg,ogg,asf,yuv4mpegpipe,hevc',
         '--enable-parser=h264,hevc',
         '--enable-encoder=wrapped_avframe,ffv1,rawvideo',
-        '--enable-muxer=matroska,yuv4mpegpipe',
+        '--enable-muxer=matroska,rawvideo,yuv4mpegpipe',
     ):
         if required not in ffmpeg_configure:
             fail(f'Build workflow runtime-smoke FFmpeg config must enable dependency: {required}', build_path)
@@ -6093,8 +6185,8 @@ def validate_windows_dependency_smoke_scope(repo_root):
         fail('Build workflow Setup Shared Dependencies (Build Only) step is missing with inputs', build_path)
     if build_only_with_values.get('ffmpeg-cache-suffix') != warning_scan_with_values.get('ffmpeg-cache-suffix'):
         fail('Build workflow build-only FFmpeg cache suffix must reuse warning-scan library-only cache suffix', build_path)
-    if build_only_with_values.get('ffmpeg-cache-suffix') != 'lavf-v3-clang':
-        fail('Build workflow Setup Shared Dependencies (Build Only) must pin ffmpeg-cache-suffix=lavf-v3-clang', build_path)
+    if build_only_with_values.get('ffmpeg-cache-suffix') != 'lavf-v4-clang':
+        fail('Build workflow Setup Shared Dependencies (Build Only) must pin ffmpeg-cache-suffix=lavf-v4-clang', build_path)
     build_only_ffmpeg_configure = build_only_with_values.get('ffmpeg-configure')
     if not isinstance(build_only_ffmpeg_configure, str):
         fail('Build workflow Setup Shared Dependencies (Build Only) must provide ffmpeg-configure', build_path)
@@ -6602,6 +6694,7 @@ def build_validators(repo_root, args, bash):
         'update-deps-concurrency': lambda: validate_update_deps_concurrency(repo_root),
         'build-workflow-concurrency': lambda: validate_build_workflow_concurrency(repo_root),
         'build-matrix-scope': lambda: validate_build_matrix_scope(repo_root),
+        'build-compile-cpu-flags': lambda: validate_build_compile_cpu_flags(repo_root),
         'checkout-scope': lambda: validate_checkout_scope(repo_root),
         'metadata-history-scope': lambda: validate_metadata_history_scope(repo_root, bash),
         'pgo-fetch-scope': lambda: validate_pgo_fetch_scope(repo_root),
@@ -7101,6 +7194,7 @@ VALIDATOR_BASH_REQUIREMENTS = {
     'update-deps-concurrency': False,
     'build-workflow-concurrency': False,
     'build-matrix-scope': False,
+    'build-compile-cpu-flags': False,
     'checkout-scope': False,
     'metadata-history-scope': False,
     'pgo-fetch-scope': False,

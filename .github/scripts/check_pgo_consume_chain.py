@@ -42,9 +42,11 @@ def main():
     parser.add_argument('--metadata', required=True, type=Path)
     parser.add_argument('--profdata', required=True, type=Path)
     parser.add_argument('--build-dir', required=True, type=Path)
+    parser.add_argument('--expected-cpu')
     parser.add_argument('--expected-target', required=True)
     parser.add_argument('--expected-branch', required=True)
     parser.add_argument('--expected-toolchain')
+    parser.add_argument('--current-toolchain')
     parser.add_argument('--current-commit')
     parser.add_argument('--required-ffmpeg-cache-suffix')
     parser.add_argument('--required-obuparse-cache-suffix')
@@ -66,8 +68,12 @@ def main():
         f'--expected-target={args.expected_target}',
         f'--expected-branch={args.expected_branch}',
     ]
+    if args.expected_cpu:
+        metadata_args.append(f'--expected-cpu={args.expected_cpu}')
     if args.expected_toolchain:
         metadata_args.append(f'--expected-toolchain={args.expected_toolchain}')
+    if args.current_toolchain:
+        metadata_args.append(f'--current-toolchain={args.current_toolchain}')
     if args.current_commit:
         metadata_args.append(f'--current-commit={args.current_commit}')
     if args.required_ffmpeg_cache_suffix:

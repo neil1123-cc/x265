@@ -30,6 +30,7 @@ HEADER_REQUIRED_SNIPPETS = (
 API_FORBIDDEN_SNIPPETS = (
     'x265_copy_params(out, encoder->m_param);\n    }\n}',
 )
+WRAPPER_GUARD_MESSAGE = 'encoder parameters output safety must keep C API namespace wrappers inside EXPORT_C_API guard'
 
 
 def check_text(path, text, required, forbidden, label):
@@ -41,6 +42,30 @@ def check_text(path, text, required, forbidden, label):
     for snippet in required:
         if snippet not in text:
             failures.append((path.as_posix(), 0, f'missing {label} guardrail: {snippet}'))
+    return failures
+
+
+def check_exported_api_namespace_wrappers(param_text):
+    failures = []
+    instance_marker = 'return ::isAllocatedParamInstance(param);'
+    finalize_marker = '::finalizeZoneParamCopy(zoneParam, src);'
+    instance_pos = param_text.find(instance_marker)
+    finalize_pos = param_text.find(finalize_marker, instance_pos if instance_pos != -1 else 0)
+    if instance_pos == -1 and finalize_pos == -1:
+        return failures
+
+    namespace_pos = param_text.rfind('namespace X265_NS {', 0, instance_pos)
+    guard_pos = param_text.rfind('#if EXPORT_C_API', 0, namespace_pos)
+    endif_pos = param_text.find('#endif', finalize_pos)
+    internal_namespace_pos = param_text.find('namespace X265_NS {\n// internal encoder functions', endif_pos)
+    if -1 in (instance_pos, finalize_pos, namespace_pos, guard_pos, endif_pos, internal_namespace_pos):
+        failures.append((PARAM_TARGET.as_posix(), 0, WRAPPER_GUARD_MESSAGE))
+        return failures
+
+    if param_text[guard_pos + len('#if EXPORT_C_API'):namespace_pos].strip():
+        failures.append((PARAM_TARGET.as_posix(), 0, WRAPPER_GUARD_MESSAGE))
+    elif not (guard_pos < namespace_pos < instance_pos < finalize_pos < endif_pos < internal_namespace_pos):
+        failures.append((PARAM_TARGET.as_posix(), 0, WRAPPER_GUARD_MESSAGE))
     return failures
 
 
@@ -62,6 +87,7 @@ def check_repo(repo_root):
     failures.extend(check_text(API_TARGET, api_text, API_REQUIRED_SNIPPETS, API_FORBIDDEN_SNIPPETS, 'encoder parameters output safety'))
     failures.extend(check_text(PARAM_TARGET, param_text, PARAM_REQUIRED_SNIPPETS, (), 'encoder parameters output safety'))
     failures.extend(check_text(HEADER_TARGET, header_text, HEADER_REQUIRED_SNIPPETS, (), 'encoder parameters output safety'))
+    failures.extend(check_exported_api_namespace_wrappers(param_text))
 
     branch_pos = api_text.find('if (isAllocatedParamInstance(out))')
     copy_pos = api_text.find('x265_copy_params(out, encoder->m_param);', branch_pos if branch_pos != -1 else 0)

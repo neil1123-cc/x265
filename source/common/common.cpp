@@ -297,8 +297,10 @@ char* x265_slurp_file(const char *filename)
 
     int bError = 0;
     size_t fSize = 0;
+    size_t readBytes = 0;
     long fileSize = 0;
     char *buf = nullptr;
+    bool closeFailed = false;
 
     FILE *fh = x265_fopen(filename, "rb");
     if (!fh)
@@ -308,7 +310,7 @@ char* x265_slurp_file(const char *filename)
     }
     else if (std::ferror(fh))
     {
-        bool closeFailed = std::ferror(fh) != 0;
+        closeFailed = std::ferror(fh) != 0;
         if (std::fclose(fh))
             closeFailed = true;
         if (closeFailed)
@@ -337,13 +339,13 @@ char* x265_slurp_file(const char *filename)
         goto error;
     }
 
-    size_t readBytes = std::fread(buf, 1, fSize, fh);
+    readBytes = std::fread(buf, 1, fSize, fh);
     bError |= readBytes != fSize;
     if (!bError && buf[fSize - 1] != '\n')
         buf[fSize++] = '\n';
     if (!bError)
         buf[fSize] = 0;
-    bool closeFailed = std::ferror(fh) != 0;
+    closeFailed = std::ferror(fh) != 0;
     if (std::fclose(fh))
         closeFailed = true;
     bError |= closeFailed;
@@ -357,7 +359,7 @@ char* x265_slurp_file(const char *filename)
     return buf;
 
 error:
-    bool closeFailed = std::ferror(fh) != 0;
+    closeFailed = std::ferror(fh) != 0;
     if (std::fclose(fh))
         closeFailed = true;
     if (closeFailed)

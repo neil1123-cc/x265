@@ -159,14 +159,17 @@ def run_self_test():
 def main():
     parser = argparse.ArgumentParser(description='Check x265 PGO profdata metadata')
     parser.add_argument('metadata_path', nargs='?', type=Path)
+    parser.add_argument('--expected-cpu')
     parser.add_argument('--expected-target')
     parser.add_argument('--expected-branch')
     parser.add_argument('--expected-toolchain')
+    parser.add_argument('--current-toolchain')
     parser.add_argument('--current-commit')
     parser.add_argument('--required-ffmpeg-cache-suffix')
     parser.add_argument('--required-obuparse-cache-suffix')
     parser.add_argument('--required-lsmash-cache-suffix')
     parser.add_argument('--required-gop-muxer-cache-suffix')
+    parser.add_argument('--require-target-cpu', action='store_true')
     parser.add_argument('--require-dependency-fields', action='store_true')
     parser.add_argument('--require-fresh-slot', action='store_true')
     parser.add_argument('--self-test', action='store_true')
@@ -186,11 +189,20 @@ def main():
 
     metadata = json.loads(args.metadata_path.read_text())
     layout = required(args.metadata_path, metadata, 'layout')
+    target_cpu = metadata.get('target_cpu')
     profile_target = required(args.metadata_path, metadata, 'profile_target')
     profdata_branch = required(args.metadata_path, metadata, 'profdata_branch')
     window = required(args.metadata_path, metadata, 'window')
     if layout != EXPECTED_LAYOUT:
         fail(args.metadata_path, f'profdata layout mismatch expected={EXPECTED_LAYOUT} actual={layout}')
+    if args.expected_cpu:
+        if target_cpu is None:
+            message = f'{args.metadata_path}: missing profdata metadata field: target_cpu'
+            if args.require_target_cpu:
+                raise SystemExit(message)
+            print('::warning::' + message)
+        elif target_cpu != args.expected_cpu:
+            fail(args.metadata_path, f'target_cpu mismatch expected={args.expected_cpu} actual={target_cpu}')
     if profile_target != args.expected_target:
         fail(args.metadata_path, f'profile_target mismatch expected={args.expected_target} actual={profile_target}')
     if profdata_branch != args.expected_branch:
@@ -202,6 +214,24 @@ def main():
             fail(args.metadata_path, f'profdata_toolchain mismatch expected={args.expected_toolchain} actual={profdata_toolchain}')
         if not llvm_profdata_version:
             fail(args.metadata_path, 'missing profdata metadata field: llvm_profdata_version')
+    elif args.current_toolchain:
+        if not profdata_toolchain:
+            print(
+                f'::warning::PGO profdata metadata missing profdata_toolchain: '
+                f'metadata={args.metadata_path} branch={args.expected_branch} current_toolchain={args.current_toolchain}'
+            )
+        else:
+            if profdata_toolchain != args.current_toolchain:
+                print(
+                    f'::warning::PGO profdata toolchain differs from local llvm-profdata: '
+                    f'metadata={args.metadata_path} branch={args.expected_branch} '
+                    f'metadata_toolchain={profdata_toolchain} current_toolchain={args.current_toolchain}'
+                )
+            if not llvm_profdata_version:
+                print(
+                    f'::warning::PGO profdata metadata missing llvm_profdata_version: '
+                    f'metadata={args.metadata_path} branch={args.expected_branch} profdata_toolchain={profdata_toolchain}'
+                )
     for key, expected in EXPECTED_WINDOW.items():
         actual = required(args.metadata_path, window, key)
         if actual != expected:
@@ -249,7 +279,7 @@ def main():
         if args.require_dependency_fields:
             raise SystemExit(message)
         print('::warning::' + message)
-    print(f"Validated profdata metadata: metadata={args.metadata_path} layout={layout} profile_target={profile_target} profdata_branch={profdata_branch} profdata_toolchain={profdata_toolchain or '<legacy>'} llvm_profdata_version={llvm_profdata_version or '<missing>'}")
+    print(f"Validated profdata metadata: metadata={args.metadata_path} layout={layout} target_cpu={target_cpu or '<legacy>'} profile_target={profile_target} profdata_branch={profdata_branch} profdata_toolchain={profdata_toolchain or '<legacy>'} llvm_profdata_version={llvm_profdata_version or '<missing>'}")
 
 
 if __name__ == '__main__':

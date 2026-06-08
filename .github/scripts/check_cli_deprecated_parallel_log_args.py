@@ -6,13 +6,17 @@ from pathlib import Path
 TARGET = Path('source/x265cli.cpp')
 REQUIRED_SNIPPETS = (
     'OPT("pme")',
-    'x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
+    'x265_log(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
     'OPT("pmode")',
-    'x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
+    'x265_log(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
 )
 FORBIDDEN_SNIPPETS = (
     'x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n", optarg);',
     'x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n", optarg);',
+    'x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
+    'x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
+    'x265_log(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n", optarg);',
+    'x265_log(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n", optarg);',
 )
 REGION_START = 'OPT("pme")'
 REGION_END = 'OPT("dolby-vision-rpu")'
@@ -59,14 +63,14 @@ def check_repo(repo_root):
             pme_block,
             (
                 'OPT("pme")',
-                'x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
+                'x265_log(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \\n");',
                 'return true;',
             ),
         ) or not has_in_order(
             pmode_block,
             (
                 'OPT("pmode")',
-                'x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
+                'x265_log(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \\n");',
                 'return true;',
             ),
         ):

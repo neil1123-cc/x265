@@ -1287,12 +1287,12 @@ namespace X265_NS {
                 }
                 OPT("pme")
                 {
-                    x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \n");
+                    x265_log(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \n");
                     return true;
                 }
                 OPT("pmode")
                 {
-                    x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \n");
+                    x265_log(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \n");
                     return true;
                 }
                 OPT("dolby-vision-rpu")

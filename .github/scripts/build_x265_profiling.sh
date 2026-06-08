@@ -25,6 +25,29 @@ if [ "$enable_lsmash" = 'true' ] || [ "$enable_lsmash" = 'ON' ]; then
   lsmash_args=(-DENABLE_LSMASH=ON)
 fi
 
+resolve_cpu_march_flag() {
+  case "$1" in
+    x86-64)
+      return 0
+      ;;
+    haswell|skylake|alderlake|raptorlake|arrowlake|znver2|znver3|znver4|znver5)
+      printf -- '-march=%s\n' "$1"
+      ;;
+    *)
+      echo "unsupported profiling target CPU: $1" >&2
+      return 2
+      ;;
+  esac
+}
+
+target_cpu_cxx_flag=$(resolve_cpu_march_flag "$target_cpu")
+profiling_cxx_flags_with_cpu="$profiling_cxx_flags"
+profiling_check_args=()
+if [ -n "$target_cpu_cxx_flag" ]; then
+  profiling_cxx_flags_with_cpu="${profiling_cxx_flags_with_cpu} ${target_cpu_cxx_flag}"
+  profiling_check_args+=(--required-flag="$target_cpu_cxx_flag")
+fi
+
 init_cmake_common_args() {
   cmake_common_args=(
     -GNinja "$source_dir"
@@ -73,7 +96,7 @@ build_single_profile() {
   local build_dir="$1"
   shift
   configure_x265 "$build_dir" "$@"
-  check_cxx20_commands_profiling "$build_dir"
+  check_cxx20_commands_profiling "$build_dir" "${profiling_check_args[@]}"
   ninja -C "$build_dir"
   mv "${build_dir}/x265.exe" "${build_dir}/${output_name}"
 }
@@ -83,7 +106,7 @@ build_8b_lib_profile() {
   build_single_profile \
     build/8b \
     -DENABLE_SHARED=OFF \
-    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags" \
+    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags_with_cpu" \
     -DCMAKE_EXE_LINKER_FLAGS=-flto=thin
 }
 
@@ -94,7 +117,7 @@ build_12b_lib_profile() {
     -DHIGH_BIT_DEPTH=ON \
     -DMAIN12=ON \
     -DENABLE_SHARED=OFF \
-    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags" \
+    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags_with_cpu" \
     -DCMAKE_EXE_LINKER_FLAGS=-flto=thin
 }
 
@@ -110,16 +133,16 @@ build_all_profile() {
 
   init_cmake_common_args -DEXPORT_C_API=OFF -DENABLE_SHARED=OFF -DENABLE_CLI=OFF
 
-  configure_x265 build/8b -DCMAKE_CXX_FLAGS="$profiling_cxx_flags"
-  check_cxx20_commands_profiling build/8b
+  configure_x265 build/8b -DCMAKE_CXX_FLAGS="$profiling_cxx_flags_with_cpu"
+  check_cxx20_commands_profiling build/8b "${profiling_check_args[@]}"
   ninja -C build/8b -j "$ninja_jobs_pair" &
   ninja_8b_pid=$!
 
   configure_x265 build/12b \
     -DHIGH_BIT_DEPTH=ON \
     -DMAIN12=ON \
-    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags"
-  check_cxx20_commands_profiling build/12b
+    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags_with_cpu"
+  check_cxx20_commands_profiling build/12b "${profiling_check_args[@]}"
   ninja -C build/12b -j "$ninja_jobs_pair" &
   ninja_12b_pid=$!
 
@@ -137,9 +160,9 @@ build_all_profile() {
     -DENABLE_HDR10_PLUS=ON \
     -DHIGH_BIT_DEPTH=ON \
     -DENABLE_SHARED=OFF \
-    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags" \
+    -DCMAKE_CXX_FLAGS="$profiling_cxx_flags_with_cpu" \
     -DCMAKE_EXE_LINKER_FLAGS=-flto=thin
-  check_cxx20_commands_profiling build/10b
+  check_cxx20_commands_profiling build/10b "${profiling_check_args[@]}"
   ninja -C build/10b
   mv build/10b/x265.exe "build/10b/${output_name}"
 }

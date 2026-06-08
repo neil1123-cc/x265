@@ -71,6 +71,10 @@ def require_active_exact_command(active_lines, expected_tokens, path, message):
 
 
 def option_value(args, option, expected, build, context):
+    if expected is None:
+        if option not in args:
+            fail(f'missing {context} flag {option}', build)
+        return
     try:
         actual = args[args.index(option) + 1]
     except (ValueError, IndexError):
