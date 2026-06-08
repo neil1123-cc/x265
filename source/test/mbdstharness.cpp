@@ -27,6 +27,10 @@
 #include "common.h"
 #include "mbdstharness.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
 using namespace X265_NS;
 
 struct DctConf
@@ -60,11 +64,11 @@ MBDstHarness::MBDstHarness()
      * [2] --- Maximum */
     for (int i = 0; i < TEST_BUF_SIZE; i++)
     {
-        short_test_buff[0][i]    = (rand() & PIXEL_MAX) - (rand() & PIXEL_MAX);
-        short_test_buff1[0][i]   = (rand() & PIXEL_MAX) - (rand() & PIXEL_MAX);
-        int_test_buff[0][i]      = rand() % PIXEL_MAX;
-        int_idct_test_buff[0][i] = (rand() % (SHORT_MAX - SHORT_MIN)) - SHORT_MAX;
-        short_denoise_test_buff1[0][i] = short_denoise_test_buff2[0][i] = (rand() & SHORT_MAX) - (rand() & SHORT_MAX);
+        short_test_buff[0][i]    = (std::rand() & PIXEL_MAX) - (std::rand() & PIXEL_MAX);
+        short_test_buff1[0][i]   = (std::rand() & PIXEL_MAX) - (std::rand() & PIXEL_MAX);
+        int_test_buff[0][i]      = std::rand() % PIXEL_MAX;
+        int_idct_test_buff[0][i] = (std::rand() % (SHORT_MAX - SHORT_MIN)) - SHORT_MAX;
+        short_denoise_test_buff1[0][i] = short_denoise_test_buff2[0][i] = (std::rand() & SHORT_MAX) - (std::rand() & SHORT_MAX);
         short_test_buff[1][i]    = -PIXEL_MAX;
         short_test_buff1[1][i]   = -PIXEL_MAX;
         int_test_buff[1][i]      = -PIXEL_MAX;
@@ -76,19 +80,19 @@ MBDstHarness::MBDstHarness()
         int_idct_test_buff[2][i] = SHORT_MAX;
         short_denoise_test_buff1[2][i] = short_denoise_test_buff2[2][i] = SHORT_MAX;
 
-        mbuf1[i] = rand() & PIXEL_MAX;
-        mbufdct[i] = (rand() & PIXEL_MAX) - (rand() & PIXEL_MAX);
-        mbufidct[i] = (rand() & idct_max);
+        mbuf1[i] = std::rand() & PIXEL_MAX;
+        mbufdct[i] = (std::rand() & PIXEL_MAX) - (std::rand() & PIXEL_MAX);
+        mbufidct[i] = (std::rand() & idct_max);
     }
 
 #if _DEBUG
-    memset(mshortbuf2, 0, MAX_TU_SIZE * sizeof(int16_t));
-    memset(mshortbuf3, 0, MAX_TU_SIZE * sizeof(int16_t));
+    std::fill_n(reinterpret_cast<uint8_t*>(mshortbuf2), sizeof(mshortbuf2), uint8_t(0));
+    std::fill_n(reinterpret_cast<uint8_t*>(mshortbuf3), sizeof(mshortbuf3), uint8_t(0));
 
-    memset(mintbuf1, 0, MAX_TU_SIZE * sizeof(int));
-    memset(mintbuf2, 0, MAX_TU_SIZE * sizeof(int));
-    memset(mintbuf3, 0, MAX_TU_SIZE * sizeof(int));
-    memset(mintbuf4, 0, MAX_TU_SIZE * sizeof(int));
+    std::fill_n(reinterpret_cast<uint8_t*>(mintbuf1), sizeof(mintbuf1), uint8_t(0));
+    std::fill_n(reinterpret_cast<uint8_t*>(mintbuf2), sizeof(mintbuf2), uint8_t(0));
+    std::fill_n(reinterpret_cast<uint8_t*>(mintbuf3), sizeof(mintbuf3), uint8_t(0));
+    std::fill_n(reinterpret_cast<uint8_t*>(mintbuf4), sizeof(mintbuf4), uint8_t(0));
 #endif // if _DEBUG
 }
 
@@ -99,12 +103,12 @@ bool MBDstHarness::check_dct_primitive(dct_t ref, dct_t opt, intptr_t width)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index = rand() % TEST_CASES;
+        int index = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index] + j, mshortbuf2, width);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         reportfail();
@@ -121,12 +125,12 @@ bool MBDstHarness::check_idct_primitive(idct_t ref, idct_t opt, intptr_t width)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index = rand() % TEST_CASES;
+        int index = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index] + j, mshortbuf2, width);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         reportfail();
@@ -142,12 +146,12 @@ bool MBDstHarness::check_dequant_primitive(dequant_normal_t ref, dequant_normal_
 
     for (int i = 0; i < ITERS; i++)
     {
-        int index = rand() % TEST_CASES;
-        int log2TrSize = (rand() % 4) + 2;
+        int index = std::rand() % TEST_CASES;
+        int log2TrSize = (std::rand() % 4) + 2;
 
         int width = (1 << log2TrSize);
         int height = width;
-        int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         int per = qp / 6;
         int rem = qp % 6;
         static const int invQuantScales[6] = { 40, 45, 51, 57, 64, 72 };
@@ -158,7 +162,7 @@ bool MBDstHarness::check_dequant_primitive(dequant_normal_t ref, dequant_normal_
         ref(short_test_buff[index] + j, mshortbuf2, width * height, scale, shift);
         checked(opt, short_test_buff[index] + j, mshortbuf3, width * height, scale, shift);
 
-        if (memcmp(mshortbuf2, mshortbuf3, sizeof(int16_t) * height * width))
+        if (std::memcmp(mshortbuf2, mshortbuf3, sizeof(int16_t) * height * width))
             return false;
 
         reportfail();
@@ -175,26 +179,26 @@ bool MBDstHarness::check_dequant_primitive(dequant_scaling_t ref, dequant_scalin
     for (int i = 0; i < ITERS; i++)
     {
 
-        memset(mshortbuf2, 0, MAX_TU_SIZE * sizeof(int16_t));
-        memset(mshortbuf3, 0, MAX_TU_SIZE * sizeof(int16_t));
+        std::fill_n(reinterpret_cast<uint8_t*>(mshortbuf2), sizeof(mshortbuf2), uint8_t(0));
+        std::fill_n(reinterpret_cast<uint8_t*>(mshortbuf3), sizeof(mshortbuf3), uint8_t(0));
 
-        int log2TrSize = (rand() % 4) + 2;
+        int log2TrSize = (std::rand() % 4) + 2;
 
         int width = (1 << log2TrSize);
         int height = width;
 
-        int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         int per = qp / 6;
         int transformShift = MAX_TR_DYNAMIC_RANGE - X265_DEPTH - log2TrSize;
         int shift = QUANT_IQUANT_SHIFT - QUANT_SHIFT - transformShift;
 
         int cmp_size = sizeof(int16_t) * height * width;
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, int_test_buff[index1] + j, mshortbuf2, width * height, per, shift);
         checked(opt, short_test_buff[index1] + j, int_test_buff[index1] + j, mshortbuf3, width * height, per, shift);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         reportfail();
@@ -210,15 +214,15 @@ bool MBDstHarness::check_quant_primitive(quant_t ref, quant_t opt)
 
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 1 << (rand() % 4 + 2);
+        int width = 1 << (std::rand() % 4 + 2);
         int height = width;
 
         uint32_t optReturnValue = 0;
         uint32_t refReturnValue = 0;
 
-        int sliceType = rand() % 2;
-        int log2TrSize = rand() % 4 + 2;
-        int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int sliceType = std::rand() % 2;
+        int log2TrSize = std::rand() % 4 + 2;
+        int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         int per = qp / 6;
         int transformShift = MAX_TR_DYNAMIC_RANGE - X265_DEPTH - log2TrSize;
 
@@ -228,16 +232,16 @@ bool MBDstHarness::check_quant_primitive(quant_t ref, quant_t opt)
         int cmp_size1 = sizeof(short) * height * width;
         int numCoeff = height * width;
 
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
 
         refReturnValue = ref(short_test_buff[index1] + j, int_test_buff[index2] + j, mintbuf1, mshortbuf2, bits, valueToAdd, numCoeff);
         optReturnValue = (uint32_t)checked(opt, short_test_buff[index1] + j, int_test_buff[index2] + j, mintbuf3, mshortbuf3, bits, valueToAdd, numCoeff);
 
-        if (memcmp(mintbuf1, mintbuf3, cmp_size))
+        if (std::memcmp(mintbuf1, mintbuf3, cmp_size))
             return false;
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size1))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size1))
             return false;
 
         if (optReturnValue != refReturnValue)
@@ -255,13 +259,13 @@ bool MBDstHarness::check_nquant_primitive(nquant_t ref, nquant_t opt)
     int j = 0;
     for (int i = 0; i < ITERS; i++)
     {
-        int width = 1 << (rand() % 4 + 2);
+        int width = 1 << (std::rand() % 4 + 2);
         int height = width;
         uint32_t optReturnValue = 0;
         uint32_t refReturnValue = 0;
 
-        int log2TrSize = rand() % 4 + 2;
-        const int qp = rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
+        int log2TrSize = std::rand() % 4 + 2;
+        const int qp = std::rand() % (QP_MAX_SPEC + QP_BD_OFFSET + 1);
         const int per = qp / 6;
         const int transformShift = MAX_TR_DYNAMIC_RANGE - X265_DEPTH - log2TrSize;
 
@@ -271,13 +275,13 @@ bool MBDstHarness::check_nquant_primitive(nquant_t ref, nquant_t opt)
         int cmp_size = sizeof(short) * height * width;
         int numCoeff = height * width;
 
-        int index1 = rand() % TEST_CASES;
-        int index2 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
+        int index2 = std::rand() % TEST_CASES;
 
         refReturnValue = ref(short_test_buff[index1] + j, int_test_buff[index2] + j, mshortbuf2, bits, valueToAdd, numCoeff);
         optReturnValue = (uint32_t)checked(opt, short_test_buff[index1] + j, int_test_buff[index2] + j, mshortbuf3, bits, valueToAdd, numCoeff);
 
-        if (memcmp(mshortbuf2, mshortbuf3, cmp_size))
+        if (std::memcmp(mshortbuf2, mshortbuf3, cmp_size))
             return false;
 
         if (optReturnValue != refReturnValue)
@@ -299,24 +303,24 @@ bool MBDstHarness::check_nonPsyRdoQuant_primitive(nonPsyRdoQuant_t ref, nonPsyRd
 
     for (int i = 0; i < ITERS; i++)
     {
-        int64_t totalRdCostRef = rand();
-        int64_t totalUncodedCostRef = rand();
+        int64_t totalRdCostRef = std::rand();
+        int64_t totalUncodedCostRef = std::rand();
         int64_t totalRdCostOpt = totalRdCostRef;
         int64_t totalUncodedCostOpt = totalUncodedCostRef;
 
-        int index = rand() % 4;
+        int index = std::rand() % 4;
         uint32_t blkPos = trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
-        memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
-        memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::fill_n(reinterpret_cast<uint8_t*>(ref_dest), MAX_TU_SIZE * sizeof(int64_t), uint8_t(0));
+        std::fill_n(reinterpret_cast<uint8_t*>(opt_dest), MAX_TU_SIZE * sizeof(int64_t), uint8_t(0));
 
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, ref_dest, &totalUncodedCostRef, &totalRdCostRef, blkPos);
         checked(opt, short_test_buff[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, blkPos);
 
-        if (memcmp(ref_dest, opt_dest, cmp_size))
+        if (std::memcmp(ref_dest, opt_dest, cmp_size))
             return false;
 
         if (totalUncodedCostRef != totalUncodedCostOpt)
@@ -341,27 +345,27 @@ bool MBDstHarness::check_psyRdoQuant_primitive(psyRdoQuant_t ref, psyRdoQuant_t 
 
     for (int i = 0; i < ITERS; i++)
     {
-        int64_t totalRdCostRef = rand();
-        int64_t totalUncodedCostRef = rand();
+        int64_t totalRdCostRef = std::rand();
+        int64_t totalUncodedCostRef = std::rand();
         int64_t totalRdCostOpt = totalRdCostRef;
         int64_t totalUncodedCostOpt = totalUncodedCostRef;
         int64_t *psyScale = X265_MALLOC(int64_t, 1);
-        *psyScale = rand();
+        *psyScale = std::rand();
 
-        int index = rand() % 4;
+        int index = std::rand() % 4;
         uint32_t blkPos = trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
-        memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
-        memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::fill_n(reinterpret_cast<uint8_t*>(ref_dest), MAX_TU_SIZE * sizeof(int64_t), uint8_t(0));
+        std::fill_n(reinterpret_cast<uint8_t*>(opt_dest), MAX_TU_SIZE * sizeof(int64_t), uint8_t(0));
 
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, short_test_buff1[index1] + j, ref_dest, &totalUncodedCostRef, &totalRdCostRef, psyScale, blkPos);
         checked(opt, short_test_buff[index1] + j, short_test_buff1[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, psyScale, blkPos);
 
         X265_FREE(psyScale);
-        if (memcmp(ref_dest, opt_dest, cmp_size))
+        if (std::memcmp(ref_dest, opt_dest, cmp_size))
             return false;
 
         if (totalUncodedCostRef != totalUncodedCostOpt)
@@ -386,25 +390,25 @@ bool MBDstHarness::check_psyRdoQuant_primitive_avx2(psyRdoQuant_t1 ref, psyRdoQu
 
     for (int i = 0; i < ITERS; i++)
     {
-        int64_t totalRdCostRef = rand();
-        int64_t totalUncodedCostRef = rand();
+        int64_t totalRdCostRef = std::rand();
+        int64_t totalUncodedCostRef = std::rand();
         int64_t totalRdCostOpt = totalRdCostRef;
         int64_t totalUncodedCostOpt = totalUncodedCostRef;
 
-        int index = rand() % 4;
+        int index = std::rand() % 4;
         uint32_t blkPos =  trSize[index];
         int cmp_size = 4 * MAX_TU_SIZE;
 
-        memset(ref_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
-        memset(opt_dest, 0, MAX_TU_SIZE * sizeof(int64_t));
+        std::fill_n(reinterpret_cast<uint8_t*>(ref_dest), MAX_TU_SIZE * sizeof(int64_t), uint8_t(0));
+        std::fill_n(reinterpret_cast<uint8_t*>(opt_dest), MAX_TU_SIZE * sizeof(int64_t), uint8_t(0));
 
-        int index1 = rand() % TEST_CASES;
+        int index1 = std::rand() % TEST_CASES;
 
         ref(short_test_buff[index1] + j, ref_dest, &totalUncodedCostRef, &totalRdCostRef, blkPos);
         checked(opt, short_test_buff[index1] + j, opt_dest, &totalUncodedCostOpt, &totalRdCostOpt, blkPos);
 
         
-        if (memcmp(ref_dest, opt_dest, cmp_size))
+        if (std::memcmp(ref_dest, opt_dest, cmp_size))
             return false;
 
         if (totalUncodedCostRef != totalUncodedCostOpt)
@@ -448,22 +452,22 @@ bool MBDstHarness::check_denoise_dct_primitive(denoiseDct_t ref, denoiseDct_t op
 
         for (int i = 0; i < ITERS; i++)
         {
-            memset(mubuf1, 0, num * sizeof(uint32_t));
-            memset(mubuf2, 0, num * sizeof(uint32_t));
-            memset(mushortbuf1, 0,  num * sizeof(uint16_t));
+            std::fill_n(reinterpret_cast<uint8_t*>(mubuf1), num * sizeof(uint32_t), uint8_t(0));
+            std::fill_n(reinterpret_cast<uint8_t*>(mubuf2), num * sizeof(uint32_t), uint8_t(0));
+            std::fill_n(reinterpret_cast<uint8_t*>(mushortbuf1), num * sizeof(uint16_t), uint8_t(0));
 
             for (int k = 0; k < num; k++)
-                mushortbuf1[k] = rand() % UNSIGNED_SHORT_MAX;
+                mushortbuf1[k] = std::rand() % UNSIGNED_SHORT_MAX;
 
-            int index = rand() % TEST_CASES;
+            int index = std::rand() % TEST_CASES;
 
             ref(short_denoise_test_buff1[index] + j, mubuf1, mushortbuf1, num);
             checked(opt, short_denoise_test_buff2[index] + j, mubuf2, mushortbuf1, num);
 
-            if (memcmp(short_denoise_test_buff1[index] + j, short_denoise_test_buff2[index] + j, cmp_short))
+            if (std::memcmp(short_denoise_test_buff1[index] + j, short_denoise_test_buff2[index] + j, cmp_short))
                 return false;
 
-            if (memcmp(mubuf1, mubuf2, cmp_size))
+            if (std::memcmp(mubuf1, mubuf2, cmp_size))
                 return false;
 
             reportfail();
@@ -484,7 +488,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_dct_primitive(ref.cu[i].dct, opt.cu[i].dct, dctInfo[i].width))
             {
-                printf("\n%s failed\n", dctInfo[i].name);
+                std::printf("\n%s failed\n", dctInfo[i].name);
                 return false;
             }
         }
@@ -496,7 +500,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_idct_primitive(ref.cu[i].idct, opt.cu[i].idct, idctInfo[i].width))
             {
-                printf("%s failed\n", idctInfo[i].name);
+                std::printf("%s failed\n", idctInfo[i].name);
                 return false;
             }
         }
@@ -506,7 +510,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dct_primitive(ref.dst4x4, opt.dst4x4, 4))
         {
-            printf("dst4x4: Failed\n");
+            std::printf("dst4x4: Failed\n");
             return false;
         }
     }
@@ -515,7 +519,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_idct_primitive(ref.idst4x4, opt.idst4x4, 4))
         {
-            printf("idst4x4: Failed\n");
+            std::printf("idst4x4: Failed\n");
             return false;
         }
     }
@@ -524,7 +528,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dequant_primitive(ref.dequant_normal, opt.dequant_normal))
         {
-            printf("dequant_normal: Failed!\n");
+            std::printf("dequant_normal: Failed!\n");
             return false;
         }
     }
@@ -533,7 +537,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dequant_primitive(ref.dequant_scaling, opt.dequant_scaling))
         {
-            printf("dequant_scaling: Failed!\n");
+            std::printf("dequant_scaling: Failed!\n");
             return false;
         }
     }
@@ -542,7 +546,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_quant_primitive(ref.quant, opt.quant))
         {
-            printf("quant: Failed!\n");
+            std::printf("quant: Failed!\n");
             return false;
         }
     }
@@ -551,7 +555,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_nquant_primitive(ref.nquant, opt.nquant))
         {
-            printf("nquant: Failed!\n");
+            std::printf("nquant: Failed!\n");
             return false;
         }
     }
@@ -562,7 +566,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_nonPsyRdoQuant_primitive(ref.cu[i].nonPsyRdoQuant, opt.cu[i].nonPsyRdoQuant))
             {
-                printf("nonPsyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
+                std::printf("nonPsyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -573,7 +577,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_psyRdoQuant_primitive(ref.cu[i].psyRdoQuant, opt.cu[i].psyRdoQuant))
             {
-                printf("psyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
+                std::printf("psyRdoQuant[%dx%d]: Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -584,7 +588,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_psyRdoQuant_primitive_avx2(ref.cu[i].psyRdoQuant_1p, opt.cu[i].psyRdoQuant_1p))
             {
-                printf("psyRdoQuant_1p[%dx%d]: Failed!\n", 4 << i, 4 << i);
+                std::printf("psyRdoQuant_1p[%dx%d]: Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -595,7 +599,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
         {
             if (!check_count_nonzero_primitive(ref.cu[i].count_nonzero, opt.cu[i].count_nonzero))
             {
-                printf("count_nonzero[%dx%d] Failed!\n", 4 << i, 4 << i);
+                std::printf("count_nonzero[%dx%d] Failed!\n", 4 << i, 4 << i);
                 return false;
             }
         }
@@ -604,7 +608,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_dequant_primitive(ref.dequant_scaling, opt.dequant_scaling))
         {
-            printf("dequant_scaling: Failed!\n");
+            std::printf("dequant_scaling: Failed!\n");
             return false;
         }
     }
@@ -613,7 +617,7 @@ bool MBDstHarness::testCorrectness(const EncoderPrimitives& ref, const EncoderPr
     {
         if (!check_denoise_dct_primitive(ref.denoiseDct, opt.denoiseDct))
         {
-            printf("denoiseDct: Failed!\n");
+            std::printf("denoiseDct: Failed!\n");
             return false;
         }
     }
@@ -625,7 +629,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
 {
     if (opt.dst4x4)
     {
-        printf("dst4x4\t");
+        std::printf("dst4x4\t");
         REPORT_SPEEDUP(opt.dst4x4, ref.dst4x4, mbuf1, mshortbuf2, 4);
     }
 
@@ -633,14 +637,14 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         if (opt.cu[value].dct)
         {
-            printf("%s\t", dctInfo[value].name);
+            std::printf("%s\t", dctInfo[value].name);
             REPORT_SPEEDUP(opt.cu[value].dct, ref.cu[value].dct, mbuf1, mshortbuf2, dctInfo[value].width);
         }
     }
 
     if (opt.idst4x4)
     {
-        printf("idst4x4\t");
+        std::printf("idst4x4\t");
         REPORT_SPEEDUP(opt.idst4x4, ref.idst4x4, mbuf1, mshortbuf2, 4);
     }
 
@@ -648,7 +652,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         if (opt.cu[value].idct)
         {
-            printf("%s\t", idctInfo[value].name);
+            std::printf("%s\t", idctInfo[value].name);
             REPORT_SPEEDUP(opt.cu[value].idct, ref.cu[value].idct, mshortbuf3, mshortbuf2, idctInfo[value].width);
         }
     }
@@ -657,25 +661,25 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         int scale = 72 << X265_DEPTH;
         int shift = X265_DEPTH - 4;
-        printf("dequant_normal\t");
+        std::printf("dequant_normal\t");
         REPORT_SPEEDUP(opt.dequant_normal, ref.dequant_normal, short_test_buff[0], mshortbuf2, 32 * 32, scale, shift);
     }
 
     if (opt.dequant_scaling)
     {
-        printf("dequant_scaling\t");
+        std::printf("dequant_scaling\t");
         REPORT_SPEEDUP(opt.dequant_scaling, ref.dequant_scaling, short_test_buff[0], mintbuf3, mshortbuf2, 32 * 32, 5, 1);
     }
 
     if (opt.quant)
     {
-        printf("quant\t\t");
+        std::printf("quant\t\t");
         REPORT_SPEEDUP(opt.quant, ref.quant, short_test_buff[0], int_test_buff[1], mintbuf3, mshortbuf2, 23, 23785, 32 * 32);
     }
 
     if (opt.nquant)
     {
-        printf("nquant\t\t");
+        std::printf("nquant\t\t");
         REPORT_SPEEDUP(opt.nquant, ref.nquant, short_test_buff[0], int_test_buff[1], mshortbuf2, 23, 23785, 32 * 32);
     }
 
@@ -686,7 +690,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             ALIGN_VAR_32(int64_t, opt_dest[4 * MAX_TU_SIZE]);
             int64_t totalRdCost = 0;
             int64_t totalUncodedCost = 0;
-            printf("nonPsyRdoQuant[%dx%d]", 4 << value, 4 << value);
+            std::printf("nonPsyRdoQuant[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].nonPsyRdoQuant, ref.cu[value].nonPsyRdoQuant, short_test_buff[0], opt_dest, &totalUncodedCost, &totalRdCost, 0);
         }
     }
@@ -699,7 +703,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             int64_t totalUncodedCost = 0;
             int64_t *psyScale = X265_MALLOC(int64_t, 1);
             *psyScale = 0;
-            printf("psyRdoQuant[%dx%d]", 4 << value, 4 << value);
+            std::printf("psyRdoQuant[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].psyRdoQuant, ref.cu[value].psyRdoQuant, short_test_buff[0], short_test_buff1[0], opt_dest, &totalUncodedCost, &totalRdCost, psyScale, 0);
         }
     }
@@ -710,7 +714,7 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
             ALIGN_VAR_32(int64_t, opt_dest[4 * MAX_TU_SIZE]);
             int64_t totalRdCost = 0;
             int64_t totalUncodedCost = 0;
-            printf("psyRdoQuant_1p[%dx%d]", 4 << value, 4 << value);
+            std::printf("psyRdoQuant_1p[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].psyRdoQuant_1p, ref.cu[value].psyRdoQuant_1p, short_test_buff[0], opt_dest, &totalUncodedCost, &totalRdCost, 0);
         }
     }
@@ -718,13 +722,13 @@ void MBDstHarness::measureSpeed(const EncoderPrimitives& ref, const EncoderPrimi
     {
         if (opt.cu[value].count_nonzero)
         {
-            printf("count_nonzero[%dx%d]", 4 << value, 4 << value);
+            std::printf("count_nonzero[%dx%d]", 4 << value, 4 << value);
             REPORT_SPEEDUP(opt.cu[value].count_nonzero, ref.cu[value].count_nonzero, mbuf1);
         }
     }
     if (opt.denoiseDct)
     {
-        printf("denoiseDct\t");
+        std::printf("denoiseDct\t");
         REPORT_SPEEDUP(opt.denoiseDct, ref.denoiseDct, short_denoise_test_buff1[0], mubuf1, mushortbuf1, 32 * 32);
     }
 }

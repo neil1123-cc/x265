@@ -69,7 +69,7 @@ NebutaFestival_2560x1600_60_10bit_crop.yuv,--preset medium --tune grain --limit-
 NebutaFestival_2560x1600_60_10bit_crop.yuv,--preset slow --no-cutree --analysis-save x265_analysis.dat --rd 5 --analysis-save-reuse-level 10 --bitrate 9000 --vbv-maxrate 9000 --vbv-bufsize 9000::--preset slow --no-cutree --analysis-load x265_analysis.dat --rd 5 --analysis-load-reuse-level 10 --bitrate 9000 --vbv-maxrate 9000 --vbv-bufsize 9000
 News-4k.y4m,--preset ultrafast --no-cutree --analysis-save x265_analysis.dat --analysis-save-reuse-level 2 --bitrate 15000::--preset ultrafast --no-cutree --analysis-load x265_analysis.dat --analysis-load-reuse-level 2 --bitrate 15000
 News-4k.y4m,--preset superfast --lookahead-slices 6 --aq-mode 0
-News-4k.y4m,--preset superfast --slices 4 --aq-mode 0 
+News-4k.y4m,--preset superfast --slices 4 --aq-mode 0
 News-4k.y4m,--preset medium --tune ssim --no-sao --qg-size 16
 News-4k.y4m,--preset veryslow --rskip 0
 OldTownCross_1920x1080_50_10bit_422.yuv,--preset superfast --weightp
@@ -156,7 +156,7 @@ crowd_run_1920x1080_50.yuv, --preset faster --ctu 32 --rskip 2 --rskip-edge-thre
 crowd_run_1920x1080_50.yuv, --preset fast --ctu 64 --rskip 2 --rskip-edge-threshold 5 --aq-mode 4
 crowd_run_1920x1080_50.yuv, --preset ultrafast --video-signal-type-preset BT2100_PQ_YCC:BT2100x108n0005
 crowd_run_1920x1080_50.yuv, --preset ultrafast --eob --eos
- 
+
 # Main12 intraCost overflow bug test
 720p50_parkrun_ter.y4m,--preset medium
 
@@ -172,8 +172,8 @@ big_buck_bunny_360p24.y4m,--preset superfast --me sea
 720p50_parkrun_ter.y4m,--preset medium --lowpass-dct
 
 #scaled save/load test
-crowd_run_1080p50.y4m,--preset ultrafast --no-cutree --analysis-save x265_analysis.dat  --analysis-save-reuse-level 1 --scale-factor 2 --crf 26 --vbv-maxrate 8000 --vbv-bufsize 8000::crowd_run_2160p50.y4m, --preset ultrafast --no-cutree --analysis-load x265_analysis.dat  --analysis-load-reuse-level 1 --scale-factor 2 --crf 26 --vbv-maxrate 12000 --vbv-bufsize 12000 
-crowd_run_1080p50.y4m,--preset superfast --analysis-save x265_analysis.dat  --analysis-save-reuse-level 2 --scale-factor 2 --crf 22 --vbv-maxrate 5000 --vbv-bufsize 5000::crowd_run_2160p50.y4m, --preset superfast --analysis-load x265_analysis.dat  --analysis-load-reuse-level 2 --scale-factor 2 --crf 22 --vbv-maxrate 10000 --vbv-bufsize 10000 
+crowd_run_1080p50.y4m,--preset ultrafast --no-cutree --analysis-save x265_analysis.dat  --analysis-save-reuse-level 1 --scale-factor 2 --crf 26 --vbv-maxrate 8000 --vbv-bufsize 8000::crowd_run_2160p50.y4m, --preset ultrafast --no-cutree --analysis-load x265_analysis.dat  --analysis-load-reuse-level 1 --scale-factor 2 --crf 26 --vbv-maxrate 12000 --vbv-bufsize 12000
+crowd_run_1080p50.y4m,--preset superfast --analysis-save x265_analysis.dat  --analysis-save-reuse-level 2 --scale-factor 2 --crf 22 --vbv-maxrate 5000 --vbv-bufsize 5000::crowd_run_2160p50.y4m, --preset superfast --analysis-load x265_analysis.dat  --analysis-load-reuse-level 2 --scale-factor 2 --crf 22 --vbv-maxrate 10000 --vbv-bufsize 10000
 crowd_run_1080p50.y4m,--preset fast --analysis-save x265_analysis.dat  --analysis-save-reuse-level 5 --scale-factor 2 --qp 18::crowd_run_2160p50.y4m, --preset fast --analysis-load x265_analysis.dat  --analysis-load-reuse-level 5 --scale-factor 2 --qp 18
 crowd_run_1080p50.y4m,--preset medium --no-cutree --analysis-save x265_analysis.dat  --analysis-save-reuse-level 10 --scale-factor 2 --bitrate 5000  --vbv-maxrate 5000 --vbv-bufsize 5000 --early-skip --tu-inter-depth 3::crowd_run_2160p50.y4m, --preset medium --no-cutree --analysis-load x265_analysis.dat  --analysis-load-reuse-level 10 --scale-factor 2 --bitrate 10000 --vbv-maxrate 10000 --vbv-bufsize 10000 --early-skip --tu-inter-depth 3 --refine-intra 4 --dynamic-refine::crowd_run_2160p50.y4m, --preset medium --no-cutree --analysis-load x265_analysis.dat  --analysis-load-reuse-level 10 --scale-factor 2 --bitrate 10000 --vbv-maxrate 10000 --vbv-bufsize 10000 --early-skip --tu-inter-depth 3 --refine-intra 3 --refine-inter 3
 RaceHorses_416x240_30.y4m,--preset slow --ctu 16 --analysis-save x265_analysis.dat --analysis-save-reuse-level 10 --scale-factor 2 --crf 22  --vbv-maxrate 1000 --vbv-bufsize 1000::RaceHorses_832x480_30.y4m, --preset slow --ctu 32 --analysis-load x265_analysis.dat  --analysis-save x265_analysis_2.dat --analysis-load-reuse-level 10 --analysis-save-reuse-level 10 --scale-factor 2 --crf 16 --vbv-maxrate 4000 --vbv-bufsize 4000 --refine-intra 0 --refine-inter 1::RaceHorses_1664x960_30.y4m,--preset slow --ctu 64 --analysis-load x265_analysis_2.dat  --analysis-load-reuse-level 10 --scale-factor 2 --crf 12 --vbv-maxrate 7000 --vbv-bufsize 7000 --refine-intra 2 --refine-inter 2

@@ -3,7 +3,7 @@
 #These tests should yeild deterministic results
 # This test is listed first since it currently reproduces bugs
 big_buck_bunny_360p24.y4m,--preset medium --bitrate 1000 --pass 1 -F4::--preset medium --bitrate 1000 --pass 2 -F4
-fire_1920x1080_30.yuv, --preset slow --bitrate 2000 --tune zero-latency 
+fire_1920x1080_30.yuv, --preset slow --bitrate 2000 --tune zero-latency
 
 
 # VBV tests, non-deterministic so testing for correctness and bitrate

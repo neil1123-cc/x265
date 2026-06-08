@@ -12,14 +12,14 @@
 
 | 方向 | 内容 |
 | --- | --- |
-| 构建现代化 | 源码构建使用 C++20，最低要求 CMake 4.0，并维护 Ninja / MSYS2 CLANG64 / clang / lld 发布链路。 |
+| 构建现代化 | 源码构建统一使用 GNU++20（C++20 + GNU extensions），最低要求 CMake 4.0，并维护 Ninja / MSYS2 CLANG64 / clang / lld 发布链路。 |
 | Windows 发布 | GitHub Actions 自动产出 Windows 64-bit 预编译包，覆盖多个 Intel / AMD CPU 目标。 |
 | 多 bit-depth | 正式包提供 8-bit、10-bit、12-bit 和 all-in-one CLI。 |
-| 输入扩展 | 支持 FFmpeg/LAVF、AviSynth、VapourSynth 输入路径。 |
+| 输入扩展 | 源码支持 FFmpeg/LAVF、AviSynth、VapourSynth 输入路径；当前 Windows CI 发布链路默认启用 LAVF，AVS/VPY 默认关闭。 |
 | 容器输出 | 支持 RAW HEVC、MKV、MP4、GOP 输出；MP4 由 L-SMASH 支撑。 |
 | 编码增强 | 保留并维护 Yuuki / Kyouko 系增强内容，覆盖 AQ、GOP/lookahead、场景切换、码控、SEI、日志和进度显示等方向。 |
-| CI 验证 | 覆盖 L-SMASH patch/build/smoke、RAW/MKV/MP4/LAVF smoke、open-GOP、CRA、strict-CBR、时间基和封装边界用例。 |
-| Profiling / PGO | 提供 profiling 构建和 PGO profdata 维护链路，用于性能验证和发布维护。 |
+| CI 验证 | 覆盖 L-SMASH patch/build/smoke、RAW/MKV/MP4/LAVF/GOP smoke、open-GOP、CRA、strict-CBR、时间基和封装边界用例；另含 Build workflow 的 C++20 warning scan：8bit CLI、12bit CLI、Unity CLI、LAVF/L-SMASH shared-deps CLI、启用 ASM 的 shared-deps CLI、shared library、all-bit-depth helper libs、linked all CLI、CPU 目标和 TestBench，检查 GNU++20 编译命令并对关键产物做最小 RAW smoke；Windows 与 Linux GCC 诊断分支会检查 CLI、lib-only 或核心库 GNU++20 编译命令并阻断发布。 |
+| Profiling / PGO | 提供 profiling 构建和 per-target bounded-window PGO profdata 维护链路，用于性能验证和发布维护；profiling action 复用同一套 GNU++20 / compile_commands 校验，metadata 会记录构建来源、profdata 布局和 FFmpeg / mimalloc / obuparse / L-SMASH / GOP muxer 关键依赖 cache key。 |
 
 ## 适合谁
 
@@ -46,7 +46,7 @@
 
 ### Profiling / PGO 用户
 
-profiling 和 `llvm-profdata` 相关资产主要用于 profile 采集、PGO 维护和工具链验证；普通编码用户通常不需要下载。
+profiling 和 `llvm-profdata` 相关资产主要用于 profile 采集、PGO 维护和工具链验证；这些构建也会检查同一套 GNU++20 约束，普通编码用户通常不需要下载。
 
 ### CPU 架构怎么选
 
@@ -69,9 +69,9 @@ profiling 和 `llvm-profdata` 相关资产主要用于 profile 采集、PGO 维�
 
 ### 输入
 
-- FFmpeg/LAVF：读取常见媒体容器和格式。
-- AviSynth：接入 AVS 脚本工作流。
-- VapourSynth：接入 VPY 脚本工作流。
+- FFmpeg/LAVF：读取常见媒体容器和格式，当前 Windows CI 发布链路默认启用。
+- AviSynth：源码可选接入 AVS 脚本工作流，当前 Windows CI 发布链路默认关闭。
+- VapourSynth：源码可选接入 VPY 脚本工作流，当前 Windows CI 发布链路默认关闭。
 
 ### 输出
 
@@ -134,15 +134,23 @@ x265-win64-<cpu>-all.exe --fullhelp
 
 ## 构建要求
 
-当前发布链路面向 Windows + MSYS2 `CLANG64`，使用 C++20、CMake 4.0+、Ninja、NASM、clang/lld、ThinLTO、FFmpeg、L-SMASH 和 mimalloc。
+当前发布链路面向 Windows + MSYS2 `CLANG64`，使用 GNU++20（C++20 + GNU extensions）、CMake 4.0+、Ninja、NASM、clang/lld、ThinLTO、FFmpeg、L-SMASH 和 mimalloc。
 
 | 项目 | 要求 / 说明 |
 | --- | --- |
-| C++ 标准 | C++20 |
+| C++ 标准 | GNU++20（顶层 CMake 固定 `CMAKE_CXX_STANDARD=20` 且 `CMAKE_CXX_EXTENSIONS=ON`） |
 | CMake | 4.0+ |
 | NASM | 2.13.0+（启用 x86 ASM 时） |
 | Windows 发布环境 | MSYS2 `CLANG64` |
 | 编译器/链接器 | release CI 使用 clang、lld、libc++ |
+
+## GNU++20 维护策略
+
+- 顶层 `source/CMakeLists.txt` 是 C++ 标准的唯一来源，固定 `CMAKE_CXX_STANDARD=20`、`CMAKE_CXX_STANDARD_REQUIRED=ON` 和 `CMAKE_CXX_EXTENSIONS=ON`。
+- 子目录 CMake 不应再设置 `CXX_STANDARD`，也不应手写 `-std=` 或 `/std:`；需要改变标准策略时先更新顶层契约和 CI guardrail。
+- C++20 warning scan 由 CMake 选项启用迁移告警，CI 再通过 `compile_commands.json` 校验实际编译命令，避免配置看似正确但命令退回旧标准。
+- `.github/scripts/check_cmake_cxx20_contract.py`、`.github/scripts/check_compile_commands.py`、`.github/scripts/cxx20_scan_helpers.sh` 和 `.github/scripts/check_release_needs.py` 需要随 CI 策略同步维护。
+- 正式 release 发布必须继续依赖 Build、Clang C++20 warning scan 和 GCC C++20 compile command diagnostics；profiling 构建复用同一套 profiling compile_commands 检查。
 
 ## 发布链路依赖
 
@@ -150,10 +158,11 @@ x265-win64-<cpu>-all.exe --fullhelp
 
 | 依赖 | CI 来源 | 用途 |
 | --- | --- | --- |
-| FFmpeg | `FFmpeg/FFmpeg@n8.1` | LAVF 输入、smoke 素材生成和 ffprobe 校验；版本由 update-deps workflow 跟踪。 |
-| L-SMASH | `vimeo/l-smash` master SHA + 本仓库 patch | MP4 输出；CI 由 update-deps workflow 跟踪上游 master 并把解析出的 commit 写入 shared deps，再应用 `.github/patches/l-smash-clang-coff-refptr.patch` 后构建和 smoke test。 |
-| mimalloc | `microsoft/mimalloc@v3.3.1` | release 构建默认启用；版本由 update-deps workflow 跟踪。 |
-| obuparse | `dwbuiten/obuparse@v2.0.2` | L-SMASH AV1 OBU helper 依赖；CI 使用 `obuparse-v2.0.2-clang-v1` cache key 缓存安装产物，版本由 update-deps workflow 跟踪。 |
+| FFmpeg | shared deps action 的 `ffmpeg-ref` 默认值 | LAVF 输入、smoke 素材生成和 ffprobe 校验；版本由 update-deps workflow 跟踪。 |
+| L-SMASH | `vimeo/l-smash` 固定 commit SHA + 本仓库 patch | MP4 输出；CI 由 update-deps workflow 跟踪上游 master，解析出具体 commit 后写入 shared deps，再应用 `.github/patches/l-smash-clang-coff-refptr.patch` 后构建和 smoke test。 |
+| mimalloc | shared deps action 的 `mimalloc-ref` 默认值 | release 构建默认启用；版本由 update-deps workflow 跟踪，CI 中保持现编不缓存。 |
+| obuparse | shared deps action 的 `obuparse-ref` 默认值 | L-SMASH AV1 OBU helper 依赖；CI 使用 ref + cache suffix 缓存安装产物，版本由 update-deps workflow 跟踪。 |
+| GOP muxer | `msg7086/gop_muxer` 固定 commit SHA + 本仓库 patch | GOP 分段输出的 MP4 mux 工具；Build workflow 启用并缓存安装产物，GOP smoke 会用它把 `.gop` sidecar mux 成 MP4 后再校验。 |
 
 ## 本地构建示例
 
@@ -161,7 +170,7 @@ x265-win64-<cpu>-all.exe --fullhelp
 git clone https://github.com/neil1123-cc/x265.git
 cd x265
 
-cmake -GNinja x265/source -B build/all \
+cmake -GNinja source -B build/all \
   -DCMAKE_PREFIX_PATH=/usr/local \
   -DTARGET_CPU=x86-64 \
   -DENABLE_SHARED=OFF \
@@ -174,6 +183,26 @@ cmake -GNinja x265/source -B build/all \
   -DCMAKE_ASM_NASM_FLAGS=-w-macro-params-legacy
 
 ninja -C build/all
+```
+
+本地确认 GNU++20 契约：
+
+```bash
+cmake -GNinja source -B build/cxx20-check \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_SHARED=OFF \
+  -DENABLE_CLI=ON \
+  -DENABLE_ASSEMBLY=OFF \
+  -DENABLE_CXX20_WARNING_SCAN=ON \
+  -DWARNINGS_AS_ERRORS=ON \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+python .github/scripts/check_compile_commands.py build/cxx20-check \
+  --required-flag=-Wdeprecated \
+  --required-flag=-Werror \
+  --forbidden-flag-substring=-Wno-deprecated
+
+python .github/scripts/check_ci_guards.py --repo-root .
 ```
 
 常用 CMake 选项：
@@ -204,7 +233,9 @@ ninja -C build/all
 - 多 bit-depth CLI 编译
 - RAW / MKV / MP4 / LAVF 输入 smoke tests
 - open-GOP、CRA、strict-CBR、时间基和封装边界用例
-- profiling / PGO 相关构建链路
+- profiling / PGO 相关构建链路，以及按 `profdata-<cpu>-<profile_target>` 分支维护的 per-target bounded-window profdata；Build 会在目标 CPU 分支不可用时回退到 x86-64 baseline，并校验记录构建来源、profdata 布局和 FFmpeg / mimalloc / obuparse / L-SMASH / GOP muxer 关键依赖 cache key 的 metadata
+- Build workflow 的 C++20 warning scan：按 CLI/shared-deps、shared/all-bit-depth、CPU/ASM 三组运行，覆盖 8bit CLI、12bit CLI、Unity CLI、LAVF/L-SMASH shared-deps CLI、启用 ASM 的 shared-deps CLI、shared library、all-bit-depth helper libs、linked all CLI、CPU 目标和 TestBench，检查 compile_commands 中的 GNU++20 标准标志、depth define 及 warning-as-error 相关告警标志，并对 12bit、shared-library 和 linked all warning-scan CLI 做最小 RAW 编码 smoke。
+- GCC C++20 compile command diagnostics：Windows MinGW GCC 覆盖 CLI、12bit lib-only、8bit lib-only 和 linked-all CLI 配置，Linux GCC 覆盖核心库配置；两条 job 都校验 GNU++20、GCC C++20 迁移告警、depth define 或旧标准回退，并和 Clang warning scan 一起阻断正式 release 发布。
 
 ## 来源和致谢
 
@@ -213,7 +244,7 @@ ninja -C build/all
 - [AmusementClub/x265](https://github.com/AmusementClub/x265) - Kyouko mod 来源，本仓库增强内容来源之一
 - [FFmpeg](https://ffmpeg.org/) - 多媒体输入和工具链生态
 - [vimeo/l-smash](https://github.com/vimeo/l-smash) - 当前 CI 使用的 L-SMASH 来源，配合本仓库 patch 提供 MP4 封装支持
-- [gop_muxer](https://github.com/msg7086/gop_muxer) - GOP 分段输出的 MP4 mux 工具
+- [gop_muxer](https://github.com/msg7086/gop_muxer) - `msg7086/gop_muxer`，GOP 分段输出的 MP4 mux 工具
 - [mimalloc](https://github.com/microsoft/mimalloc) - Microsoft allocator
 
 ## 许可证

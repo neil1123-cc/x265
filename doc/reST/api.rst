@@ -214,9 +214,12 @@ changes made to the parameters for auto-detection and other reasons::
 
     /* x265_encoder_reconfig_zone:
      *      Properties of the zone will be copied to encoder's param and will be used only to
-     *      influence rate-control decisions of the zone.
+     *      influence rate-control decisions of the zone. Calls must be submitted in
+     *      contiguous reconfig-window startFrame order beginning at frame 0. When
+     *      bResetZoneConfig is disabled, the current reconfig window must be staged
+     *      before encoding reaches it or x265_encoder_encode() will fail.
      *      returns 0 on successful copy and negative on failure.*/
-    int x265_encoder_reconfig(x265_encoder *, x265_param *);
+    int x265_encoder_reconfig_zone(x265_encoder *, x265_zone *);
 
 **x265_get_slicetype_poc_and_scenecut()** may be used to fetch slice type, poc and scene cut information mid-encode::
 
