@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode="${1:-}"
+archive="${2:-}"
+extract_dir="${3:-}"
+target_cpu="${4:-}"
+expected_count="${5:-}"
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$script_dir/ci_7z.sh"
+
+usage() {
+  echo "usage: $0 <x265-release|x265-profiling|llvm-profdata> <archive> <extract_dir> [target_cpu] [expected_count]" >&2
+  exit 2
+}
+
+isolated_windows_path() {
+  local exe_dir="$1"
+  printf '%s' "${exe_dir}:/c/Windows/System32:/c/Windows:/c/Windows/System32/Wbem"
+}
+
+run_with_isolated_path() {
+  local exe="$1"
+  shift
+  local exe_dir
+  exe_dir="$(cd "$(dirname "$exe")" && pwd)"
+  PATH="$(isolated_windows_path "$exe_dir")" "$exe" "$@"
+}
+
+verify_clean_dir() {
+  local dir="$1"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+}
+
+verify_x265_release() {
+  local archive="$1"
+  local extract_dir="$2"
+  local target_cpu="$3"
+  local expected_count="$4"
+
+  test -s "$archive"
+  verify_clean_dir "$extract_dir"
+  ci_7z t "$archive"
+  ci_7z x -o"$extract_dir" "$archive"
+
+  local exe_count
+  exe_count=$(find "$extract_dir" -maxdepth 1 -type f -name '*.exe' | wc -l)
+  test "$exe_count" -eq "$expected_count"
+
+  local all_exe="$extract_dir/x265-win64-${target_cpu}-all.exe"
+  test -s "$all_exe"
+  run_with_isolated_path "$all_exe" --version >/dev/null
+
+  if [ "$expected_count" -eq 4 ]; then
+    for depth in 8bit 10bit 12bit; do
+      local exe="$extract_dir/x265-win64-${target_cpu}-${depth}.exe"
+      test -s "$exe"
+      run_with_isolated_path "$exe" --version >/dev/null
+    done
+  fi
+
+  test -z "$(find "$extract_dir" -mindepth 1 -maxdepth 1 ! -name '*.exe' -print -quit)"
+}
+
+verify_x265_profiling() {
+  local archive="$1"
+  local extract_dir="$2"
+  local target_cpu="$3"
+
+  test -s "$archive"
+  verify_clean_dir "$extract_dir"
+  ci_7z t "$archive"
+  ci_7z x -o"$extract_dir" "$archive"
+
+  local exe_count
+  exe_count=$(find "$extract_dir" -maxdepth 1 -type f -name '*.exe' | wc -l)
+  test "$exe_count" -eq 3
+
+  for profile_class in 8b-lib 12b-lib all; do
+    local exe="$extract_dir/x265-profiling-win64-${target_cpu}-${profile_class}.exe"
+    test -s "$exe"
+    run_with_isolated_path "$exe" --version >/dev/null
+  done
+
+  test -z "$(find "$extract_dir" -mindepth 1 -maxdepth 1 ! -name '*.exe' -print -quit)"
+}
+
+verify_llvm_profdata() {
+  local archive="$1"
+  local extract_dir="$2"
+
+  test -s "$archive"
+  verify_clean_dir "$extract_dir"
+  ci_7z t "$archive"
+  ci_7z x -o"$extract_dir" "$archive"
+
+  test -s "$extract_dir/llvm-profdata.exe"
+  run_with_isolated_path "$extract_dir/llvm-profdata.exe" --version >/dev/null
+
+  local dll_count
+  dll_count=$(find "$extract_dir" -maxdepth 1 -type f -iname '*.dll' | wc -l)
+  test "$dll_count" -gt 0
+  test -z "$(find "$extract_dir" -mindepth 1 -maxdepth 1 ! -iname '*.exe' ! -iname '*.dll' -print -quit)"
+}
+
+case "$mode" in
+  x265-release)
+    [ -n "$target_cpu" ] && [ -n "$expected_count" ] || usage
+    verify_x265_release "$archive" "$extract_dir" "$target_cpu" "$expected_count"
+    ;;
+  x265-profiling)
+    [ -n "$target_cpu" ] || usage
+    verify_x265_profiling "$archive" "$extract_dir" "$target_cpu"
+    ;;
+  llvm-profdata)
+    verify_llvm_profdata "$archive" "$extract_dir"
+    ;;
+  *)
+    usage
+    ;;
+esac
