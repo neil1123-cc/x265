@@ -25,9 +25,9 @@
 
 #include "output.h"
 #include "matroska_ebml.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -89,9 +89,9 @@ static mk_context *mk_create_context( mk_writer *w, mk_context *parent, unsigned
     }
     else
     {
-        c = (mk_context*)calloc( 1, sizeof(mk_context) );
+        c = (mk_context*)std::calloc( 1, sizeof(mk_context) );
         if( !c )
-            return NULL;
+            return nullptr;
     }
 
     c->parent = parent;
@@ -118,7 +118,7 @@ static int mk_append_context_data( mk_context *c, const void *data, unsigned siz
         while( ns > dn )
             dn <<= 1;
 
-        dp = realloc( c->data, dn );
+        dp = std::realloc( c->data, dn );
         if( !dp )
             return -1;
 
@@ -126,7 +126,7 @@ static int mk_append_context_data( mk_context *c, const void *data, unsigned siz
         c->d_max = dn;
     }
 
-    memcpy( (char*)c->data + c->d_cur, data, size );
+    std::memcpy( (char*)c->data + c->d_cur, data, size );
 
     c->d_cur = ns;
 
@@ -203,7 +203,7 @@ static int mk_flush_context_data( mk_context *c )
 
     if( c->parent )
         CHECK( mk_append_context_data( c->parent, c->data, c->d_cur ) );
-    else if( fwrite( c->data, c->d_cur, 1, c->owner->fp ) != 1 )
+    else if( std::fwrite( c->data, c->d_cur, 1, c->owner->fp ) != 1 )
         return -1;
 
     c->d_cur = 0;
@@ -240,23 +240,23 @@ static void mk_destroy_contexts( mk_writer *w )
     for( mk_context *cur = w->freelist; cur; cur = next )
     {
         next = cur->next;
-        free( cur->data );
-        free( cur );
+        std::free( cur->data );
+        std::free( cur );
     }
 
     for( mk_context *cur = w->actlist; cur; cur = next )
     {
         next = cur->next;
-        free( cur->data );
-        free( cur );
+        std::free( cur->data );
+        std::free( cur );
     }
 
-    w->freelist = w->actlist = w->root = NULL;
+    w->freelist = w->actlist = w->root = nullptr;
 }
 
 static int mk_write_string( mk_context *c, unsigned id, const char *str )
 {
-    size_t len = strlen( str );
+    size_t len = std::strlen( str );
 
     CHECK( mk_write_id( c, id ) );
     CHECK( mk_write_size( c, len ) );
@@ -321,26 +321,37 @@ static int mk_write_float( mk_context *c, unsigned id, float f )
 
 mk_writer *mk_create_writer( const char *filename )
 {
-    mk_writer *w = (mk_writer*)calloc( 1, sizeof(mk_writer) );
+    mk_writer *w = (mk_writer*)std::calloc( 1, sizeof(mk_writer) );
     if( !w )
-        return NULL;
+        return nullptr;
 
-    w->root = mk_create_context( w, NULL, 0 );
+    w->root = mk_create_context( w, nullptr, 0 );
     if( !w->root )
     {
-        free( w );
-        return NULL;
+        std::free( w );
+        return nullptr;
     }
 
-    if( !strcmp( filename, "-" ) )
+    if( !std::strcmp( filename, "-" ) )
         w->fp = stdout;
     else
-        w->fp = fopen( filename, "wb" );
+        w->fp = std::fopen( filename, "wb" );
     if( !w->fp )
     {
         mk_destroy_contexts( w );
-        free( w );
-        return NULL;
+        std::free( w );
+        return nullptr;
+    }
+    if( w->fp != stdout && std::ferror( w->fp ) )
+    {
+        bool closeFailed = std::ferror( w->fp ) != 0;
+        if( std::fclose( w->fp ) )
+            closeFailed = true;
+        if( closeFailed )
+            std::fprintf( stderr, "x265 [warning]: unable to close MKV writer file after open failure\n" );
+        mk_destroy_contexts( w );
+        std::free( w );
+        return nullptr;
     }
 
     w->timescale = 1000000;
@@ -427,10 +438,10 @@ int mk_write_header( mk_writer *w, const char *writing_app,
 
 static int mk_close_cluster( mk_writer *w )
 {
-    if( w->cluster == NULL )
+    if( w->cluster == nullptr )
         return 0;
     CHECK( mk_close_context( w->cluster, 0 ) );
-    w->cluster = NULL;
+    w->cluster = nullptr;
     CHECK( mk_flush_context_data( w->root ) );
     return 0;
 }
@@ -517,7 +528,7 @@ int mk_add_frame_data( mk_writer *w, const void *data, unsigned size )
         return -1;
 
     if( !w->frame )
-        if( !(w->frame = mk_create_context( w, NULL, 0 )) )
+        if( !(w->frame = mk_create_context( w, nullptr, 0 )) )
         return -1;
 
     return mk_append_context_data( w->frame, data, size );
@@ -530,15 +541,23 @@ int mk_close( mk_writer *w, int64_t last_delta )
         ret = -1;
     if( w->wrote_header && x264_is_regular_file( w->fp ) )
     {
-        fseek( w->fp, w->duration_ptr, SEEK_SET );
         int64_t last_frametime = w->def_duration ? w->def_duration : last_delta;
         int64_t total_duration = w->max_frame_tc+last_frametime;
-        if( mk_write_float_raw( w->root, (float)((double)total_duration / w->timescale) ) < 0 ||
-            mk_flush_context_data( w->root ) < 0 )
+        if( std::fseek( w->fp, w->duration_ptr, SEEK_SET ) == 0 )
+        {
+            if( mk_write_float_raw( w->root, (float)((double)total_duration / w->timescale) ) < 0 ||
+                mk_flush_context_data( w->root ) < 0 )
+                ret = -1;
+        }
+        else
             ret = -1;
     }
     mk_destroy_contexts( w );
-    fclose( w->fp );
-    free( w );
+    bool closeFailed = std::ferror( w->fp ) != 0;
+    if( std::fclose( w->fp ) )
+        closeFailed = true;
+    if( closeFailed )
+        ret = -1;
+    std::free( w );
     return ret;
 }

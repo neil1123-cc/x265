@@ -270,8 +270,8 @@ struct EncoderPrimitives
      * possibly square CU blocks (8x8 to 64x64). Some primitives are used for
      * both CU and TU so we merge them into one array that is indexed uniformly.
      * This keeps the index logic uniform and simple and improves cache
-     * coherency. CU only primitives will leave 4x4 pointers NULL while TU only
-     * primitives will leave 64x64 pointers NULL.  Indexed by LumaCU */
+     * coherency. CU only primitives will leave 4x4 pointers nullptr while TU only
+     * primitives will leave 64x64 pointers nullptr.  Indexed by LumaCU */
     struct CU
     {
         dct_t           dct;    // active dct transformation
@@ -399,7 +399,7 @@ struct EncoderPrimitives
         /* Chroma prediction unit primitives. Indexed by LumaPU */
         struct PUChroma
         {
-            pixelcmp_t   satd;      // if chroma PU is not multiple of 4x4, will be NULL
+            pixelcmp_t   satd;      // if chroma PU is not multiple of 4x4, will be nullptr
             filter_pp_t  filter_vpp;
             filter_ps_t  filter_vps;
             filter_sp_t  filter_vsp;

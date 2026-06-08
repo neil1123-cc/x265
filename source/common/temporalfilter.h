@@ -161,7 +161,7 @@ namespace X265_NS {
         TemporalFilter();
         ~TemporalFilter();
 
-        void init(const x265_param* param);
+        bool init(const x265_param* param);
 
         //private:
             // Private static member variables

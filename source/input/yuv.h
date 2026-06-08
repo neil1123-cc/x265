@@ -26,8 +26,9 @@
 
 #include "input.h"
 #include "threading.h"
+#include <atomic>
+#include <cstdio>
 #include <fstream>
-#include <stdio.h>
 
 #define QUEUE_SIZE 5
 
@@ -46,11 +47,12 @@ protected:
 
     uint32_t depth;
 
-    uint32_t framesize;
+    size_t framesize;
 
     bool alphaAvailable;
 
-    bool threadActive;
+    std::atomic<bool> threadActive;
+    std::atomic<bool> failed;
 
     ThreadSafeInteger readCount;
 
@@ -68,8 +70,8 @@ public:
 
     virtual ~YUVInput();
     void release();
-    bool isEof() const                            { return ifs && feof(ifs); }
-    bool isFail()                                 { return !(ifs && !ferror(ifs) && threadActive); }
+    bool isEof() const                            { return ifs && std::feof(ifs); }
+    bool isFail()                                 { return failed.load() || (ifs && std::ferror(ifs)); }
     void startReader();
 
     bool readPicture(x265_picture&);

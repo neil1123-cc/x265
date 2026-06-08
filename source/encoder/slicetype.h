@@ -92,7 +92,7 @@ struct LookaheadTLD
         me.init(X265_CSP_I400);
         me.setQP(X265_LOOKAHEAD_QP);
         for (int i = 0; i < 4; i++)
-            wbuffer[i] = NULL;
+            wbuffer[i] = nullptr;
         widthInCU = heightInCU = ncu = paddedLines = 0;
 
 #if DETAILED_CU_STATS
@@ -160,6 +160,7 @@ public:
     Event         m_outputSignal;
     LookaheadTLD* m_tld;
     x265_param*   m_param;
+    x265_param*   m_baseParam;
     Lowres*       m_lastNonB;
     int*          m_scratch;         // temp buffer for cutree propagate
 
@@ -226,6 +227,7 @@ public:
     void    checkLookaheadQueue(int &frameCnt);
     void    flush();
     Frame*  getDecidedPicture();
+    Frame*  peekDecidedPicture();
 
     void    getEstimatedPictureCost(Frame *pic);
     void    setLookaheadQueue();
@@ -303,9 +305,9 @@ public:
     enum { MAX_COOP_SLICES = 32 };
     struct Slice
     {
-        int  costEst;
-        int  costEstAq;
-        int  intraMbs;
+        int  costEst = 0;
+        int  costEstAq = 0;
+        int  intraMbs = 0;
     } m_slice[MAX_COOP_SLICES];
 
     int64_t singleCost(int p0, int p1, int b, bool intraPenalty = false);

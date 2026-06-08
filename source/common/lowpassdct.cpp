@@ -24,6 +24,9 @@
 #include "common.h"
 #include "primitives.h"
 
+#include <algorithm>
+#include <cstring>
+
 using namespace X265_NS;
 
 /* standard dct transformations */
@@ -51,7 +54,7 @@ static void lowPassDct8_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
 
     //dct4
     (*s_dct4x4)(avgBlock, coef, 4);
-    memset(dst, 0, 64 * sizeof(int16_t));
+    std::fill_n(dst, 8 * 8, int16_t(0));
     for (int i = 0; i < 4; i++)
     {
         memcpy(&dst[i * 8], &coef[i * 4], 4 * sizeof(int16_t));
@@ -82,7 +85,7 @@ static void lowPassDct16_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
         }
 
     (*s_dct8x8)(avgBlock, coef, 8);
-    memset(dst, 0, 256 * sizeof(int16_t));
+    std::fill_n(dst, 16 * 16, int16_t(0));
     for (int i = 0; i < 8; i++)
     {
         memcpy(&dst[i * 16], &coef[i * 8], 8 * sizeof(int16_t));
@@ -107,7 +110,7 @@ static void lowPassDct32_c(const int16_t* src, int16_t* dst, intptr_t srcStride)
         }
 
     (*s_dct16x16)(avgBlock, coef, 16);
-    memset(dst, 0, 1024 * sizeof(int16_t));
+    std::fill_n(dst, 32 * 32, int16_t(0));
     for (int i = 0; i < 16; i++)
     {
         memcpy(&dst[i * 32], &coef[i * 16], 16 * sizeof(int16_t));

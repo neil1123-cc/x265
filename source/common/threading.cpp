@@ -102,8 +102,9 @@ static void stackAlignMain(Thread *instance)
 
 #if _WIN32
 
-static DWORD WINAPI ThreadShim(Thread *instance)
+static DWORD WINAPI ThreadShim(LPVOID opaque)
 {
+    Thread* instance = reinterpret_cast<Thread*>(opaque);
     STACK_ALIGN(stackAlignMain, instance);
 
     return 0;
@@ -111,11 +112,9 @@ static DWORD WINAPI ThreadShim(Thread *instance)
 
 bool Thread::start()
 {
-    DWORD threadId;
+    thread = CreateThread(nullptr, 0, ThreadShim, this, 0, nullptr);
 
-    thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ThreadShim, this, 0, &threadId);
-
-    return threadId > 0;
+    return thread != nullptr;
 }
 
 void Thread::stop()
@@ -139,12 +138,12 @@ static void *ThreadShim(void *opaque)
 
     STACK_ALIGN(stackAlignMain, instance);
 
-    return NULL;
+    return nullptr;
 }
 
 bool Thread::start()
 {
-    if (pthread_create(&thread, NULL, ThreadShim, this))
+    if (pthread_create(&thread, nullptr, ThreadShim, this))
     {
         thread = 0;
         return false;
@@ -156,7 +155,7 @@ bool Thread::start()
 void Thread::stop()
 {
     if (thread){
-        pthread_join(thread, NULL);
+        pthread_join(thread, nullptr);
         thread = 0;
     }
 }

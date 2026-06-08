@@ -28,6 +28,8 @@
 #include "primitives.h"
 #include "x265.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 #if _MSC_VER
@@ -68,8 +70,8 @@ static void extendCURowColBorder(pixel* txt, intptr_t stride, int width, int hei
         }
 
 #else
-        memset(txt - marginX, txt[0], marginX);
-        memset(txt + width, txt[width - 1], marginX);
+        std::fill_n(txt - marginX, marginX, txt[0]);
+        std::fill_n(txt + width, marginX, txt[width - 1]);
 #endif
 
         txt += stride;

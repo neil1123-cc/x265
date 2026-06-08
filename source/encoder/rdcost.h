@@ -44,7 +44,7 @@ public:
     uint32_t  m_ssimRd;
     int       m_qp; /* QP used to configure lambda, may be higher than QP_MAX_SPEC but <= QP_MAX_MAX */
 
-    void setPsyRdScale(double scale)                { m_psyRdBase = (uint32_t)floor(65536.0 * scale * 0.33); }
+    void setPsyRdScale(double scale)                { m_psyRdBase = (uint32_t)std::floor(65536.0 * scale * 0.33); }
     void setSsimRd(int ssimRd) { m_ssimRd = ssimRd; };
 
     void setQP(const Slice& slice, int qp)
@@ -87,8 +87,8 @@ public:
 
     void setLambda(double lambda2, double lambda)
     {
-        m_lambda2 = (uint64_t)floor(256.0 * lambda2);
-        m_lambda = (uint64_t)floor(256.0 * lambda);
+        m_lambda2 = (uint64_t)std::floor(256.0 * lambda2);
+        m_lambda = (uint64_t)std::floor(256.0 * lambda);
     }
 
     inline uint64_t calcRdCost(sse_t distortion, uint32_t bits) const

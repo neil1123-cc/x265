@@ -24,6 +24,8 @@
 #ifndef X265_FRAMEDATA_H
 #define X265_FRAMEDATA_H
 
+#include <algorithm>
+
 #include "common.h"
 #include "slice.h"
 #include "cudata.h"
@@ -93,9 +95,49 @@ struct FrameStats
     uint32_t       rowVarDyn[MAX_NUM_DYN_REFINE];
     uint32_t       rowCntDyn[MAX_NUM_DYN_REFINE];
 
+    void clear()
+    {
+        mvBits = coeffBits = miscBits = 0;
+        intra8x8Cnt = inter8x8Cnt = skip8x8Cnt = 0;
+        percent8x8Intra = percent8x8Inter = percent8x8Skip = 0.0;
+        avgLumaDistortion = avgChromaDistortion = avgPsyEnergy = avgSsimEnergy = avgResEnergy = 0.0;
+        percentIntraNxN = ipCostRatio = 0.0;
+        cntIntraNxN = totalCu = totalCtu = lumaDistortion = chromaDistortion = 0;
+        psyEnergy = resEnergy = cnt4x4 = 0;
+        ssimEnergy = 0;
+
+        for (int i = 0; i < NUM_CU_DEPTH; i++)
+        {
+            percentSkipCu[i] = 0.0;
+            percentMergeCu[i] = 0.0;
+
+            for (int j = 0; j < INTRA_MODES; j++)
+                percentIntraDistribution[i][j] = 0.0;
+
+            for (int j = 0; j < 3; j++)
+                percentInterDistribution[i][j] = 0.0;
+        }
+
+        std::fill_n(cntInter, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(cntIntra, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(&cuInterDistribution[0][0], NUM_CU_DEPTH * INTER_MODES, uint64_t(0));
+        std::fill_n(&cuIntraDistribution[0][0], NUM_CU_DEPTH * INTRA_MODES, uint64_t(0));
+        std::fill_n(cntSkipCu, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(cntMergeCu, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(totalPu, NUM_CU_DEPTH + 1, uint64_t(0));
+        std::fill_n(cntSkipPu, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(cntIntraPu, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(cntAmp, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(&cntInterPu[0][0], NUM_CU_DEPTH * (INTER_MODES - 1), uint64_t(0));
+        std::fill_n(&cntMergePu[0][0], NUM_CU_DEPTH * (INTER_MODES - 1), uint64_t(0));
+        std::fill_n(rowRdDyn, MAX_NUM_DYN_REFINE, uint64_t(0));
+        std::fill_n(rowVarDyn, MAX_NUM_DYN_REFINE, uint32_t(0));
+        std::fill_n(rowCntDyn, MAX_NUM_DYN_REFINE, uint32_t(0));
+    }
+
     FrameStats()
     {
-        memset(this, 0, sizeof(FrameStats));
+        clear();
     }
 };
 
@@ -110,21 +152,21 @@ class FrameData
 {
 public:
 
-    Slice*         m_slice;
-    SAOParam*      m_saoParam;
-    const x265_param* m_param;
+    Slice*         m_slice { nullptr };
+    SAOParam*      m_saoParam { nullptr };
+    const x265_param* m_param { nullptr };
 
-    FrameData*     m_freeListNext;
-    PicYuv*        m_reconPic[NUM_RECON_VERSION];
-    bool           m_bHasReferences;   /* used during DPB/RPS updates */
-    int            m_frameEncoderID;   /* the ID of the FrameEncoder encoding this frame */
-    JobProvider*   m_jobProvider;
+    FrameData*     m_freeListNext { nullptr };
+    PicYuv*        m_reconPic[NUM_RECON_VERSION] {};
+    bool           m_bHasReferences { false };   /* used during DPB/RPS updates */
+    int            m_frameEncoderID { 0 };       /* the ID of the FrameEncoder encoding this frame */
+    JobProvider*   m_jobProvider { nullptr };
 
     CUDataMemPool  m_cuMemPool;
-    CUData*        m_picCTU;
+    CUData*        m_picCTU { nullptr };
 
-    RPS*           m_spsrps;
-    int            m_spsrpsIdx;
+    RPS*           m_spsrps { nullptr };
+    int            m_spsrpsIdx { -1 };
 
     /* Rate control data used during encode and by references */
     struct RCStatCU
@@ -151,8 +193,8 @@ public:
         double   sumQpAq;
     };
 
-    RCStatCU*      m_cuStat;
-    RCStatRow*     m_rowStat;
+    RCStatCU*      m_cuStat { nullptr };
+    RCStatRow*     m_rowStat { nullptr };
     FrameStats     m_frameStats; // stats of current frame for multi-pass encodes
     /* data needed for periodic intra refresh */
     struct PeriodicIR
@@ -162,19 +204,20 @@ public:
         int        framesSinceLastPir;
     };
 
-    PeriodicIR     m_pir;
-    double         m_avgQpRc;    /* avg QP as decided by rate-control */
-    double         m_avgQpAq;    /* avg QP as decided by AQ in addition to rate-control */
-    double         m_rateFactor; /* calculated based on the Frame QP */
-    int            m_picCsp;
+    PeriodicIR     m_pir {};
+    double         m_avgQpRc { 0.0 };    /* avg QP as decided by rate-control */
+    double         m_avgQpAq { 0.0 };    /* avg QP as decided by AQ in addition to rate-control */
+    double         m_rateFactor { 0.0 }; /* calculated based on the Frame QP */
+    int            m_picCsp { 0 };
 
-    uint32_t*              m_meIntegral[INTEGRAL_PLANE_NUM];       // 12 integral planes for 32x32, 32x24, 32x8, 24x32, 16x16, 16x12, 16x4, 12x16, 8x32, 8x8, 4x16 and 4x4.
-    uint32_t*              m_meBuffer[INTEGRAL_PLANE_NUM];
+    uint32_t*              m_meIntegral[INTEGRAL_PLANE_NUM] {};    // 12 integral planes for 32x32, 32x24, 32x8, 24x32, 16x16, 16x12, 16x4, 12x16, 8x32, 8x8, 4x16 and 4x4.
+    uint32_t*              m_meBuffer[INTEGRAL_PLANE_NUM] {};
 
     FrameData();
 
     bool create(const x265_param& param, const SPS& sps, int csp);
     void reinit(const SPS& sps);
+    void destroySEAIntegralBuffers();
     void destroy();
     inline CUData* getPicCTU(uint32_t ctuAddr) { return &m_picCTU[ctuAddr]; }
 };

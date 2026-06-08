@@ -28,12 +28,288 @@
 #include "x265cli.h"
 #include "svt.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
 #define START_CODE 0x00000001
 #define START_CODE_BYTES 4
 
 #ifdef __cplusplus
 namespace X265_NS {
 #endif
+
+    static const int CONFIG_LINE_BUFFER_SIZE = 4096;
+
+    static bool copyCLIString(char* dst, size_t dstSize, const char* src, const char* context)
+    {
+        if (!dst || !dstSize || !src)
+            return false;
+
+        size_t length = std::strlen(src);
+        if (length >= dstSize)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "%s exceeds supported length\n", context);
+            return false;
+        }
+
+        std::memcpy(dst, src, length + 1);
+        return true;
+    }
+
+    static bool tokenizeConfigFileArgs(char* start, char** args, int maxArgs, int& argCount, const char* context)
+    {
+        if (!start || !args || maxArgs < 2)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "%s is missing arguments\n", context);
+            return false;
+        }
+
+        return walkConfigTokens(start,
+            [&]() -> bool
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "%s is missing arguments\n", context);
+                return false;
+            },
+            [&](char* token) -> bool
+            {
+                if (argCount + 1 >= maxArgs)
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "%s exceeds supported argument count\n", context);
+                    return false;
+                }
+                args[argCount] = token;
+                return true;
+            },
+            [&](char* token, char ch, size_t tokenLength) -> bool
+            {
+                token[tokenLength] = ch;
+                return true;
+            },
+            [&](char* token, size_t tokenLength) -> bool
+            {
+                token[tokenLength] = '\0';
+                argCount++;
+                return true;
+            },
+            [&]() -> bool
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "%s has an unterminated quoted argument\n", context);
+                return false;
+            },
+            [&]() -> bool
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "%s has an empty argument\n", context);
+                return false;
+            }) && (args[argCount] = nullptr, true);
+    }
+
+    static bool prepareConfigSubparseArgs(char* start, char** args, int maxArgs, int& argCount, const char* context, int lineNumber)
+    {
+        argCount = 0;
+        // Adding a dummy string to avoid file parsing error
+        args[argCount++] = (char*)"x265";
+        return tokenizeConfigFileArgs(start, args, maxArgs, argCount, context) &&
+            !rejectCliExitRequest(argCount, args, context, lineNumber);
+    }
+
+    static bool rewindConfigFile(FILE* configFile, const char* context)
+    {
+        if (!configFile || !context)
+            return false;
+
+        clearerr(configFile);
+        if (std::fseek(configFile, 0, SEEK_SET))
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to rewind %s\n", context);
+            return false;
+        }
+        return true;
+    }
+
+    static bool parseCliInt32Token(const char* token, int32_t& value)
+    {
+        bool bError = false;
+        int parsedValue = x265_atoi(token, bError);
+        if (bError)
+            return false;
+
+        value = parsedValue;
+        return true;
+    }
+
+    static bool validateViewLayerLimits(x265_param* param, int& numLayers)
+    {
+        if (!param)
+            return false;
+
+        if (param->numViews < 1 || param->numViews > MAX_VIEWS)
+        {
+            x265_log(param, X265_LOG_ERROR, "numViews must be between 1 and %d in this build\n", MAX_VIEWS);
+            return false;
+        }
+
+        if (param->numScalableLayers < 1 || param->numScalableLayers > MAX_SCALABLE_LAYERS)
+        {
+            x265_log(param, X265_LOG_ERROR, "numScalableLayers must be between 1 and %d in this build\n", MAX_SCALABLE_LAYERS);
+            return false;
+        }
+
+        if (param->numViews > 1 && param->numScalableLayers > 1)
+        {
+            x265_log(param, X265_LOG_ERROR, "alpha and multiview cannot be enabled together in this build\n");
+            return false;
+        }
+
+        numLayers = param->numViews > 1 ? param->numViews : (param->numScalableLayers > 1) ? param->numScalableLayers : 1;
+        if (numLayers < 1 || numLayers > MAX_LAYERS)
+        {
+            x265_log(param, X265_LOG_ERROR, "Derived numLayers (%d) exceeds the build limit of %d\n", numLayers, MAX_LAYERS);
+            return false;
+        }
+
+        return true;
+    }
+
+    static bool parseQpFileLine(char* line, int32_t& num, char& type, int32_t& qp)
+    {
+        if (!line)
+            return false;
+
+        char* scan = line;
+        while (std::isspace((unsigned char)*scan))
+            scan++;
+        if (!*scan)
+            return false;
+
+        char* frameToken = scan;
+        while (*scan && !std::isspace((unsigned char)*scan))
+            scan++;
+        if (!*scan)
+            return false;
+        *scan++ = '\0';
+
+        while (std::isspace((unsigned char)*scan))
+            scan++;
+        if (!scan[0] || std::isspace((unsigned char)scan[0]))
+            return false;
+        char parsedType = *scan++;
+
+        if (*scan && !std::isspace((unsigned char)*scan))
+            return false;
+        while (std::isspace((unsigned char)*scan))
+            scan++;
+
+        int32_t parsedNum = 0;
+        if (!parseCliInt32Token(frameToken, parsedNum))
+            return false;
+
+        if (!*scan || *scan == '#')
+        {
+            num = parsedNum;
+            type = parsedType;
+            qp = -1;
+            return true;
+        }
+
+        char* qpToken = scan;
+        while (*scan && !std::isspace((unsigned char)*scan))
+            scan++;
+        if (*scan)
+        {
+            *scan++ = '\0';
+            while (std::isspace((unsigned char)*scan))
+                scan++;
+            if (*scan == '#')
+                *scan = '\0';
+            else if (*scan)
+                return false;
+        }
+
+        int32_t parsedQp = 0;
+        if (!parseCliInt32Token(qpToken, parsedQp))
+            return false;
+
+        num = parsedNum;
+        type = parsedType;
+        qp = parsedQp;
+        return true;
+    }
+
+    static bool isQpFileSkippableLine(const char* line)
+    {
+        if (!line)
+            return false;
+
+        const char* scan = line;
+        while (std::isspace((unsigned char)*scan))
+            scan++;
+        return !*scan || *scan == '#';
+    }
+
+    static bool parseCliIntOptarg(const char* optarg, int& value)
+    {
+        bool bError = false;
+        int parsedValue = x265_atoi(optarg, bError);
+        if (bError || parsedValue < 0)
+            return false;
+
+        value = parsedValue;
+        return true;
+    }
+
+    static bool isRecognizedOutputBitDepth(int depth)
+    {
+        return depth == 8 || depth == 10 || depth == 12;
+    }
+
+    static bool prepareCliApiFromOptions(int argc, char** argv, const x265_api*& api)
+    {
+        int outputBitDepth = 0;
+        bool explicitOutputDepth = false;
+        const char* profile = nullptr;
+        for (optind = 0;;)
+        {
+            int c = getopt_long(argc, argv, short_options, long_options, nullptr);
+            if (c == -1)
+                break;
+            else if (c == 'D')
+            {
+                int parsedOutputBitDepth = 0;
+                bool bOutputBitDepthError = !parseCliIntOptarg(optarg, parsedOutputBitDepth) ||
+                                            !isRecognizedOutputBitDepth(parsedOutputBitDepth);
+                if (bOutputBitDepthError)
+                    return false;
+                explicitOutputDepth = true;
+                outputBitDepth = parsedOutputBitDepth;
+            }
+            else if (c == 'P')
+                profile = optarg;
+        }
+
+        if (!outputBitDepth && profile)
+        {
+            /* try to derive the output bit depth from the requested profile */
+            if (std::strstr(profile, "10"))
+                outputBitDepth = 10;
+            else if (std::strstr(profile, "12"))
+                outputBitDepth = 12;
+            else
+                outputBitDepth = 8;
+        }
+
+        api = x265_api_get(outputBitDepth);
+        if (!api)
+        {
+            if (explicitOutputDepth)
+                return false;
+            x265_log(nullptr, X265_LOG_WARNING, "falling back to default bit-depth\n");
+            api = x265_api_get(0);
+        }
+        return true;
+    }
 
     static void printVersion(x265_param *param, const x265_api* api)
     {
@@ -46,8 +322,8 @@ namespace X265_NS {
         int level = param->logLevel;
 
 #define OPT(value) (value ? "enabled" : "disabled")
-#define H0 printf
-#define H1 if (level >= X265_LOG_DEBUG) printf
+#define H0 std::printf
+#define H1 if (level >= X265_LOG_DEBUG) std::printf
 
         H0("\nSyntax: x265 [options] infile [-o] outfile\n");
         H0("    infile can be YUV or Y4M\n");
@@ -84,7 +360,7 @@ namespace X265_NS {
 #endif
         H0("   --dolby-vision-profile <float|integer> Specifies Dolby Vision profile ID. Currently, only profile 5, profile 8.1 and profile 8.2 are enabled. Specified as '5' or '50'. Default 0 (disabled).\n");
         H0("   --dolby-vision-rpu <filename> File containing Dolby Vision RPU metadata.\n"
-            "                                 If given, x265's Dolby Vision metadata parser will fill the RPU field of input pictures with the metadata read from the file. Default NULL (disabled).\n");
+            "                                 If given, x265's Dolby Vision metadata parser will fill the RPU field of input pictures with the metadata read from the file. Default null (disabled).\n");
         H0("   --nalu-file <filename>        Text file containing SEI messages in the following format : <POC><space><PREFIX><space><NAL UNIT TYPE>/<SEI TYPE><space><SEI Payload>\n");
         H0("-f/--frames <integer>            Maximum number of frames to encode. Default all\n");
         H0("   --seek <integer>              First frame to encode\n");
@@ -456,53 +732,115 @@ namespace X265_NS {
 #undef H0
 #undef H1
         if (level < X265_LOG_DEBUG)
-            printf("\nUse --fullhelp for a full listing (or --log-level full --help)\n");
-        printf("\n\nComplete documentation may be found at http://x265.readthedocs.org/en/default/cli.html\n");
-        exit(1);
+            std::printf("\nUse --fullhelp for a full listing (or --log-level full --help)\n");
+        std::printf("\n\nComplete documentation may be found at http://x265.readthedocs.org/en/default/cli.html\n");
     }
 
-    void CLIOptions::destroy()
+#if ENABLE_LIBVMAF
+    static bool closeVmafInputFile(x265_param* param, FILE*& file, const char* description, const char* context)
     {
+        if (!file)
+            return false;
+
+        bool closeFailed = std::ferror(file) != 0;
+        if (std::fclose(file))
+            closeFailed = true;
+        if (closeFailed)
+            x265_log(param, X265_LOG_WARNING, "Unable to close VMAF %s file %s\n", description, context);
+        file = nullptr;
+        return closeFailed;
+    }
+#endif
+
+    bool CLIOptions::destroy()
+    {
+        bool closeFailed = false;
         if(argString && argString != orgArgv)
-            free(argString);
+            std::free(argString);
         if (stringPool)
-            free(stringPool);
+            std::free(stringPool);
 
         for (int i = 0; i < MAX_VIEWS; i++)
         {
             if (input[i])
                 input[i]->release();
-            input[i] = NULL;
+            input[i] = nullptr;
         }
         for (int i = 0; i < MAX_LAYERS; i++)
         {
             if (recon[i])
+            {
+                closeFailed |= !recon[i]->finalize();
                 recon[i]->release();
-            recon[i] = NULL;
+            }
+            recon[i] = nullptr;
         }
         if (qpfile)
-            fclose(qpfile);
-        qpfile = NULL;
+        {
+            bool fileCloseFailed = std::ferror(qpfile) != 0;
+            if (std::fclose(qpfile))
+                fileCloseFailed = true;
+            closeFailed |= fileCloseFailed;
+        }
+        qpfile = nullptr;
         if (zoneFile)
-            fclose(zoneFile);
-        zoneFile = NULL;
+        {
+            bool fileCloseFailed = std::ferror(zoneFile) != 0;
+            if (std::fclose(zoneFile))
+                fileCloseFailed = true;
+            closeFailed |= fileCloseFailed;
+        }
+        zoneFile = nullptr;
         if (dolbyVisionRpu)
-            fclose(dolbyVisionRpu);
-        dolbyVisionRpu = NULL;
+        {
+            bool fileCloseFailed = std::ferror(dolbyVisionRpu) != 0;
+            if (std::fclose(dolbyVisionRpu))
+                fileCloseFailed = true;
+            closeFailed |= fileCloseFailed;
+        }
+        dolbyVisionRpu = nullptr;
+        if (scenecutAwareQpConfig)
+        {
+            bool fileCloseFailed = std::ferror(scenecutAwareQpConfig) != 0;
+            if (std::fclose(scenecutAwareQpConfig))
+                fileCloseFailed = true;
+            closeFailed |= fileCloseFailed;
+        }
+        scenecutAwareQpConfig = nullptr;
 #if ENABLE_MULTIVIEW
         if (multiViewConfig)
-            fclose(multiViewConfig);
+        {
+            bool fileCloseFailed = std::ferror(multiViewConfig) != 0;
+            if (std::fclose(multiViewConfig))
+                fileCloseFailed = true;
+            closeFailed |= fileCloseFailed;
+        }
+        multiViewConfig = nullptr;
+#endif
+#if ENABLE_LIBVMAF
+        if (vmafData)
+        {
+            closeFailed |= closeVmafInputFile(param, vmafData->reference_file, "reference", "during CLI cleanup");
+            closeFailed |= closeVmafInputFile(param, vmafData->distorted_file, "distorted", "during CLI cleanup");
+            x265_free(vmafData);
+            vmafData = nullptr;
+        }
 #endif
         if (output)
+        {
+            output->closeFile(0, 0);
             output->release();
-        output = NULL;
+        }
+        output = nullptr;
         for (size_t i = 0; i < filters.size(); i++)
             filters[i]->release();
         filters.clear();
+        if (closeFailed)
+            x265_log(param, X265_LOG_WARNING, "CLI file handle cleanup reported a close failure\n");
         if (param && api)
         {
             api->param_free(param);
-            param = NULL;
+            param = nullptr;
         }
         // Free dynamically allocated input filenames
         for (int i = 0; i < MAX_VIEWS; i++)
@@ -510,9 +848,10 @@ namespace X265_NS {
             if (inputfn[i])
             {
                 X265_FREE(inputfn[i]);
-                inputfn[i] = NULL;
+                inputfn[i] = nullptr;
             }
         }
+        return closeFailed;
    }
 
     void CLIOptions::printStatus(uint32_t frameNum)
@@ -535,6 +874,7 @@ namespace X265_NS {
         int eta = 0, eta_hh = 0, eta_mm = 0, eta_ss = 0, fps_prec, bitrate_prec, file_prec, estsz_prec = 0;
         double percentage = 0., estsz = 0., file_num, estsz_num = 0.;
         const char *file_unit, *estsz_unit = "";
+        uint32_t progressFrames = (param->chunkEnd ? param->chunkEnd : param->totalFrames);
         fps_prec = fps > 999.5 ? 0 : fps > 99.5 ? 1 : fps > 9.95 ? 2 : 3;
         bitrate_prec = bitrate > 9999.5 ? 0 : bitrate > 999.5 ? 1 : 2;
         file_prec = totalbytes < 1048576000 ? 2 : totalbytes < 10485760000 ? 1 : 0;
@@ -543,7 +883,7 @@ namespace X265_NS {
         if (framesToBeEncoded)
         {
             eta = (int)(elapsed * (framesToBeEncoded - frameNum) / ((int64_t)frameNum * 1000000));
-            percentage = 100. * frameNum / (param->chunkEnd ? param->chunkEnd : param->totalFrames);
+            percentage = progressFrames ? 100. * frameNum / progressFrames : 0.;
             eta_hh = eta / 3600;
             eta_mm = (eta / 60) % 60;
             eta_ss = eta % 60;
@@ -551,32 +891,32 @@ namespace X265_NS {
             estsz_prec = estsz < 1024000 ? 2 : estsz < 10240000 ? 1 : 0;
             estsz_num = estsz < 1024 ? estsz : estsz / 1024;
             estsz_unit = estsz < 1024 ? "K" : "M";
-            snprintf(buf, sizeof(buf), "x265 [%.1f%%] %d/%d frames, %.*f fps, %.*f kb/s, %.*f %sB, eta %d:%02d:%02d, est.size %.*f %sB",
-                percentage, frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
+            std::snprintf(buf, sizeof(buf), "x265 [%.1f%%] %d/%d frames, %.*f fps, %.*f kb/s, %.*f %sB, eta %d:%02d:%02d, est.size %.*f %sB",
+                percentage, frameNum, progressFrames, fps_prec, fps, bitrate_prec, bitrate,
                 file_prec, file_num, file_unit,
                 eta_hh, eta_mm, eta_ss,
                 estsz_prec, estsz_num, estsz_unit);
         }
         else
-            snprintf(buf, sizeof(buf), "x265 %d frames: %.*f fps, %.*f kb/s, %.*f %sB",
+            std::snprintf(buf, sizeof(buf), "x265 %d frames: %.*f fps, %.*f kb/s, %.*f %sB",
                 frameNum, fps_prec, fps, bitrate_prec, bitrate,
                 file_prec, file_num, file_unit);
 
         if (updateConsole)
         {
             if (param->bStylish && framesToBeEncoded)
-                fprintf(stderr, "\rx265 [%5.1f%%] %d/%d %.*f fps %.*f kb/s eta %d:%02d:%02d   ",
-                    percentage, frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
+                std::fprintf(stderr, "\rx265 [%5.1f%%] %d/%d %.*f fps %.*f kb/s eta %d:%02d:%02d   ",
+                    percentage, frameNum, progressFrames, fps_prec, fps, bitrate_prec, bitrate,
                     eta_hh, eta_mm, eta_ss);
             else
-                fprintf(stderr, "%s       \r", buf + 5);
+                std::fprintf(stderr, "%s       \r", buf + 5);
 #if _WIN32
             if (GetFileType(GetStdHandle(STD_ERROR_HANDLE)) == FILE_TYPE_CHAR)
                 SetConsoleTitle(buf);
 #else
             SetConsoleTitle(buf);
 #endif
-            fflush(stderr);
+            std::fflush(stderr);
             prevUpdateTime = time;
         }
 
@@ -585,68 +925,55 @@ namespace X265_NS {
             FILE *progressfp = x265_fopen(param->pgfn, "wb");
             if (progressfp)
             {
-                fprintf(progressfp,
+                bool wroteProgress = std::fprintf(progressfp,
                     "{\"frame\":%u,\"frames\":%u,\"fps\":%.*f,\"bitrate\":%.*f,\"size_bytes\":%.0f,\"progress\":%.4f,\"eta_seconds\":%d}\n",
-                    frameNum, (param->chunkEnd ? param->chunkEnd : param->totalFrames), fps_prec, fps, bitrate_prec, bitrate,
-                    (double)totalbytes, framesToBeEncoded ? percentage / 100.0 : 0.0, framesToBeEncoded ? eta : 0);
-                fclose(progressfp);
+                    frameNum, progressFrames, fps_prec, fps, bitrate_prec, bitrate,
+                    (double)totalbytes, framesToBeEncoded ? percentage / 100.0 : 0.0, framesToBeEncoded ? eta : 0) >= 0;
+                bool closeFailed = std::ferror(progressfp) != 0;
+                if (std::fclose(progressfp))
+                    closeFailed = true;
+                if (closeFailed)
+                    wroteProgress = false;
+                if (wroteProgress)
+                    prevUpdateTimeFile = time;
             }
-            prevUpdateTimeFile = time;
+            else
+            {
+                x265_log_file(param, X265_LOG_WARNING, "unable to open progress report file \"%s\"\n", param->pgfn);
+                prevUpdateTimeFile = time;
+            }
         }
     }
 
     bool CLIOptions::parseZoneParam(int argc, char **argv, x265_param* globalParam, int zonefileCount)
     {
         bool bError = false;
-        int bShowHelp = false;
-        int outputBitDepth = 0;
-        const char *profile = NULL;
+        x265_param* zoneParam = globalParam->rc.zones[zonefileCount].zoneParam;
 
-        /* Presets are applied before all other options. */
-        for (optind = 0;;)
+        if (!prepareCliApiFromOptions(argc, argv, api))
         {
-            int c = getopt_long(argc, argv, short_options, long_options, NULL);
-            if (c == -1)
-                break;
-            else if (c == 'D')
-                outputBitDepth = atoi(optarg);
-            else if (c == 'P')
-                profile = optarg;
-            else if (c == '?')
-                bShowHelp = true;
-        }
-
-        if (!outputBitDepth && profile)
-        {
-            /* try to derive the output bit depth from the requested profile */
-            if (strstr(profile, "10"))
-                outputBitDepth = 10;
-            else if (strstr(profile, "12"))
-                outputBitDepth = 12;
-            else
-                outputBitDepth = 8;
-        }
-
-        api = x265_api_get(outputBitDepth);
-        if (!api)
-        {
-            x265_log(NULL, X265_LOG_WARNING, "falling back to default bit-depth\n");
-            api = x265_api_get(0);
-        }
-
-        if (bShowHelp)
-        {
-            printVersion(globalParam, api);
-            showHelp(globalParam);
-        }
-
-        if (!globalParam->rc.zones[zonefileCount].zoneParam)
-        {
-            x265_log(NULL, X265_LOG_ERROR, "param alloc failed\n");
+            x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", "output-depth", optarg);
             return true;
         }
 
-        memcpy(globalParam->rc.zones[zonefileCount].zoneParam, globalParam, sizeof(x265_param));
+        if (!zoneParam)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "param alloc failed\n");
+            return true;
+        }
+
+#ifdef SVT_HEVC
+        void* zoneSvtHevcParam = zoneParam->svtHevcParam;
+#endif
+        std::memcpy(zoneParam, globalParam, sizeof(x265_param));
+#ifdef SVT_HEVC
+        zoneParam->svtHevcParam = zoneSvtHevcParam;
+#endif
+        finalizeZoneParamCopy(zoneParam, globalParam);
+#ifdef SVT_HEVC
+        if (globalParam->svtHevcParam && !zoneParam->svtHevcParam)
+            return true;
+#endif
 
         if (zonefileCount == 0)
             globalParam->rc.zones[zonefileCount].keyframeMax = globalParam->keyframeMax;
@@ -657,6 +984,8 @@ namespace X265_NS {
             int c = getopt_long(argc, argv, short_options, long_options, &long_options_index);
             if (c == -1)
                 break;
+            if (c == '?')
+                return true;
 
             if (long_options_index < 0 && c > 0)
             {
@@ -673,29 +1002,29 @@ namespace X265_NS {
                 {
                     /* getopt_long might have already printed an error message */
                     if (c != 63)
-                        x265_log(NULL, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
+                        x265_log(nullptr, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
                     return true;
                 }
             }
             if (long_options_index < 0)
             {
-                x265_log(NULL, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
+                x265_log(nullptr, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
                 return true;
             }
 
-            bError |= !!api->zone_param_parse(globalParam->rc.zones[zonefileCount].zoneParam, long_options[long_options_index].name, optarg);
+            bError |= api->zone_param_parse(zoneParam, long_options[long_options_index].name, optarg) != 0;
 
             if (bError)
             {
                 const char *name = long_options_index > 0 ? long_options[long_options_index].name : argv[optind - 2];
-                x265_log(NULL, X265_LOG_ERROR, "invalid argument: %s = %s\n", name, optarg);
+                x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", name, optarg);
                 return true;
             }
         }
 
         if (optind < argc)
         {
-            x265_log(param, X265_LOG_WARNING, "extra unused command arguments given <%s>\n", argv[optind]);
+            x265_log(nullptr, X265_LOG_ERROR, "extra unused zone file arguments given <%s>\n", argv[optind]);
             return true;
         }
         return false;
@@ -703,9 +1032,10 @@ namespace X265_NS {
 
     bool CLIOptions::parse(int argc, char **argv)
     {
+        parseExitCode = -1;
         if (argc <= 1)
         {
-            x265_log(NULL, X265_LOG_ERROR, "No input file. Run x265 --help for a list of options.\n");
+            x265_log(nullptr, X265_LOG_ERROR, "No input file. Run x265 --help for a list of options.\n");
             return true;
         }
 
@@ -713,17 +1043,23 @@ namespace X265_NS {
         int bShowHelp = false;
         int inputBitDepth = 8;
         int outputBitDepth = 0;
+        const char* explicitOutputDepthArg = nullptr;
         int reconFileBitDepth = 0;
         for (int view = 0; view < MAX_VIEWS; view++)
         {
             inputfn[view] = X265_MALLOC(char, sizeof(char) * 1024);
-            memset(inputfn[view], 0, sizeof(char) * 1024);
+            if (!inputfn[view])
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate input filename buffer\n");
+                return true;
+            }
+            std::fill_n(inputfn[view], 1024, char(0));
         }
-        const char* reconfn[MAX_LAYERS] = { NULL };
-        const char *outputfn = NULL;
-        const char *preset = NULL;
-        const char *tune = NULL;
-        const char *profile = NULL;
+        const char* reconfn[MAX_LAYERS] = { nullptr };
+        const char *outputfn = nullptr;
+        const char *preset = nullptr;
+        const char *tune = nullptr;
+        const char *profile = nullptr;
         int svtEnabled = 0;
         argCnt = argc;
 
@@ -739,21 +1075,36 @@ namespace X265_NS {
             else if (c == 't')
                 tune = optarg;
             else if (c == 'D')
-                outputBitDepth = atoi(optarg);
+            {
+                int parsedOutputBitDepth = 0;
+                bool bOutputBitDepthError = !parseCliIntOptarg(optarg, parsedOutputBitDepth) ||
+                                            !isRecognizedOutputBitDepth(parsedOutputBitDepth);
+                bError |= bOutputBitDepthError;
+                if (!bOutputBitDepthError)
+                    outputBitDepth = parsedOutputBitDepth;
+                explicitOutputDepthArg = optarg;
+            }
             else if (c == 'P')
                 profile = optarg;
             else if (c == '?')
                 bShowHelp = true;
-            else if (!c && !strcmp(long_options[optionsIndex].name, "svt"))
+            else if (!c && !std::strcmp(long_options[optionsIndex].name, "svt"))
                 svtEnabled = 1;
+        }
+
+        if (bError)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", "output-depth",
+                     explicitOutputDepthArg ? explicitOutputDepthArg : "(null)");
+            return true;
         }
 
         if (!outputBitDepth && profile)
         {
             /* try to derive the output bit depth from the requested profile */
-            if (strstr(profile, "10"))
+            if (std::strstr(profile, "10"))
                 outputBitDepth = 10;
-            else if (strstr(profile, "12"))
+            else if (std::strstr(profile, "12"))
                 outputBitDepth = 12;
             else
                 outputBitDepth = 8;
@@ -762,39 +1113,54 @@ namespace X265_NS {
         api = x265_api_get(outputBitDepth);
         if (!api)
         {
-            x265_log(NULL, X265_LOG_WARNING, "falling back to default bit-depth\n");
+            if (explicitOutputDepthArg)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", "output-depth",
+                         explicitOutputDepthArg);
+                return true;
+            }
+            x265_log(nullptr, X265_LOG_WARNING, "falling back to default bit-depth\n");
             api = x265_api_get(0);
         }
 
         param = api->param_alloc();
         if (!param)
         {
-            x265_log(NULL, X265_LOG_ERROR, "param alloc failed\n");
+            x265_log(nullptr, X265_LOG_ERROR, "param alloc failed\n");
             return true;
         }
 #if ENABLE_LIBVMAF
         vmafData = (x265_vmaf_data*)x265_malloc(sizeof(x265_vmaf_data));
         if (!vmafData)
         {
-            x265_log(NULL, X265_LOG_ERROR, "vmaf data alloc failed\n");
+            x265_log(nullptr, X265_LOG_ERROR, "vmaf data alloc failed\n");
             return true;
         }
+        *vmafData = x265_vmaf_data();
 #endif
 
         if (api->param_default_preset(param, preset, tune) < 0)
         {
-            x265_log(NULL, X265_LOG_ERROR, "preset or tune unrecognized\n");
+            x265_log(nullptr, X265_LOG_ERROR, "preset or tune unrecognized\n");
             return true;
         }
 
         if (bShowHelp)
         {
             printVersion(param, api);
+            parseExitCode = 1;
             showHelp(param);
+            return false;
         }
 
         //Set enable SVT-HEVC encoder first if found in the command line
-        if (svtEnabled) api->param_parse(param, "svt", NULL);
+        if (svtEnabled)
+        {
+            if (api->param_parse(param, "svt", nullptr))
+                return true;
+            if (preset && api->param_parse(param, "preset", preset))
+                return true;
+        }
 
         for (optind = 0;;)
         {
@@ -807,13 +1173,15 @@ namespace X265_NS {
             {
             case 'h':
                 printVersion(param, api);
+                parseExitCode = 0;
                 showHelp(param);
-                break;
+                return false;
 
             case 'V':
                 printVersion(param, api);
                 x265_report_simd(param);
-                exit(0);
+                parseExitCode = 0;
+                return false;
 
             default:
                 if (long_options_index < 0 && c > 0)
@@ -831,33 +1199,65 @@ namespace X265_NS {
                     {
                         /* getopt_long might have already printed an error message */
                         if (c != 63)
-                            x265_log(NULL, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
+                            x265_log(nullptr, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
                         return true;
                     }
                 }
                 if (long_options_index < 0)
                 {
-                    x265_log(NULL, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
+                    x265_log(nullptr, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
                     return true;
                 }
 #define OPT(longname) \
-                                            else if (!strcmp(long_options[long_options_index].name, longname))
+                                            else if (!std::strcmp(long_options[long_options_index].name, longname))
 #define OPT2(name1, name2) \
-                                            else if (!strcmp(long_options[long_options_index].name, name1) || \
-             !strcmp(long_options[long_options_index].name, name2))
+                                            else if (!std::strcmp(long_options[long_options_index].name, name1) || \
+             !std::strcmp(long_options[long_options_index].name, name2))
 
                 if (0);
-                OPT("seek") this->seek = (uint32_t)x265_atoi(optarg, bError);
-                OPT("frames") this->framesToBeEncoded = (uint32_t)x265_atoi(optarg, bError);
+                OPT("seek")
+                {
+                    int parsedSeek = 0;
+                    if (!parseCliIntOptarg(optarg, parsedSeek))
+                        bError = true;
+                    else
+                        this->seek = (uint32_t)parsedSeek;
+                }
+                OPT("frames")
+                {
+                    int parsedFramesToBeEncoded = 0;
+                    if (!parseCliIntOptarg(optarg, parsedFramesToBeEncoded))
+                        bError = true;
+                    else
+                        this->framesToBeEncoded = (uint32_t)parsedFramesToBeEncoded;
+                }
                 OPT("no-progress") this->bProgress = false;
                 OPT("stylish") this->param->bStylish = true;
                 OPT("output") outputfn = optarg;
-                OPT("input") strncpy(inputfn[0] , optarg, 1024);
+                OPT("input")
+                {
+                    if (!copyCLIString(inputfn[0], 1024, optarg, "Input filename"))
+                        return true;
+                }
                 OPT("recon") reconfn[0] = optarg;
-                OPT("input-depth") inputBitDepth = (uint32_t)x265_atoi(optarg, bError);
+                OPT("input-depth")
+                {
+                    int parsedInputBitDepth = 0;
+                    if (!parseCliIntOptarg(optarg, parsedInputBitDepth))
+                        bError = true;
+                    else
+                        inputBitDepth = (uint32_t)parsedInputBitDepth;
+                }
                 OPT("vf") this->vf = optarg;
                 OPT("dither") this->bDither = true;
-                OPT("recon-depth") reconFileBitDepth = (uint32_t)x265_atoi(optarg, bError);
+                OPT("recon-depth")
+                {
+                    int parsedReconFileBitDepth = 0;
+                    if (!parseCliIntOptarg(optarg, parsedReconFileBitDepth))
+                        bError = true;
+                    else
+                        reconFileBitDepth = (uint32_t)parsedReconFileBitDepth;
+                }
                 OPT("y4m") this->bForceY4m = true;
                 OPT("profile") /* handled above */;
                 OPT("preset")  /* handled above */;
@@ -869,16 +1269,30 @@ namespace X265_NS {
                 {
                     this->qpfile = x265_fopen(optarg, "rb");
                     if (!this->qpfile)
+                    {
                         x265_log_file(param, X265_LOG_ERROR, "%s qpfile not found or error in opening qp file\n", optarg);
+                        return true;
+                    }
+                    else if (std::ferror(this->qpfile))
+                    {
+                        bool closeFailed = std::ferror(this->qpfile) != 0;
+                        if (std::fclose(this->qpfile))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log(param, X265_LOG_WARNING, "Unable to close qpfile after open failure\n");
+                        this->qpfile = nullptr;
+                        x265_log_file(param, X265_LOG_ERROR, "%s qpfile not found or error in opening qp file\n", optarg);
+                        return true;
+                    }
                 }
                 OPT("pme")
                 {
-                    x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \n", optarg);
+                    x265_log_file(param, X265_LOG_ERROR, " pme feature is deprecated from release 4.1 \n");
                     return true;
                 }
                 OPT("pmode")
                 {
-                    x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \n", optarg);
+                    x265_log_file(param, X265_LOG_ERROR, " pmode feature is deprecated from release 4.1 \n");
                     return true;
                 }
                 OPT("dolby-vision-rpu")
@@ -889,41 +1303,95 @@ namespace X265_NS {
                         x265_log_file(param, X265_LOG_ERROR, "Dolby Vision RPU metadata file %s not found or error in opening file\n", optarg);
                         return true;
                     }
+                    else if (std::ferror(this->dolbyVisionRpu))
+                    {
+                        bool closeFailed = std::ferror(this->dolbyVisionRpu) != 0;
+                        if (std::fclose(this->dolbyVisionRpu))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log(param, X265_LOG_WARNING, "Unable to close Dolby Vision RPU metadata file after open failure\n");
+                        this->dolbyVisionRpu = nullptr;
+                        x265_log_file(param, X265_LOG_ERROR, "Dolby Vision RPU metadata file %s not found or error in opening file\n", optarg);
+                        return true;
+                    }
                 }
                 OPT("scenecut-qp-config")
                 {
                     this->scenecutAwareQpConfig = x265_fopen(optarg, "rb");
                     if (!this->scenecutAwareQpConfig)
+                    {
                         x265_log_file(param, X265_LOG_ERROR, "%s scenecut aware qp config file not found or error in opening config file\n", optarg);
+                        return true;
+                    }
+                    else if (std::ferror(this->scenecutAwareQpConfig))
+                    {
+                        bool closeFailed = std::ferror(this->scenecutAwareQpConfig) != 0;
+                        if (std::fclose(this->scenecutAwareQpConfig))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log(param, X265_LOG_WARNING, "Unable to close scenecut aware qp config file after open failure\n");
+                        this->scenecutAwareQpConfig = nullptr;
+                        x265_log_file(param, X265_LOG_ERROR, "%s scenecut aware qp config file not found or error in opening config file\n", optarg);
+                        return true;
+                    }
                 }
 #if ENABLE_MULTIVIEW
                 OPT("multiview-config")
                 {
                     this->multiViewConfig = x265_fopen(optarg, "rb");
                     if (!this->multiViewConfig)
+                    {
                         x265_log_file(param, X265_LOG_ERROR, "%s Multiview config file not found or error in opening config file\n", optarg);
+                        return true;
+                    }
+                    else if (std::ferror(this->multiViewConfig))
+                    {
+                        bool closeFailed = std::ferror(this->multiViewConfig) != 0;
+                        if (std::fclose(this->multiViewConfig))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log(param, X265_LOG_WARNING, "Unable to close multiview config file after open failure\n");
+                        this->multiViewConfig = nullptr;
+                        x265_log_file(param, X265_LOG_ERROR, "%s Multiview config file not found or error in opening config file\n", optarg);
+                        return true;
+                    }
                 }
 #endif
                 OPT("zonefile")
                 {
                     this->zoneFile = x265_fopen(optarg, "rb");
                     if (!this->zoneFile)
+                    {
                         x265_log_file(param, X265_LOG_ERROR, "%s zone file not found or error in opening zone file\n", optarg);
+                        return true;
+                    }
+                    else if (std::ferror(this->zoneFile))
+                    {
+                        bool closeFailed = std::ferror(this->zoneFile) != 0;
+                        if (std::fclose(this->zoneFile))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log(param, X265_LOG_WARNING, "Unable to close zone file after open failure\n");
+                        this->zoneFile = nullptr;
+                        x265_log_file(param, X265_LOG_ERROR, "%s zone file not found or error in opening zone file\n", optarg);
+                        return true;
+                    }
                 }
                 OPT("no-zonefile-rc-init") this->param->bNoResetZoneConfig = true;
                 OPT("fullhelp")
                 {
                     param->logLevel = X265_LOG_FULL;
                     printVersion(param, api);
+                    parseExitCode = 0;
                     showHelp(param);
-                    break;
+                    return false;
                 }
                 else
-                    bError |= !!api->param_parse(param, long_options[long_options_index].name, optarg);
+                    bError |= api->param_parse(param, long_options[long_options_index].name, optarg) != 0;
                 if (bError)
                 {
                     const char *name = long_options_index > 0 ? long_options[long_options_index].name : argv[optind - 2];
-                    x265_log(NULL, X265_LOG_ERROR, "invalid argument: %s = %s\n", name, optarg);
+                    x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", name, optarg);
                     return true;
                 }
 #undef OPT
@@ -932,12 +1400,18 @@ namespace X265_NS {
 
 #if !ENABLE_MULTIVIEW
             if (optind < argc && !(*inputfn[0]))
-                strncpy(inputfn[0], argv[optind++], 1024);
+            {
+                if (!copyCLIString(inputfn[0], 1024, argv[optind++], "Input filename"))
+                    return true;
+            }
 #else
         if (!this->multiViewConfig)
         {
             if (optind < argc && !(*inputfn[0]))
-                strncpy(inputfn[0], argv[optind++], 1024);
+            {
+                if (!copyCLIString(inputfn[0], 1024, argv[optind++], "Input filename"))
+                    return true;
+            }
         }
 #endif
         if (optind < argc && !outputfn)
@@ -946,13 +1420,6 @@ namespace X265_NS {
         {
             x265_log(param, X265_LOG_WARNING, "extra unused command arguments given <%s>\n", argv[optind]);
             return true;
-        }
-
-        if (argc <= 1)
-        {
-            api->param_default(param);
-            printVersion(param, api);
-            showHelp(param);
         }
 
         if (this->vf)
@@ -967,13 +1434,21 @@ namespace X265_NS {
         {
             if (!this->parseMultiViewConfig(inputfn))
             {
-                x265_log(NULL, X265_LOG_ERROR, "Unable to parse multiview config file \n");
-                fclose(this->multiViewConfig);
-                this->multiViewConfig = NULL;
+                x265_log(nullptr, X265_LOG_ERROR, "Unable to parse multiview config file \n");
+                bool closeFailed = std::ferror(this->multiViewConfig) != 0;
+                if (std::fclose(this->multiViewConfig))
+                    closeFailed = true;
+                if (closeFailed)
+                    x265_log(param, X265_LOG_WARNING, "Unable to close multiview config file after parse failure\n");
+                this->multiViewConfig = nullptr;
+                return true;
             }
         }
 #endif
-        param->numLayers = param->numViews > 1 ? param->numViews : (param->numScalableLayers > 1) ? param->numScalableLayers : 1;
+        int derivedNumLayers = 0;
+        if (!validateViewLayerLimits(param, derivedNumLayers))
+            return true;
+        param->numLayers = derivedNumLayers;
         if (!outputfn)
         {
             x265_log(param, X265_LOG_ERROR, "input or output file not specified, try --help for help\n");
@@ -998,6 +1473,11 @@ namespace X265_NS {
         if (svtEnabled)
         {
             EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+            if (!svtParam)
+            {
+                x265_log(param, X265_LOG_ERROR, "SVT-HEVC encoder: Missing parameter storage\n");
+                return true;
+            }
             param->sourceWidth = svtParam->sourceWidth;
             param->sourceHeight = svtParam->sourceHeight;
             param->fpsNum = svtParam->frameRateNumerator;
@@ -1006,7 +1486,8 @@ namespace X265_NS {
         }
 #endif
         InputFileInfo info[MAX_VIEWS];
-        for (int i = 0; i < param->numViews - !!param->format; i++)
+        const int viewCount = param->format != 0 ? 1 : param->numViews;
+        for (int i = 0; i < viewCount; i++)
         {
             info[i].filename = inputfn[i];
             info[i].depth = inputBitDepth;
@@ -1026,22 +1507,60 @@ namespace X265_NS {
             if (!this->input[i] || this->input[i]->isFail())
             {
                 x265_log_file(param, X265_LOG_ERROR, "unable to open input file <%s>\n", inputfn[i]);
+                for (int releaseIdx = 0; releaseIdx <= i; releaseIdx++)
+                {
+                    if (this->input[releaseIdx])
+                    {
+                        this->input[releaseIdx]->release();
+                        this->input[releaseIdx] = nullptr;
+                    }
+                }
                 return true;
             }
 
             if (info[i].depth < 8 || info[i].depth > 16)
             {
                 x265_log(param, X265_LOG_ERROR, "Input bit depth (%d) must be between 8 and 16\n", inputBitDepth);
+                for (int releaseIdx = 0; releaseIdx <= i; releaseIdx++)
+                {
+                    if (this->input[releaseIdx])
+                    {
+                        this->input[releaseIdx]->release();
+                        this->input[releaseIdx] = nullptr;
+                    }
+                }
                 return true;
             }
         }
 
-            //TODO:Validate info params of both the views to equal values
+        if (viewCount > 1)
+        {
+            for (int i = 1; i < viewCount; i++)
+            {
+                if (info[i].width != info[0].width || info[i].height != info[0].height ||
+                    info[i].csp != info[0].csp || info[i].depth != info[0].depth ||
+                    info[i].fpsNum != info[0].fpsNum || info[i].fpsDenom != info[0].fpsDenom ||
+                    info[i].sarWidth != info[0].sarWidth || info[i].sarHeight != info[0].sarHeight)
+                {
+                    x265_log(param, X265_LOG_ERROR, "Multiview input file <%s> does not match the first view\n", inputfn[i]);
+                    for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+                    {
+                        if (this->input[releaseIdx])
+                        {
+                            this->input[releaseIdx]->release();
+                            this->input[releaseIdx] = nullptr;
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+
         /* Unconditionally accept height/width/csp/bitDepth from file info */
-            param->sourceWidth = info[0].width;
-            param->sourceHeight = info[0].height;
-            param->internalCsp = info[0].csp;
-            param->sourceBitDepth = info[0].depth;
+        param->sourceWidth = info[0].width;
+        param->sourceHeight = info[0].height;
+        param->internalCsp = info[0].csp;
+        param->sourceBitDepth = info[0].depth;
 
         /* Accept fps and sar from file info if not specified by user */
         if (param->fpsDenom == 0 || param->fpsNum == 0)
@@ -1059,6 +1578,11 @@ namespace X265_NS {
         if (svtEnabled)
         {
             EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+            if (!svtParam)
+            {
+                x265_log(param, X265_LOG_ERROR, "SVT-HEVC encoder: Missing parameter storage\n");
+                return true;
+            }
             svtParam->sourceWidth = param->sourceWidth;
             svtParam->sourceHeight = param->sourceHeight;
             svtParam->frameRateNumerator = param->fpsNum;
@@ -1082,46 +1606,99 @@ namespace X265_NS {
         }
 
         if (api->param_apply_profile(param, profile))
+        {
+            for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+            {
+                if (this->input[releaseIdx])
+                {
+                    this->input[releaseIdx]->release();
+                    this->input[releaseIdx] = nullptr;
+                }
+            }
             return true;
+        }
 
         if (param->logLevel >= X265_LOG_INFO || (param->logfn && param->logfLevel >= X265_LOG_INFO))
         {
             char buf[128];
-            int p = snprintf(buf, sizeof(buf), "%dx%d fps %d/%d %sp%d", param->sourceWidth, param->sourceHeight,
+            int p = std::snprintf(buf, sizeof(buf), "%dx%d fps %d/%d %sp%d", param->sourceWidth, param->sourceHeight,
                 param->fpsNum, param->fpsDenom, x265_source_csp_names[param->internalCsp], info[0].depth);
 
             int width, height;
             getParamAspectRatio(param, width, height);
             if (width && height)
-                p += snprintf(buf + p, sizeof(buf) - p, " sar %d:%d", width, height);
+                p += std::snprintf(buf + p, sizeof(buf) - p, " sar %d:%d", width, height);
 
             if (framesToBeEncoded <= 0 || info[0].frameCount <= 0)
-                strcpy(buf + p, " unknown frame count");
+                std::snprintf(buf + p, sizeof(buf) - p, " unknown frame count");
             else
-                snprintf(buf + p, sizeof(buf) - p, " frames %u - %d of %d", this->seek, this->seek + this->framesToBeEncoded - 1, info[0].frameCount);
+                std::snprintf(buf + p, sizeof(buf) - p, " frames %u - %d of %d", this->seek, this->seek + this->framesToBeEncoded - 1, info[0].frameCount);
 
-            for (int view = 0; view < param->numViews - !!param->format; view++)
+            for (int view = 0; view < viewCount; view++)
                 general_log(param, input[view]->getName(), X265_LOG_INFO, "%s\n", buf);
         }
 
-        for (int view = 0; view < param->numViews - !!param->format; view++)
+        for (int view = 0; view < viewCount; view++)
+        {
             this->input[view]->startReader();
+            if (this->input[view]->isFail())
+            {
+                x265_log_file(param, X265_LOG_ERROR, "unable to start input reader for <%s>\n", inputfn[view]);
+                for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+                {
+                    if (this->input[releaseIdx])
+                    {
+                        this->input[releaseIdx]->release();
+                        this->input[releaseIdx] = nullptr;
+                    }
+                }
+                return true;
+            }
+        }
 
         if (reconfn[0])
         {
             if (reconFileBitDepth == 0)
                 reconFileBitDepth = param->internalBitDepth;
+            std::vector<std::string> derivedReconNames;
 #if ENABLE_ALPHA || ENABLE_MULTIVIEW
             if (param->bEnableAlpha || param->numViews > 1)
             {
-                char* temp = new char[strlen(reconfn[0])];
-                strcpy(temp, reconfn[0]);
-                const char* token = strtok(temp, ".");
+                std::string temp = reconfn[0];
+                size_t extensionPos = temp.find_last_of('.');
+                if (extensionPos == 0)
+                {
+                    x265_log(param, X265_LOG_ERROR, "recon file name must include a non-empty base name for alpha or multiview output\n");
+                    for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+                    {
+                        if (this->input[releaseIdx])
+                        {
+                            this->input[releaseIdx]->release();
+                            this->input[releaseIdx] = nullptr;
+                        }
+                    }
+                    return true;
+                }
+                if (extensionPos != std::string::npos)
+                    temp.erase(extensionPos);
+                if (temp.empty())
+                {
+                    x265_log(param, X265_LOG_ERROR, "recon file name must include a non-empty base name for alpha or multiview output\n");
+                    for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+                    {
+                        if (this->input[releaseIdx])
+                        {
+                            this->input[releaseIdx]->release();
+                            this->input[releaseIdx] = nullptr;
+                        }
+                    }
+                    return true;
+                }
+                derivedReconNames.reserve(param->numLayers);
                 for (int view = 0; view < param->numLayers; view++)
                 {
-                    char* buf = new char[strlen(temp) + 7];
-                    snprintf(buf, strlen(temp) + 7, "%s-%d.yuv", token, view);
-                    reconfn[view] = buf;
+                    derivedReconNames.push_back(temp + "-" + std::to_string(view) + ".yuv");
+                    reconfn[view] = derivedReconNames.back().c_str();
                 }
             }
 #endif
@@ -1129,11 +1706,14 @@ namespace X265_NS {
             {
                 this->recon[i] = ReconFile::open(reconfn[i], param->sourceWidth, param->sourceHeight, reconFileBitDepth,
                     param->fpsNum, param->fpsDenom, param->internalCsp, param->sourceBitDepth);
-                if (this->recon[i]->isFail())
+                if (!this->recon[i] || this->recon[i]->isFail())
                 {
                     x265_log(param, X265_LOG_WARNING, "unable to write reconstructed outputs file\n");
-                    this->recon[i]->release();
-                    this->recon[i] = 0;
+                    if (this->recon[i])
+                    {
+                        this->recon[i]->release();
+                        this->recon[i] = 0;
+                    }
                 }
                 else
                     general_log(param, this->recon[i]->getName(), X265_LOG_INFO,
@@ -1146,140 +1726,370 @@ namespace X265_NS {
         if (!reconfn[0])
         {
             x265_log(param, X265_LOG_ERROR, "recon file must be specified to get VMAF score, try --help for help\n");
+            for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+            {
+                if (this->input[releaseIdx])
+                {
+                    this->input[releaseIdx]->release();
+                    this->input[releaseIdx] = nullptr;
+                }
+            }
             return true;
         }
-        const char *str = strrchr(info[0].filename, '.');
+        if (!this->recon[0])
+        {
+            x265_log(param, X265_LOG_ERROR, "recon file must be writable to get VMAF score\n");
+            for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+            {
+                if (this->input[releaseIdx])
+                {
+                    this->input[releaseIdx]->release();
+                    this->input[releaseIdx] = nullptr;
+                }
+            }
+            for (int releaseIdx = 0; releaseIdx < param->numLayers; releaseIdx++)
+            {
+                if (this->recon[releaseIdx])
+                {
+                    this->recon[releaseIdx]->release();
+                    this->recon[releaseIdx] = nullptr;
+                }
+            }
+            return true;
+        }
+        const char *str = std::strrchr(info[0].filename, '.');
 
-        if (!strcmp(str, ".y4m"))
+        if (str && !std::strcmp(str, ".y4m"))
         {
             x265_log(param, X265_LOG_ERROR, "VMAF supports YUV file format only.\n");
+            for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+            {
+                if (this->input[releaseIdx])
+                {
+                    this->input[releaseIdx]->release();
+                    this->input[releaseIdx] = nullptr;
+                }
+            }
+            for (int releaseIdx = 0; releaseIdx < param->numLayers; releaseIdx++)
+            {
+                if (this->recon[releaseIdx])
+                {
+                    this->recon[releaseIdx]->release();
+                    this->recon[releaseIdx] = nullptr;
+                }
+            }
             return true;
         }
         if (param->internalCsp == X265_CSP_I420 || param->internalCsp == X265_CSP_I422 || param->internalCsp == X265_CSP_I444)
         {
             vmafData->reference_file = x265_fopen(inputfn[0], "rb");
             vmafData->distorted_file = x265_fopen(reconfn[0], "rb");
+            if (!vmafData->reference_file || !vmafData->distorted_file)
+            {
+                x265_log(param, X265_LOG_ERROR, "unable to open VMAF input files\n");
+                closeVmafInputFile(param, vmafData->reference_file, "reference", "after open failure");
+                closeVmafInputFile(param, vmafData->distorted_file, "distorted", "after open failure");
+                for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+                {
+                    if (this->input[releaseIdx])
+                    {
+                        this->input[releaseIdx]->release();
+                        this->input[releaseIdx] = nullptr;
+                    }
+                }
+                for (int releaseIdx = 0; releaseIdx < param->numLayers; releaseIdx++)
+                {
+                    if (this->recon[releaseIdx])
+                    {
+                        this->recon[releaseIdx]->release();
+                        this->recon[releaseIdx] = nullptr;
+                    }
+                }
+                return true;
+            }
+            if (!vmafData->reference_file || !vmafData->distorted_file ||
+                ferror(vmafData->reference_file) || ferror(vmafData->distorted_file))
+            {
+                x265_log(param, X265_LOG_ERROR, "unable to open VMAF input files\n");
+                closeVmafInputFile(param, vmafData->reference_file, "reference", "after open failure");
+                closeVmafInputFile(param, vmafData->distorted_file, "distorted", "after open failure");
+                for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+                {
+                    if (this->input[releaseIdx])
+                    {
+                        this->input[releaseIdx]->release();
+                        this->input[releaseIdx] = nullptr;
+                    }
+                }
+                for (int releaseIdx = 0; releaseIdx < param->numLayers; releaseIdx++)
+                {
+                    if (this->recon[releaseIdx])
+                    {
+                        this->recon[releaseIdx]->release();
+                        this->recon[releaseIdx] = nullptr;
+                    }
+                }
+                return true;
+            }
         }
         else
         {
             x265_log(param, X265_LOG_ERROR, "VMAF will support only yuv420p, yu422p, yu444p, yuv420p10le, yuv422p10le, yuv444p10le formats.\n");
+            for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+            {
+                if (this->input[releaseIdx])
+                {
+                    this->input[releaseIdx]->release();
+                    this->input[releaseIdx] = nullptr;
+                }
+            }
+            for (int releaseIdx = 0; releaseIdx < param->numLayers; releaseIdx++)
+            {
+                if (this->recon[releaseIdx])
+                {
+                    this->recon[releaseIdx]->release();
+                    this->recon[releaseIdx] = nullptr;
+                }
+            }
             return true;
         }
 #endif
         this->output = OutputFile::open(outputfn, info[0]);
-        if (this->output->isFail())
+        if (!this->output || this->output->isFail())
         {
             x265_log_file(param, X265_LOG_ERROR, "failed to open output file <%s> for writing\n", outputfn);
+            if (this->output)
+            {
+                this->output->release();
+                this->output = nullptr;
+            }
+#if ENABLE_LIBVMAF
+            closeVmafInputFile(param, vmafData->reference_file, "reference", "after output open failure");
+            closeVmafInputFile(param, vmafData->distorted_file, "distorted", "after output open failure");
+#endif
+            for (int releaseIdx = 0; releaseIdx < viewCount; releaseIdx++)
+            {
+                if (this->input[releaseIdx])
+                {
+                    this->input[releaseIdx]->release();
+                    this->input[releaseIdx] = nullptr;
+                }
+            }
+            for (int releaseIdx = 0; releaseIdx < param->numLayers; releaseIdx++)
+            {
+                if (this->recon[releaseIdx])
+                {
+                    this->recon[releaseIdx]->release();
+                    this->recon[releaseIdx] = nullptr;
+                }
+            }
             return true;
         }
         general_log_file(param, this->output->getName(), X265_LOG_INFO, "output file: %s\n", outputfn);
 
-        for (int view = 0; view < MAX_VIEWS; view++)
-        {
-            if (inputfn[view] != NULL)
-            {
-                X265_FREE(inputfn[view]);
-                inputfn[view] = NULL;
-            }
-        }
         return false;
     }
 
     bool CLIOptions::parseQPFile(x265_picture &pic_org)
     {
-        int32_t num = -1, qp, ret;
+        int32_t num = -1, qp;
         char type;
-        uint32_t filePos;
+        long filePos;
+        char line[CONFIG_LINE_BUFFER_SIZE];
         pic_org.forceqp = 0;
         pic_org.sliceType = X265_TYPE_AUTO;
         while (num < pic_org.poc)
         {
-            filePos = ftell(qpfile);
-            qp = -1;
-            ret = fscanf(qpfile, "%d %c%*[ \t]%d\n", &num, &type, &qp);
-
-            if (num > pic_org.poc || ret == EOF)
+            filePos = std::ftell(qpfile);
+            if (filePos < 0)
             {
-                fseek(qpfile, filePos, SEEK_SET);
+                x265_log(nullptr, X265_LOG_ERROR, "Unable to query qpfile position before parsing frame %d\n", pic_org.poc);
+                return false;
+            }
+            qp = -1;
+            if (!std::fgets(line, sizeof(line), qpfile))
+            {
+                if (std::ferror(qpfile))
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "Unable to read qpfile while parsing frame %d\n", pic_org.poc);
+                    return false;
+                }
                 break;
             }
-            if (num < pic_org.poc && ret >= 2)
+            if (!validateConfigFileLine(qpfile, "QP file", 0, line, sizeof(line)))
+                return false;
+
+            int index = (int)std::strcspn(line, "\r\n");
+            line[index] = '\0';
+
+            if (isQpFileSkippableLine(line))
                 continue;
-            if (ret == 3 && qp >= 0)
-                pic_org.forceqp = qp + 1;
-            if (type == 'I') pic_org.sliceType = X265_TYPE_IDR;
-            else if (type == 'i') pic_org.sliceType = X265_TYPE_I;
-            else if (type == 'K') pic_org.sliceType = param->bOpenGOP ? X265_TYPE_I : X265_TYPE_IDR;
-            else if (type == 'P') pic_org.sliceType = X265_TYPE_P;
-            else if (type == 'B') pic_org.sliceType = X265_TYPE_BREF;
-            else if (type == 'b') pic_org.sliceType = X265_TYPE_B;
-            else ret = 0;
-            if (ret < 2 || qp < -1 || qp > 51)
-                return 0;
+
+            bool hasValidLine = parseQpFileLine(line, num, type, qp);
+
+            if (num > pic_org.poc || !hasValidLine)
+            {
+                if (std::fseek(qpfile, filePos, SEEK_SET))
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "Unable to restore qpfile position for frame %d\n", pic_org.poc);
+                    return false;
+                }
+                break;
+            }
+            if (num < pic_org.poc)
+                continue;
+            int nextForceQp = 0;
+            int nextSliceType = X265_TYPE_AUTO;
+            if (qp >= 0)
+                nextForceQp = qp + 1;
+            if (type == 'I') nextSliceType = X265_TYPE_IDR;
+            else if (type == 'i') nextSliceType = X265_TYPE_I;
+            else if (type == 'K') nextSliceType = param->bOpenGOP ? X265_TYPE_I : X265_TYPE_IDR;
+            else if (type == 'P') nextSliceType = X265_TYPE_P;
+            else if (type == 'B') nextSliceType = X265_TYPE_BREF;
+            else if (type == 'b') nextSliceType = X265_TYPE_B;
+            else
+                return false;
+            if (qp < -1 || qp > QP_MAX_MAX)
+                return false;
+            pic_org.forceqp = nextForceQp;
+            pic_org.sliceType = nextSliceType;
         }
-        return 1;
+        return true;
     }
 
     bool CLIOptions::parseZoneFile()
     {
-        char line[256];
+        char line[CONFIG_LINE_BUFFER_SIZE];
         char* argLine;
-        param->rc.zonefileCount = 0;
+        int zonefileCount = 0;
+        int lineNumber = 0;
 
-        while (fgets(line, sizeof(line), zoneFile))
+        while (std::fgets(line, sizeof(line), zoneFile))
         {
-            if (!((*line == '#') || (strcmp(line, "\r\n") == 0)))
-                param->rc.zonefileCount++;
+            lineNumber++;
+            if (!validateConfigFileLine(zoneFile, "Zone file", lineNumber, line, sizeof(line)))
+                return false;
+            char* entry = line;
+            while (std::isspace((unsigned char)*entry)) entry++;
+            if (!((*entry == '#') || (*entry == '\0') || (std::strcmp(entry, "\r\n") == 0) || (std::strcmp(entry, "\n") == 0)))
+                zonefileCount++;
         }
 
-        rewind(zoneFile);
-        char **args = (char**)alloca(256 * sizeof(char *));
-        param->rc.zones = x265_zone_alloc(param->rc.zonefileCount, 1);;
-        for (int i = 0; i < param->rc.zonefileCount; i++)
+        if (!rewindConfigFile(zoneFile, "Zone file"))
+            return false;
+        if (!zonefileCount)
         {
-            param->rc.zones[i].startFrame = -1;
-            while (fgets(line, sizeof(line), zoneFile))
+            x265_log(nullptr, X265_LOG_ERROR, "Zone file contains no valid entries\n");
+            return false;
+        }
+
+        char **args = (char**)alloca(256 * sizeof(char *));
+        x265_param stagedParam = *param;
+        stagedParam.rc.zonefileCount = zonefileCount;
+        stagedParam.rc.zones = x265_zone_alloc(zonefileCount, 1);
+        if (!stagedParam.rc.zones)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate zone file entries\n");
+            return false;
+        }
+        if (!rewindConfigFile(zoneFile, "Zone file"))
+        {
+            x265_zone_free(&stagedParam);
+            return false;
+        }
+        lineNumber = 0;
+        bool bParseError = false;
+        for (int i = 0; i < zonefileCount; i++)
+        {
+            stagedParam.rc.zones[i].startFrame = -1;
+            while (std::fgets(line, sizeof(line), zoneFile))
             {
-                if (*line == '#' || (strcmp(line, "\r\n") == 0))
+                lineNumber++;
+                if (!validateConfigFileLine(zoneFile, "Zone file", lineNumber, line, sizeof(line)))
+                {
+                    bParseError = true;
+                    break;
+                }
+                char* entry = line;
+                while (std::isspace((unsigned char)*entry)) entry++;
+                if (*entry == '#' || *entry == '\0' || (std::strcmp(entry, "\r\n") == 0) || (std::strcmp(entry, "\n") == 0))
                     continue;
-                int index = (int)strcspn(line, "\r\n");
+                int index = (int)std::strcspn(line, "\r\n");
                 line[index] = '\0';
                 argLine = line;
-                while (isspace((unsigned char)*argLine)) argLine++;
-                char* start = strchr(argLine, ' ');
-                start++;
-                param->rc.zones[i].startFrame = atoi(argLine);
-                int argCount = 0;
-                // Adding a dummy string to avoid file parsing error
-                args[argCount++] = (char *)"x265";
-                char* token = strtok(start, " ");
-                while (token)
+                while (std::isspace((unsigned char)*argLine)) argLine++;
+                char* start = argLine;
+                while (*start && !std::isspace((unsigned char)*start))
+                    start++;
+                if (!*start)
                 {
-                    args[argCount++] = token;
-                    token = strtok(NULL, " ");
+                    x265_log(nullptr, X265_LOG_ERROR, "Missing zone file arguments at line %d\n", lineNumber);
+                    bParseError = true;
+                    break;
                 }
-                args[argCount] = NULL;
-                CLIOptions cliopt;
-                if (cliopt.parseZoneParam(argCount, args, param, i))
+                *start++ = '\0';
+                int32_t startFrame = 0;
+                if (!parseCliInt32Token(argLine, startFrame))
                 {
+                    x265_log(nullptr, X265_LOG_ERROR, "Invalid zone file start frame at line %d\n", lineNumber);
+                    bParseError = true;
+                    break;
+                }
+                stagedParam.rc.zones[i].startFrame = startFrame;
+                while (std::isspace((unsigned char)*start)) start++;
+                if (!*start)
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "Missing zone file arguments at line %d\n", lineNumber);
+                    bParseError = true;
+                    break;
+                }
+                int argCount = 0;
+                if (!prepareConfigSubparseArgs(start, args, 256, argCount, "Zone file entry", lineNumber))
+                {
+                    bParseError = true;
+                    break;
+                }
+                CLIOptions cliopt;
+                if (cliopt.parseZoneParam(argCount, args, &stagedParam, i))
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "Invalid zone file arguments at line %d\n", lineNumber);
                     cliopt.destroy();
-                    if (cliopt.api)
-                        cliopt.api->param_free(cliopt.param);
-                    exit(1);
+                    bParseError = true;
+                    break;
                 }
                 break;
             }
+            if (bParseError)
+                break;
         }
-        return 1;
+        if (bParseError)
+        {
+            x265_zone_free(&stagedParam);
+            return false;
+        }
+        param->rc.zonefileCount = zonefileCount;
+        param->rc.zones = stagedParam.rc.zones;
+        stagedParam.rc.zones = nullptr;
+        stagedParam.rc.zonefileCount = 0;
+        return true;
     }
 
     /* Parse the RPU file and extract the RPU corresponding to the current picture
     * and fill the rpu field of the input picture */
     int CLIOptions::rpuParser(x265_picture * pic)
     {
+        if (!pic || !pic->rpu.payload)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Dolby Vision RPU parser requires a preallocated payload buffer\n");
+            return 1;
+        }
+
         uint8_t byteVal;
+        uint8_t stagedPayload[1024];
         uint32_t code = 0;
         int bytesRead = 0;
+        int stagedPayloadSize = 0;
         pic->rpu.payloadSize = 0;
 
         if (!pic->pts)
@@ -1287,9 +2097,14 @@ namespace X265_NS {
             while (bytesRead++ < 4 && fread(&byteVal, sizeof(uint8_t), 1, dolbyVisionRpu))
                 code = (code << 8) | byteVal;
 
+            if (ferror(dolbyVisionRpu))
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Unable to read Dolby Vision RPU data for POC %d\n", pic->pts);
+                return 1;
+            }
             if (code != START_CODE)
             {
-                x265_log(NULL, X265_LOG_ERROR, "Invalid Dolby Vision RPU startcode in POC %d\n", pic->pts);
+                x265_log(nullptr, X265_LOG_ERROR, "Invalid Dolby Vision RPU startcode in POC %d\n", pic->pts);
                 return 1;
             }
         }
@@ -1302,105 +2117,129 @@ namespace X265_NS {
                 continue;
             if (bytesRead >= 1024)
             {
-                x265_log(NULL, X265_LOG_ERROR, "Invalid Dolby Vision RPU size in POC %d\n", pic->pts);
+                x265_log(nullptr, X265_LOG_ERROR, "Invalid Dolby Vision RPU size in POC %d\n", pic->pts);
                 return 1;
             }
 
             if (code != START_CODE)
-                pic->rpu.payload[pic->rpu.payloadSize++] = (code >> (3 * 8)) & 0xFF;
+                stagedPayload[stagedPayloadSize++] = (code >> (3 * 8)) & 0xFF;
             else
+            {
+                if (!stagedPayloadSize)
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "Invalid Dolby Vision RPU size in POC %d\n", pic->pts);
+                    return 1;
+                }
+                std::memcpy(pic->rpu.payload, stagedPayload, stagedPayloadSize);
+                pic->rpu.payloadSize = stagedPayloadSize;
                 return 0;
+            }
         }
 
-        int ShiftBytes = START_CODE_BYTES - (bytesRead - pic->rpu.payloadSize);
-        int bytesLeft = bytesRead - pic->rpu.payloadSize;
+        if (ferror(dolbyVisionRpu))
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to read Dolby Vision RPU data for POC %d\n", pic->pts);
+            return 1;
+        }
+        int bytesLeft = bytesRead - stagedPayloadSize;
+        if (!bytesLeft && !stagedPayloadSize)
+        {
+            if (!pic->pts && code == START_CODE)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Invalid Dolby Vision RPU size in POC %d\n", pic->pts);
+                return 1;
+            }
+            x265_log(nullptr, X265_LOG_WARNING, "Dolby Vision RPU not found for POC %d\n", pic->pts);
+            return 0;
+        }
+        int ShiftBytes = START_CODE_BYTES - bytesLeft;
+        if (stagedPayloadSize + bytesLeft > (int)sizeof(stagedPayload))
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Invalid Dolby Vision RPU size in POC %d\n", pic->pts);
+            return 1;
+        }
         code = (code << ShiftBytes * 8);
         for (int i = 0; i < bytesLeft; i++)
         {
-            pic->rpu.payload[pic->rpu.payloadSize++] = (code >> (3 * 8)) & 0xFF;
+            stagedPayload[stagedPayloadSize++] = (code >> (3 * 8)) & 0xFF;
             code = (code << 8);
         }
-        if (!pic->rpu.payloadSize)
-            x265_log(NULL, X265_LOG_WARNING, "Dolby Vision RPU not found for POC %d\n", pic->pts);
+        std::memcpy(pic->rpu.payload, stagedPayload, stagedPayloadSize);
+        pic->rpu.payloadSize = stagedPayloadSize;
         return 0;
     }
 
     bool CLIOptions::parseScenecutAwareQpConfig()
     {
-        char line[256];
+        char line[CONFIG_LINE_BUFFER_SIZE];
         char* argLine;
-        rewind(scenecutAwareQpConfig);
-        while (fgets(line, sizeof(line), scenecutAwareQpConfig))
+        x265_param stagedParam = *param;
+        int lineNumber = 0;
+        bool foundConfig = false;
+        if (!rewindConfigFile(scenecutAwareQpConfig, "Scenecut-aware QP config"))
+            return false;
+        while (std::fgets(line, sizeof(line), scenecutAwareQpConfig))
         {
-            if (*line == '#' || (strcmp(line, "\r\n") == 0))
+            lineNumber++;
+            if (!validateConfigFileLine(scenecutAwareQpConfig, "Scenecut-aware QP config", lineNumber, line, sizeof(line)))
+                return false;
+            char* entry = line;
+            while (std::isspace((unsigned char)*entry)) entry++;
+            if (*entry == '#' || *entry == '\0' || (std::strcmp(entry, "\r\n") == 0) || (std::strcmp(entry, "\n") == 0))
                 continue;
-            int index = (int)strcspn(line, "\r\n");
+            if (foundConfig)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Scenecut-aware QP config supports only one entry (extra entry at line %d)\n", lineNumber);
+                return false;
+            }
+            int index = (int)std::strcspn(line, "\r\n");
             line[index] = '\0';
             argLine = line;
-            while (isspace((unsigned char)*argLine)) argLine++;
-            char* start = strchr(argLine, '-');
+            while (std::isspace((unsigned char)*argLine)) argLine++;
+            char* start = std::strchr(argLine, '-');
+            if (!start)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Missing scenecut-aware QP config arguments at line %d\n", lineNumber);
+                return false;
+            }
+            foundConfig = true;
+            char **args = (char**)std::malloc(256 * sizeof(char *));
+            if (!args)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate scenecut-aware QP config arguments\n");
+                return false;
+            }
             int argCount = 0;
-            char **args = (char**)malloc(256 * sizeof(char *));
-            //Adding a dummy string to avoid file parsing error
-            args[argCount++] = (char *)"x265";
-            char* token = strtok(start, " ");
-            while (token)
+            if (!prepareConfigSubparseArgs(start, args, 256, argCount, "Scenecut-aware QP config", lineNumber))
             {
-                args[argCount++] = token;
-                token = strtok(NULL, " ");
+                std::free(args);
+                return false;
             }
-            args[argCount] = NULL;
             CLIOptions cliopt;
-            if (cliopt.parseScenecutAwareQpParam(argCount, args, param))
+            if (cliopt.parseScenecutAwareQpParam(argCount, args, &stagedParam))
             {
+                std::free(args);
                 cliopt.destroy();
-                if (cliopt.api)
-                    cliopt.api->param_free(cliopt.param);
-                exit(1);
+                x265_log(nullptr, X265_LOG_ERROR, "Invalid scenecut-aware QP config arguments at line %d\n", lineNumber);
+                return false;
             }
-            break;
+            std::free(args);
         }
-        return 1;
+        if (!foundConfig)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Scenecut-aware QP config contains no valid entries\n");
+            return false;
+        }
+        *param = stagedParam;
+        return true;
     }
     bool CLIOptions::parseScenecutAwareQpParam(int argc, char **argv, x265_param* globalParam)
     {
         bool bError = false;
-        int bShowHelp = false;
-        int outputBitDepth = 0;
-        const char *profile = NULL;
-        /* Presets are applied before all other options. */
-        for (optind = 0;;)
+        if (!prepareCliApiFromOptions(argc, argv, api))
         {
-            int c = getopt_long(argc, argv, short_options, long_options, NULL);
-            if (c == -1)
-                break;
-            else if (c == 'D')
-                outputBitDepth = atoi(optarg);
-            else if (c == 'P')
-                profile = optarg;
-            else if (c == '?')
-                bShowHelp = true;
-        }
-        if (!outputBitDepth && profile)
-        {
-            /*try to derive the output bit depth from the requested profile*/
-            if (strstr(profile, "10"))
-                outputBitDepth = 10;
-            else if (strstr(profile, "12"))
-                outputBitDepth = 12;
-            else
-                outputBitDepth = 8;
-        }
-        api = x265_api_get(outputBitDepth);
-        if (!api)
-        {
-            x265_log(NULL, X265_LOG_WARNING, "falling back to default bit-depth\n");
-            api = x265_api_get(0);
-        }
-        if (bShowHelp)
-        {
-            printVersion(globalParam, api);
-            showHelp(globalParam);
+            x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", "output-depth", optarg);
+            return true;
         }
         for (optind = 0;;)
         {
@@ -1408,6 +2247,8 @@ namespace X265_NS {
             int c = getopt_long(argc, argv, short_options, long_options, &long_options_index);
             if (c == -1)
                 break;
+            if (c == '?')
+                return true;
             if (long_options_index < 0 && c > 0)
             {
                 for (size_t i = 0; i < sizeof(long_options) / sizeof(long_options[0]); i++)
@@ -1422,26 +2263,26 @@ namespace X265_NS {
                 {
                     /* getopt_long might have already printed an error message */
                     if (c != 63)
-                        x265_log(NULL, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
+                        x265_log(nullptr, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
                     return true;
                 }
             }
             if (long_options_index < 0)
             {
-                x265_log(NULL, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
+                x265_log(nullptr, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
                 return true;
             }
-            bError |= !!api->scenecut_aware_qp_param_parse(globalParam, long_options[long_options_index].name, optarg);
+            bError |= api->scenecut_aware_qp_param_parse(globalParam, long_options[long_options_index].name, optarg) != 0;
             if (bError)
             {
                 const char *name = long_options_index > 0 ? long_options[long_options_index].name : argv[optind - 2];
-                x265_log(NULL, X265_LOG_ERROR, "invalid argument: %s = %s\n", name, optarg);
+                x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", name, optarg);
                 return true;
             }
         }
         if (optind < argc)
         {
-            x265_log(param, X265_LOG_WARNING, "extra unused command arguments given <%s>\n", argv[optind]);
+            x265_log(nullptr, X265_LOG_ERROR, "extra unused scenecut-aware QP config arguments given <%s>\n", argv[optind]);
             return true;
         }
         return false;
@@ -1450,37 +2291,58 @@ namespace X265_NS {
 #if ENABLE_MULTIVIEW
     bool CLIOptions::parseMultiViewConfig(char** fn)
     {
-        char line[256];
+        char line[CONFIG_LINE_BUFFER_SIZE];
         char* argLine;
-        rewind(multiViewConfig);
-        int linenum = 0;
-        int numInput = 0;
-        char** args = (char**)malloc(256 * sizeof(char*));
-        while (fgets(line, sizeof(line), multiViewConfig))
+        if (!rewindConfigFile(multiViewConfig, "Multiview config"))
+            return false;
+        int lineNumber = 0;
+        int stagedNumViews = param->numViews;
+        int stagedFormat = param->format;
+        int stagedNumInput = 0;
+        char stagedInputs[MAX_VIEWS][1024] = {{ 0 }};
+        char** args = (char**)std::malloc(256 * sizeof(char*));
+        if (!args)
         {
-            if (*line == '#' || (strcmp(line, "\r\n") == 0))
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate multiview config arguments\n");
+            return false;
+        }
+        while (std::fgets(line, sizeof(line), multiViewConfig))
+        {
+            lineNumber++;
+            if (!validateConfigFileLine(multiViewConfig, "Multiview config", lineNumber, line, sizeof(line)))
+            {
+                std::free(args);
+                return false;
+            }
+            char* entry = line;
+            while (std::isspace((unsigned char)*entry)) entry++;
+            if (*entry == '#' || *entry == '\0' || (std::strcmp(entry, "\r\n") == 0) || (std::strcmp(entry, "\n") == 0))
                 continue;
-            int index = (int)strcspn(line, "\r\n");
+            int index = (int)std::strcspn(line, "\r\n");
             line[index] = '\0';
             argLine = line;
-            while (isspace((unsigned char)*argLine)) argLine++;
-            char* start = strchr(argLine, '-');
+            while (std::isspace((unsigned char)*argLine)) argLine++;
+            char* start = std::strchr(argLine, '-');
+            if (!start)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Missing multiview config arguments at line %d\n", lineNumber);
+                std::free(args);
+                return false;
+            }
             int argCount = 0;
             char flag[] = "true";
             //Adding a dummy string to avoid file parsing error
             args[argCount++] = (char*)"x265";
-            char* token = strtok(start, " ");
-            while (token)
+            if (!tokenizeConfigFileArgs(start, args, 256, argCount, "Multiview config"))
             {
-                args[argCount++] = token;
-                token = strtok(NULL, " ");
-                while (token && strchr(token, '"'))
-                {
-                    token = strchr(token, '"');
-                    token = strtok(token, "\"");
-                }
+                std::free(args);
+                return false;
             }
-            args[argCount] = NULL;
+            if (rejectCliExitRequest(argCount, args, "Multiview config", lineNumber))
+            {
+                std::free(args);
+                return false;
+            }
             bool bError = false;
             bool bInvalid = false;
             for (optind = 0;;)
@@ -1503,14 +2365,14 @@ namespace X265_NS {
                     {
                         /* getopt_long might have already printed an error message */
                         if (c != 63)
-                            x265_log(NULL, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
+                            x265_log(nullptr, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
                         bInvalid = true;
                         break;
                     }
                 }
                 if (long_options_index < 0)
                 {
-                    x265_log(NULL, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
+                    x265_log(nullptr, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
                     bInvalid = true;
                     break;
                 }
@@ -1524,11 +2386,11 @@ namespace X265_NS {
                     if (name[0] == '-' && name[1] == '-')
                         name += 2;
                     // s/_/-/g
-                    if (strlen(name) + 1 < sizeof(nameBuf) && strchr(name, '_'))
+                    if (std::strlen(name) + 1 < sizeof(nameBuf) && std::strchr(name, '_'))
                     {
                         char* ch;
-                        strcpy(nameBuf, name);
-                        while ((ch = strchr(nameBuf, '_')) != 0)
+                        std::memcpy(nameBuf, name, std::strlen(name) + 1);
+                        while ((ch = std::strchr(nameBuf, '_')) != 0)
                             *ch = '-';
                         name = nameBuf;
                     }
@@ -1536,53 +2398,101 @@ namespace X265_NS {
                         optarg = flag;
                     else if (optarg[0] == '=')
                         optarg++;
-#define OPT(STR) else if (!strcmp(name, STR))
+#define OPT(STR) else if (!std::strcmp(name, STR))
                     if (0);
-                    OPT("num-views") param->numViews = x265_atoi(optarg, bError);
-                    OPT("format") param->format = x265_atoi(optarg, bError);
-                    if (param->numViews > 1)
+                    OPT("num-views")
                     {
-                        if (0);
-                        OPT("input")
+                        int numViews = 0;
+                        bool bNumViewsError = !parseCliIntOptarg(optarg, numViews);
+                        bError |= bNumViewsError;
+                        if (!bNumViewsError)
                         {
-                            strncpy(fn[numInput++], optarg, 1024);
+                            if (numViews < 1 || numViews > 2)
+                            {
+                                x265_log(nullptr, X265_LOG_ERROR, "Multiview config num-views must be between 1 and 2 at line %d\n", lineNumber);
+                                bInvalid = true;
+                                break;
+                            }
+                            stagedNumViews = numViews;
                         }
-
+                    }
+                    OPT("format")
+                    {
+                        int format = 0;
+                        bool bFormatError = !parseCliIntOptarg(optarg, format);
+                        bError |= bFormatError;
+                        if (!bFormatError)
+                        {
+                            if (format < 0 || format > 2)
+                            {
+                                x265_log(nullptr, X265_LOG_ERROR, "Multiview config format must be 0 (normal), 1 (side-by-side), or 2 (over-under) at line %d\n", lineNumber);
+                                bInvalid = true;
+                                break;
+                            }
+                            stagedFormat = format;
+                        }
+                    }
+                    OPT("input")
+                    {
+                        if (stagedNumInput >= MAX_VIEWS)
+                        {
+                            x265_log(nullptr, X265_LOG_ERROR, "too many multiview input files at line %d\n", lineNumber);
+                            bInvalid = true;
+                            break;
+                        }
+                        if (!copyCLIString(stagedInputs[stagedNumInput], 1024, optarg, "Multiview input filename"))
+                        {
+                            bInvalid = true;
+                            break;
+                        }
+                        stagedNumInput++;
+                    }
+                    else
+                    {
+                        x265_log(nullptr, X265_LOG_ERROR, "Unsupported multiview config option '%s' at line %d\n", name, lineNumber);
+                        bInvalid = true;
+                        break;
                     }
 #undef OPT
                 }
                 if (bError)
                 {
                     const char* optname = long_options_index > 0 ? long_options[long_options_index].name : args[optind - 2];
-                    x265_log(NULL, X265_LOG_ERROR, "invalid argument: %s = %s\n", optname, optarg);
+                    x265_log(nullptr, X265_LOG_ERROR, "invalid argument: %s = %s\n", optname, optarg);
                     bInvalid = true;
                     break;
                 }
             }
             if (optind < argCount)
             {
-                x265_log(param, X265_LOG_WARNING, "extra unused command arguments given <%s>\n", args[optind]);
+                x265_log(nullptr, X265_LOG_ERROR, "extra unused multiview config arguments given <%s> at line %d\n", args[optind], lineNumber);
                 bInvalid = true;
             }
             if (bInvalid)
             {
-                if (api)
-                    api->param_free(param);
-                free(args);
-                exit(1);
+                x265_log(nullptr, X265_LOG_ERROR, "Invalid multiview config arguments at line %d\n", lineNumber);
+                std::free(args);
+                return false;
             }
-            linenum++;
         }
-        if (numInput != (param->format ? 1 : param->numViews))
+        if (stagedNumInput != (stagedFormat ? 1 : stagedNumViews))
         {
-            x265_log(NULL, X265_LOG_WARNING, "Number of Input files does not match with the given format <%d>\n", param->format);
-            if (api)
-                api->param_free(param);
-            free(args);
-            exit(1);
+            x265_log(nullptr, X265_LOG_ERROR, "Multiview config input count does not match format %d\n", stagedFormat);
+            std::free(args);
+            return false;
         }
-        free(args);
-        return 1;
+        param->numViews = stagedNumViews;
+        param->format = stagedFormat;
+        for (int view = 0; view < stagedNumInput; view++)
+        {
+            if (!copyCLIString(fn[view], 1024, stagedInputs[view], "Multiview input filename"))
+            {
+                std::free(args);
+                return false;
+            }
+        }
+        std::free(args);
+        return true;
     }
 
 #endif

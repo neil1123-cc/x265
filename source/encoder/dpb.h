@@ -65,7 +65,7 @@ public:
             }
         }
         m_bRefreshPending = false;
-        m_frameDataFreeList = NULL;
+        m_frameDataFreeList = nullptr;
         m_bOpenGOP = param->bOpenGOP;
 		m_craNal = param->craNal;
         m_bTemporalSublayer = (param->bEnableTemporalSubLayers > 2);

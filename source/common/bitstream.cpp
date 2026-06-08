@@ -2,6 +2,8 @@
 #include "bitstream.h"
 #include "threading.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 #if defined(_MSC_VER)
@@ -28,14 +30,14 @@ void Bitstream::push_back(uint8_t val)
         uint8_t *temp = X265_MALLOC(uint8_t, m_byteAlloc * 2);
         if (temp)
         {
-            memcpy(temp, m_fifo, m_byteOccupancy);
+            std::memcpy(temp, m_fifo, m_byteOccupancy);
             X265_FREE(m_fifo);
             m_fifo = temp;
             m_byteAlloc *= 2;
         }
         else
         {
-            x265_log(NULL, X265_LOG_ERROR, "Unable to realloc bitstream buffer");
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to realloc bitstream buffer");
             return;
         }
     }

@@ -26,20 +26,49 @@
 #include "encoder.h"
 #include "frameencoder.h"
 
+#include <atomic>
 #include <sstream>
 
 namespace X265_NS {
-int g_puStartIdx[TME_PU_START_IDX_SIZE][8] = {{0}};
+int g_puStartIdx[TME_PU_START_IDX_SIZE][NUM_PART_SIZES] = {{0}};
+static_assert(NUM_PART_SIZES == 8, "update threaded-me PU table when PartSize changes");
+static_assert(sizeof(g_puStartIdx) / sizeof(g_puStartIdx[0]) == TME_PU_START_IDX_SIZE, "threaded-me PU table row count mismatch");
+static_assert(sizeof(g_puStartIdx[0]) / sizeof(g_puStartIdx[0][0]) == NUM_PART_SIZES, "threaded-me PU table PartSize dimension mismatch");
 
 bool ThreadedME::create()
 {
     m_active.store(true, std::memory_order_release);
     m_tldCount = m_pool->m_numWorkers;
-    m_tld = new ThreadLocalData[m_tldCount];
+    m_tld = new (std::nothrow) ThreadLocalData[m_tldCount];
+    if (!m_tld)
+    {
+        m_active.store(false, std::memory_order_release);
+        m_tldCount = 0;
+        return false;
+    }
+
     for (int i = 0; i < m_tldCount; i++)
     {
-        m_tld[i].analysis.initSearch(*m_param, m_enc.m_scalingList);
-        m_tld[i].analysis.create(m_tld);
+        if (!m_tld[i].analysis.initSearch(*m_param, m_enc.m_scalingList))
+        {
+            for (int j = 0; j <= i; j++)
+                m_tld[j].destroy();
+            delete[] m_tld;
+            m_tld = nullptr;
+            m_tldCount = 0;
+            m_active.store(false, std::memory_order_release);
+            return false;
+        }
+        if (!m_tld[i].analysis.create(m_tld))
+        {
+            for (int j = 0; j <= i; j++)
+                m_tld[j].destroy();
+            delete[] m_tld;
+            m_tld = nullptr;
+            m_tldCount = 0;
+            m_active.store(false, std::memory_order_release);
+            return false;
+        }
     }
 
     initPuStartIdx();
@@ -223,9 +252,14 @@ void ThreadedME::stopJobs()
 
 void ThreadedME::destroy()
 {
+    if (!m_tld)
+        return;
+
     for (int i = 0; i < m_tldCount; i++)
         m_tld[i].destroy();
     delete[] m_tld;
+    m_tld = nullptr;
+    m_tldCount = 0;
 }
 
 void ThreadedME::collectStats()

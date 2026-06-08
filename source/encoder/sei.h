@@ -30,8 +30,43 @@
 #include "nal.h"
 #include "md5.h"
 
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+
 namespace X265_NS {
 // private namespace
+
+static bool parseSeiUnsignedToken(const char*& cursor, uint32_t& value)
+{
+    if (!cursor || !*cursor)
+        return false;
+    if (*cursor == '-')
+        return false;
+
+    errno = 0;
+    char* end = nullptr;
+    unsigned long parsed = std::strtoul(cursor, &end, 10);
+    if (errno == ERANGE || end == cursor || parsed > UINT_MAX)
+        return false;
+
+    cursor = end;
+    value = (uint32_t)parsed;
+    return true;
+}
+
+static bool consumeSeiLiteral(const char*& cursor, const char* literal)
+{
+    if (!cursor || !literal)
+        return false;
+
+    size_t length = std::strlen(literal);
+    if (std::strncmp(cursor, literal, length))
+        return false;
+
+    cursor += length;
+    return true;
+}
 
 class SEI : public SyntaxElementWriter
 {
@@ -82,6 +117,40 @@ class FilmGrainCharacteristics : public SEI
     {
         m_payloadType = FILM_GRAIN_CHARACTERISTICS;
         m_payloadSize = 0;
+        m_filmGrainCharacteristicsPersistenceFlag = false;
+        m_filmGrainCharacteristicsCancelFlag = false;
+        m_separateColourDescriptionPresentFlag = false;
+        m_filmGrainFullRangeFlag = false;
+        m_filmGrainModelId = 0;
+        m_blendingModeId = 0;
+        m_log2ScaleFactor = 0;
+        m_filmGrainBitDepthLumaMinus8 = 0;
+        m_filmGrainBitDepthChromaMinus8 = 0;
+        m_filmGrainColourPrimaries = 0;
+        m_filmGrainTransferCharacteristics = 0;
+        m_filmGrainMatrixCoeffs = 0;
+        for (uint8_t c = 0; c < MAX_NUM_COMPONENT; c++)
+        {
+            m_compModel[c].bPresentFlag = false;
+            m_compModel[c].numModelValues = 0;
+            m_compModel[c].m_filmGrainNumIntensityIntervalMinus1 = 0;
+            m_compModel[c].intensityValues = nullptr;
+        }
+    }
+
+    ~FilmGrainCharacteristics()
+    {
+        for (uint8_t c = 0; c < MAX_NUM_COMPONENT; c++)
+        {
+            if (!m_compModel[c].intensityValues)
+                continue;
+
+            for (uint16_t interval = 0; interval <= m_compModel[c].m_filmGrainNumIntensityIntervalMinus1; interval++)
+                std::free(m_compModel[c].intensityValues[interval].compModelValue);
+
+            std::free(m_compModel[c].intensityValues);
+            m_compModel[c].intensityValues = nullptr;
+        }
     }
 
     struct CompModelIntensityValues
@@ -392,7 +461,7 @@ static const uint32_t ISO_IEC_11578_LEN = 16;
 class SEIuserDataUnregistered : public SEI
 {
 public:
-    SEIuserDataUnregistered() : m_userData(NULL)
+    SEIuserDataUnregistered() : m_userData(nullptr)
     {
         m_payloadType = USER_DATA_UNREGISTERED;
         m_payloadSize = 0;
@@ -688,12 +757,46 @@ public:
     uint32_t minDisplayMasteringLuminance;
     bool parse(const char* value)
     {
-        return sscanf(value, "G(%hu,%hu)B(%hu,%hu)R(%hu,%hu)WP(%hu,%hu)L(%u,%u)",
-                      &displayPrimaryX[0], &displayPrimaryY[0],
-                      &displayPrimaryX[1], &displayPrimaryY[1],
-                      &displayPrimaryX[2], &displayPrimaryY[2],
-                      &whitePointX, &whitePointY,
-                      &maxDisplayMasteringLuminance, &minDisplayMasteringLuminance) == 10;
+        const char* cursor = value;
+        uint32_t values[10];
+        if (!consumeSeiLiteral(cursor, "G(") ||
+            !parseSeiUnsignedToken(cursor, values[0]) ||
+            !consumeSeiLiteral(cursor, ",") ||
+            !parseSeiUnsignedToken(cursor, values[1]) ||
+            !consumeSeiLiteral(cursor, ")B(") ||
+            !parseSeiUnsignedToken(cursor, values[2]) ||
+            !consumeSeiLiteral(cursor, ",") ||
+            !parseSeiUnsignedToken(cursor, values[3]) ||
+            !consumeSeiLiteral(cursor, ")R(") ||
+            !parseSeiUnsignedToken(cursor, values[4]) ||
+            !consumeSeiLiteral(cursor, ",") ||
+            !parseSeiUnsignedToken(cursor, values[5]) ||
+            !consumeSeiLiteral(cursor, ")WP(") ||
+            !parseSeiUnsignedToken(cursor, values[6]) ||
+            !consumeSeiLiteral(cursor, ",") ||
+            !parseSeiUnsignedToken(cursor, values[7]) ||
+            !consumeSeiLiteral(cursor, ")L(") ||
+            !parseSeiUnsignedToken(cursor, values[8]) ||
+            !consumeSeiLiteral(cursor, ",") ||
+            !parseSeiUnsignedToken(cursor, values[9]) ||
+            !consumeSeiLiteral(cursor, ")") ||
+            *cursor != '\0')
+            return false;
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (values[i * 2] > UINT16_MAX || values[i * 2 + 1] > UINT16_MAX)
+                return false;
+            displayPrimaryX[i] = (uint16_t)values[i * 2];
+            displayPrimaryY[i] = (uint16_t)values[i * 2 + 1];
+        }
+        if (values[6] > UINT16_MAX || values[7] > UINT16_MAX)
+            return false;
+        whitePointX = (uint16_t)values[6];
+        whitePointY = (uint16_t)values[7];
+        maxDisplayMasteringLuminance = values[8];
+        minDisplayMasteringLuminance = values[9];
+        return true;
     }
     void writeSEI(const SPS&)
     {

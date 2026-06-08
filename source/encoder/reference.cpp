@@ -30,14 +30,17 @@
 
 #include "reference.h"
 
+#include <algorithm>
+#include <cstring>
+
 using namespace X265_NS;
 
 MotionReference::MotionReference()
 {
-    weightBuffer[0] = NULL;
-    weightBuffer[1] = NULL;
-    weightBuffer[2] = NULL;
-    numSliceWeightedRows = NULL;
+    weightBuffer[0] = nullptr;
+    weightBuffer[1] = nullptr;
+    weightBuffer[2] = nullptr;
+    numSliceWeightedRows = nullptr;
 }
 
 MotionReference::~MotionReference()
@@ -50,6 +53,13 @@ MotionReference::~MotionReference()
 
 int MotionReference::init(PicYuv* recPic, WeightParam *wp, const x265_param& p)
 {
+    bool allocWeightBuffer[3] = { false, false, false };
+    uint32_t numCUinHeight = 0;
+    int marginX = 0;
+    int marginY = 0;
+    intptr_t stride = 0;
+    int cuHeight = 0;
+
     reconPic = recPic;
     lumaStride = recPic->m_stride;
     chromaStride = recPic->m_strideC;
@@ -59,10 +69,8 @@ int MotionReference::init(PicYuv* recPic, WeightParam *wp, const x265_param& p)
     {
         // Unnecessary, but avoid risk on parameters dynamic modify in future.
         X265_FREE(numSliceWeightedRows);
-        numSliceWeightedRows = NULL;
+        numSliceWeightedRows = nullptr;
     }
-    numSliceWeightedRows = X265_MALLOC(uint32_t, p.maxSlices);
-    memset(numSliceWeightedRows, 0, p.maxSlices * sizeof(uint32_t));
 
     /* directly reference the extended integer pel planes */
     fpelPlane[0] = recPic->m_picOrg[0];
@@ -70,50 +78,70 @@ int MotionReference::init(PicYuv* recPic, WeightParam *wp, const x265_param& p)
     fpelPlane[2] = recPic->m_picOrg[2];
     isWeighted = false;
 
-    if (wp)
+    if (!wp)
+        return 0;
+
+    numSliceWeightedRows = X265_MALLOC(uint32_t, p.maxSlices);
+    if (!numSliceWeightedRows)
+        goto fail;
+    std::fill_n(numSliceWeightedRows, p.maxSlices, uint32_t(0));
+
+    numCUinHeight = (reconPic->m_picHeight + p.maxCUSize - 1) / p.maxCUSize;
+    marginX = reconPic->m_lumaMarginX;
+    marginY = reconPic->m_lumaMarginY;
+    stride = reconPic->m_stride;
+    cuHeight = p.maxCUSize;
+
+    for (int c = 0; c < (p.internalCsp != X265_CSP_I400 && recPic->m_picCsp != X265_CSP_I400 ? numInterpPlanes : 1); c++)
     {
-        uint32_t numCUinHeight = (reconPic->m_picHeight + p.maxCUSize - 1) / p.maxCUSize;
-
-        int marginX = reconPic->m_lumaMarginX;
-        int marginY = reconPic->m_lumaMarginY;
-        intptr_t stride = reconPic->m_stride;
-        int cuHeight = p.maxCUSize;
-
-        for (int c = 0; c < (p.internalCsp != X265_CSP_I400 && recPic->m_picCsp != X265_CSP_I400 ? numInterpPlanes : 1); c++)
+        if (c == 1)
         {
-            if (c == 1)
-            {
-                marginX = reconPic->m_chromaMarginX;
-                marginY = reconPic->m_chromaMarginY;
-                stride  = reconPic->m_strideC;
-                cuHeight >>= reconPic->m_vChromaShift;
-            }
-
-            if (wp[c].wtPresent)
-            {
-                if (!weightBuffer[c])
-                {
-                    size_t padheight = (numCUinHeight * cuHeight) + marginY * 2;
-                    weightBuffer[c] = X265_MALLOC(pixel, stride * padheight);
-                    if (!weightBuffer[c])
-                        return -1;
-                }
-
-                /* use our buffer which will have weighted pixels written to it */
-                fpelPlane[c] = weightBuffer[c] + marginY * stride + marginX;
-                X265_CHECK(recPic->m_picOrg[c] - recPic->m_picBuf[c] == marginY * stride + marginX, "PicYuv pad calculation mismatch\n");
-
-                w[c].weight = wp[c].inputWeight;
-                w[c].offset = wp[c].inputOffset * (1 << (X265_DEPTH - 8));
-                w[c].shift = wp[c].log2WeightDenom;
-                w[c].round = w[c].shift ? 1 << (w[c].shift - 1) : 0;
-            }
+            marginX = reconPic->m_chromaMarginX;
+            marginY = reconPic->m_chromaMarginY;
+            stride  = reconPic->m_strideC;
+            cuHeight >>= reconPic->m_vChromaShift;
         }
 
-        isWeighted = true;
+        if (wp[c].wtPresent)
+        {
+            if (!weightBuffer[c])
+            {
+                size_t padheight = (numCUinHeight * cuHeight) + marginY * 2;
+                weightBuffer[c] = X265_MALLOC(pixel, stride * padheight);
+                if (!weightBuffer[c])
+                    goto fail;
+                allocWeightBuffer[c] = true;
+            }
+
+            /* use our buffer which will have weighted pixels written to it */
+            fpelPlane[c] = weightBuffer[c] + marginY * stride + marginX;
+            X265_CHECK(recPic->m_picOrg[c] - recPic->m_picBuf[c] == marginY * stride + marginX, "PicYuv pad calculation mismatch\n");
+
+            w[c].weight = wp[c].inputWeight;
+            w[c].offset = wp[c].inputOffset * (1 << (X265_DEPTH - 8));
+            w[c].shift = wp[c].log2WeightDenom;
+            w[c].round = w[c].shift ? 1 << (w[c].shift - 1) : 0;
+        }
     }
 
+    isWeighted = true;
     return 0;
+
+fail:
+    fpelPlane[0] = recPic->m_picOrg[0];
+    fpelPlane[1] = recPic->m_picOrg[1];
+    fpelPlane[2] = recPic->m_picOrg[2];
+    for (int c = 0; c < 3; c++)
+    {
+        if (allocWeightBuffer[c])
+        {
+            X265_FREE(weightBuffer[c]);
+            weightBuffer[c] = nullptr;
+        }
+    }
+    X265_FREE(numSliceWeightedRows);
+    numSliceWeightedRows = nullptr;
+    return -1;
 }
 
 void MotionReference::applyWeight(uint32_t finishedRows, uint32_t maxNumRows, uint32_t maxNumRowsInSlice, uint32_t sliceId)
@@ -167,7 +195,7 @@ void MotionReference::applyWeight(uint32_t finishedRows, uint32_t maxNumRows, ui
         {
             pixel *pixY = fpelPlane[c] - marginX;
             for (int y = 0; y < marginY; y++)
-                memcpy(pixY - (y + 1) * stride, pixY, stride * sizeof(pixel));
+                std::memcpy(pixY - (y + 1) * stride, pixY, stride * sizeof(pixel));
         }
 
         // Extending Bottom
@@ -177,7 +205,7 @@ void MotionReference::applyWeight(uint32_t finishedRows, uint32_t maxNumRows, ui
             if (c) picHeight >>= reconPic->m_vChromaShift;
             pixel *pixY = fpelPlane[c] - marginX + (picHeight - 1) * stride;
             for (int y = 0; y < marginY; y++)
-                memcpy(pixY + (y + 1) * stride, pixY, stride * sizeof(pixel));
+                std::memcpy(pixY + (y + 1) * stride, pixY, stride * sizeof(pixel));
         }
     }
 

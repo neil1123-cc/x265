@@ -22,11 +22,14 @@
  *****************************************************************************/
 
 #include "common.h"
+#include "param.h"
 #include "primitives.h"
 #include "scalinglist.h"
 
 namespace {
 // file-anonymous namespace
+
+using X265_NS::x265_atoi;
 
 /* Strings for scaling list file parsing */
 
@@ -61,6 +64,26 @@ static int quantInterDefault8x8[64] =
     20, 24, 25, 28, 33, 41, 54, 71,
     24, 25, 28, 33, 41, 54, 71, 91
 };
+
+static bool parseScalingListIntToken(const char* token, int& value)
+{
+    bool bError = false;
+    int parsedValue = x265_atoi(token, bError);
+    if (bError || parsedValue <= 0)
+        return false;
+
+    value = parsedValue;
+    return true;
+}
+
+static bool readScalingListValue(FILE* fp, int& data)
+{
+    char token[32];
+    if (std::fscanf(fp, " %31[^,\r\n],", token) != 1)
+        return false;
+
+    return parseScalingListIntToken(token, data);
+}
 
 }
 
@@ -131,9 +154,6 @@ const int32_t ScalingList::s_invQuantScales[NUM_REM] = { 40, 45, 51, 57, 64, 72 
 
 ScalingList::ScalingList()
 {
-    memset(m_quantCoef, 0, sizeof(m_quantCoef));
-    memset(m_dequantCoef, 0, sizeof(m_dequantCoef));
-    memset(m_scalingListCoef, 0, sizeof(m_scalingListCoef));
 }
 
 bool ScalingList::init()
@@ -144,7 +164,7 @@ bool ScalingList::init()
         for (int listId = 0; listId < NUM_LISTS; listId++)
         {
             m_scalingListCoef[sizeId][listId] = X265_MALLOC(int32_t, X265_MIN(MAX_MATRIX_COEF_NUM, s_numCoefPerSize[sizeId]));
-            ok &= !!m_scalingListCoef[sizeId][listId];
+            ok &= m_scalingListCoef[sizeId][listId] != nullptr;
             for (int rem = 0; rem < NUM_REM; rem++)
             {
                 m_quantCoef[sizeId][listId][rem] = X265_MALLOC(int32_t, s_numCoefPerSize[sizeId]);
@@ -182,7 +202,7 @@ int ScalingList::checkPredMode(int size, int list) const
             continue;
 
         // check value of matrix
-        if (!memcmp(m_scalingListCoef[size][list],
+        if (!std::memcmp(m_scalingListCoef[size][list],
                     list == predList ? getScalingListDefaultAddress(size, predList) : m_scalingListCoef[size][predList],
                     sizeof(int32_t) * X265_MIN(MAX_MATRIX_COEF_NUM, s_numCoefPerSize[size])))
             return predList;
@@ -199,7 +219,7 @@ bool ScalingList::checkDefaultScalingList() const
 
     for (int s = 0; s < NUM_SIZES; s++)
         for (int l = 0; l < NUM_LISTS; l++)
-            if (!memcmp(m_scalingListCoef[s][l], getScalingListDefaultAddress(s, l),
+            if (!std::memcmp(m_scalingListCoef[s][l], getScalingListDefaultAddress(s, l),
                         sizeof(int32_t) * X265_MIN(MAX_MATRIX_COEF_NUM, s_numCoefPerSize[s])) &&
                 ((s < BLOCK_16x16) || (m_scalingListDC[s][l] == 16)))
                 defaultCounter++;
@@ -225,12 +245,12 @@ const int32_t* ScalingList::getScalingListDefaultAddress(int sizeId, int listId)
     }
 
     X265_CHECK(0, "invalid scaling list size\n");
-    return NULL;
+    return nullptr;
 }
 
 void ScalingList::processDefaultMarix(int sizeId, int listId)
 {
-    memcpy(m_scalingListCoef[sizeId][listId], getScalingListDefaultAddress(sizeId, listId), sizeof(int) * X265_MIN(MAX_MATRIX_COEF_NUM, s_numCoefPerSize[sizeId]));
+    std::memcpy(m_scalingListCoef[sizeId][listId], getScalingListDefaultAddress(sizeId, listId), sizeof(int) * X265_MIN(MAX_MATRIX_COEF_NUM, s_numCoefPerSize[sizeId]));
     m_scalingListDC[sizeId][listId] = SCALING_LIST_DC;
 }
 
@@ -248,13 +268,23 @@ bool ScalingList::parseScalingList(const char* filename)
     FILE *fp = x265_fopen(filename, "r");
     if (!fp)
     {
-        x265_log_file(NULL, X265_LOG_ERROR, "can't open scaling list file %s\n", filename);
+        x265_log_file(nullptr, X265_LOG_ERROR, "can't open scaling list file %s\n", filename);
+        return true;
+    }
+    else if (std::ferror(fp))
+    {
+        bool closeFailed = std::ferror(fp) != 0;
+        if (std::fclose(fp))
+            closeFailed = true;
+        if (closeFailed)
+            x265_log_file(nullptr, X265_LOG_WARNING, "can't close scaling list file %s after open failure\n", filename);
+        x265_log_file(nullptr, X265_LOG_ERROR, "can't open scaling list file %s\n", filename);
         return true;
     }
 
+    bool closeFailed = false;
     char line[1024];
-    int32_t *src = NULL;
-    fseek(fp, 0, 0);
+    int32_t *src = nullptr;
 
     for (int sizeIdc = 0; sizeIdc < NUM_SIZES; sizeIdc++)
     {
@@ -265,21 +295,31 @@ bool ScalingList::parseScalingList(const char* filename)
 
             do
             {
-                char *ret = fgets(line, 1024, fp);
-                if (!ret || (!strstr(line, MatrixType[sizeIdc][listIdc]) && feof(fp)))
+                char *ret = std::fgets(line, 1024, fp);
+                if (!ret || (!std::strstr(line, MatrixType[sizeIdc][listIdc]) && std::feof(fp)))
                 {
-                    x265_log_file(NULL, X265_LOG_ERROR, "can't read matrix from %s\n", filename);
+                    x265_log_file(nullptr, X265_LOG_ERROR, "can't read matrix from %s\n", filename);
+                    closeFailed = std::ferror(fp) != 0;
+                    if (std::fclose(fp))
+                        closeFailed = true;
+                    if (closeFailed)
+                        x265_log_file(nullptr, X265_LOG_WARNING, "can't close scaling list file %s after matrix read failure\n", filename);
                     return true;
                 }
             }
-            while (!strstr(line, MatrixType[sizeIdc][listIdc]));
+            while (!std::strstr(line, MatrixType[sizeIdc][listIdc]));
 
             for (int i = 0; i < size; i++)
             {
                 int data;
-                if (fscanf(fp, "%d,", &data) != 1)
+                if (!readScalingListValue(fp, data))
                 {
-                    x265_log_file(NULL, X265_LOG_ERROR, "can't read matrix from %s\n", filename);
+                    x265_log_file(nullptr, X265_LOG_ERROR, "can't read matrix from %s\n", filename);
+                    closeFailed = std::ferror(fp) != 0;
+                    if (std::fclose(fp))
+                        closeFailed = true;
+                    if (closeFailed)
+                        x265_log_file(nullptr, X265_LOG_WARNING, "can't close scaling list file %s after matrix parse failure\n", filename);
                     return true;
                 }
                 src[i] = data;
@@ -292,19 +332,29 @@ bool ScalingList::parseScalingList(const char* filename)
             {
                 do
                 {
-                    char *ret = fgets(line, 1024, fp);
-                    if (!ret || (!strstr(line, MatrixType_DC[sizeIdc][listIdc]) && feof(fp)))
+                    char *ret = std::fgets(line, 1024, fp);
+                    if (!ret || (!std::strstr(line, MatrixType_DC[sizeIdc][listIdc]) && std::feof(fp)))
                     {
-                        x265_log_file(NULL, X265_LOG_ERROR, "can't read DC from %s\n", filename);
+                        x265_log_file(nullptr, X265_LOG_ERROR, "can't read DC from %s\n", filename);
+                        closeFailed = std::ferror(fp) != 0;
+                        if (std::fclose(fp))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log_file(nullptr, X265_LOG_WARNING, "can't close scaling list file %s after DC read failure\n", filename);
                         return true;
                     }
                 }
-                while (!strstr(line, MatrixType_DC[sizeIdc][listIdc]));
+                while (!std::strstr(line, MatrixType_DC[sizeIdc][listIdc]));
 
                 int data;
-                if (fscanf(fp, "%d,", &data) != 1)
+                if (!readScalingListValue(fp, data))
                 {
-                    x265_log_file(NULL, X265_LOG_ERROR, "can't read matrix from %s\n", filename);
+                    x265_log_file(nullptr, X265_LOG_ERROR, "can't read matrix from %s\n", filename);
+                    closeFailed = std::ferror(fp) != 0;
+                    if (std::fclose(fp))
+                        closeFailed = true;
+                    if (closeFailed)
+                        x265_log_file(nullptr, X265_LOG_WARNING, "can't close scaling list file %s after DC parse failure\n", filename);
                     return true;
                 }
 
@@ -330,7 +380,14 @@ bool ScalingList::parseScalingList(const char* filename)
         }
     }
 
-    fclose(fp);
+    closeFailed = std::ferror(fp) != 0;
+    if (std::fclose(fp))
+        closeFailed = true;
+    if (closeFailed)
+    {
+        x265_log_file(nullptr, X265_LOG_WARNING, "can't finalize scaling list file %s\n", filename);
+        return true;
+    }
 
     m_bEnabled = true;
     m_bDataPresent = true;

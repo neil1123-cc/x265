@@ -25,10 +25,15 @@
 #include "common.h"
 #include "slice.h"
 #include "threading.h"
+#include "threadpool.h"
 #include "param.h"
 #include "cpu.h"
 #include "x265.h"
 #include "svt.h"
+
+#include <charconv>
+#include <cctype>
+#include <cerrno>
 
 #if _MSC_VER
 #pragma warning(disable: 4996) // POSIX functions are just fine, thanks
@@ -62,7 +67,7 @@ static char* strtok_r(char* str, const char* delim, char** nextp)
     str += strspn(str, delim);
 
     if (!*str)
-        return NULL;
+        return nullptr;
 
     char *ret = str;
 
@@ -91,13 +96,285 @@ namespace X265_NS {
 
 #endif
 
+struct ParamInstance
+{
+    x265_param* param;
+    ParamInstance* next;
+};
+
+static Lock g_paramInstanceLock;
+static ParamInstance* g_paramInstances;
+
+static bool registerParamInstance(x265_param* param)
+{
+    if (!param)
+        return false;
+
+    ScopedLock lock(g_paramInstanceLock);
+    for (ParamInstance* entry = g_paramInstances; entry; entry = entry->next)
+    {
+        if (entry->param == param)
+            return true;
+    }
+
+    ParamInstance* entry = (ParamInstance*)x265_malloc(sizeof(ParamInstance));
+    if (!entry)
+        return false;
+    entry->param = param;
+    entry->next = g_paramInstances;
+    g_paramInstances = entry;
+    return true;
+}
+
+static void unregisterParamInstance(x265_param* param)
+{
+    ScopedLock lock(g_paramInstanceLock);
+    ParamInstance** current = &g_paramInstances;
+    while (*current)
+    {
+        ParamInstance* entry = *current;
+        if (entry->param == param)
+        {
+            *current = entry->next;
+            x265_free(entry);
+            return;
+        }
+        current = &entry->next;
+    }
+}
+
+bool isAllocatedParamInstance(const x265_param* param)
+{
+    if (!param)
+        return false;
+
+    ScopedLock lock(g_paramInstanceLock);
+    for (ParamInstance* entry = g_paramInstances; entry; entry = entry->next)
+        if (entry->param == param)
+            return true;
+    return false;
+}
+
+#ifdef SVT_HEVC
+struct SvtHevcParamStorage
+{
+    x265_param* owner;
+    EB_H265_ENC_CONFIGURATION* storage;
+    SvtHevcParamStorage* next;
+};
+
+static Lock g_svtHevcParamStorageLock;
+static SvtHevcParamStorage* g_svtHevcParamStorage;
+
+static EB_H265_ENC_CONFIGURATION* getSvtHevcParamStorage(x265_param* param)
+{
+    ScopedLock lock(g_svtHevcParamStorageLock);
+    for (SvtHevcParamStorage* entry = g_svtHevcParamStorage; entry; entry = entry->next)
+        if (entry->owner == param)
+            return entry->storage;
+    return nullptr;
+}
+
+static bool registerSvtHevcParamStorage(x265_param* param, EB_H265_ENC_CONFIGURATION* storage)
+{
+    if (!param || !storage)
+        return false;
+
+    ScopedLock lock(g_svtHevcParamStorageLock);
+    for (SvtHevcParamStorage* entry = g_svtHevcParamStorage; entry; entry = entry->next)
+    {
+        if (entry->owner == param)
+        {
+            entry->storage = storage;
+            return true;
+        }
+    }
+
+    SvtHevcParamStorage* entry = (SvtHevcParamStorage*)x265_malloc(sizeof(SvtHevcParamStorage));
+    if (!entry)
+        return false;
+    entry->owner = param;
+    entry->storage = storage;
+    entry->next = g_svtHevcParamStorage;
+    g_svtHevcParamStorage = entry;
+    return true;
+}
+
+static EB_H265_ENC_CONFIGURATION* unregisterSvtHevcParamStorage(x265_param* param)
+{
+    ScopedLock lock(g_svtHevcParamStorageLock);
+    SvtHevcParamStorage** current = &g_svtHevcParamStorage;
+    while (*current)
+    {
+        SvtHevcParamStorage* entry = *current;
+        if (entry->owner == param)
+        {
+            EB_H265_ENC_CONFIGURATION* storage = entry->storage;
+            *current = entry->next;
+            x265_free(entry);
+            return storage;
+        }
+        current = &entry->next;
+    }
+    return nullptr;
+}
+
+static void freeSvtHevcParamStorage(x265_param* param)
+{
+    if (!param)
+        return;
+
+    EB_H265_ENC_CONFIGURATION* storage = unregisterSvtHevcParamStorage(param);
+    if (!storage)
+        storage = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    x265_free(storage);
+    param->svtHevcParam = nullptr;
+}
+
+static EB_H265_ENC_CONFIGURATION* ensureSvtHevcParam(x265_param* param, bool trackStorage = true)
+{
+    if (!param)
+        return nullptr;
+
+    EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    if (svtParam)
+    {
+        if (trackStorage && !registerSvtHevcParamStorage(param, svtParam))
+            return nullptr;
+        return svtParam;
+    }
+
+    svtParam = (EB_H265_ENC_CONFIGURATION*)x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
+    if (!svtParam)
+        return nullptr;
+    std::fill_n(reinterpret_cast<uint8_t*>(svtParam), sizeof(EB_H265_ENC_CONFIGURATION), uint8_t(0));
+    if (trackStorage && !registerSvtHevcParamStorage(param, svtParam))
+    {
+        x265_free(svtParam);
+        return nullptr;
+    }
+    param->svtHevcParam = svtParam;
+    svt_param_default(param);
+
+    return svtParam;
+}
+
+static bool copySvtHevcParamStorage(x265_param* dst, const x265_param* src)
+{
+    EB_H265_ENC_CONFIGURATION* srcSvtParam = src ? (EB_H265_ENC_CONFIGURATION*)src->svtHevcParam : nullptr;
+    if (!srcSvtParam)
+    {
+        freeSvtHevcParamStorage(dst);
+        return true;
+    }
+
+    EB_H265_ENC_CONFIGURATION* dstSvtParam = ensureSvtHevcParam(dst, false);
+    if (!dstSvtParam)
+        return false;
+
+    memcpy(dstSvtParam, srcSvtParam, sizeof(EB_H265_ENC_CONFIGURATION));
+    return true;
+}
+#endif
+
+void finalizeZoneParamCopy(x265_param* zoneParam, const x265_param* src)
+{
+    if (!zoneParam)
+        return;
+
+    resetZoneParamDetachedState(zoneParam);
+
+#ifdef SVT_HEVC
+    if (src && !copySvtHevcParamStorage(zoneParam, src))
+        x265_log(nullptr, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+#else
+    (void)src;
+#endif
+}
+
+static bool ensureZoneCopyDestination(x265_param* dst, const x265_param* src, bool zonefileCopy)
+{
+    if (!dst || !src)
+        return false;
+
+    const int zoneAllocCount = zonefileCopy ? src->rc.zonefileCount : src->rc.zoneCount;
+    if (!zoneAllocCount)
+        return true;
+
+    bool canReuse = dst->rc.zones != nullptr;
+    if (canReuse)
+    {
+        const int dstZoneAllocCount = zonefileCopy ? dst->rc.zonefileCount : dst->rc.zoneCount;
+        canReuse = dstZoneAllocCount == zoneAllocCount;
+        if (canReuse && zonefileCopy)
+        {
+            for (int i = 0; i < zoneAllocCount; i++)
+            {
+                if (!dst->rc.zones[i].zoneParam)
+                {
+                    canReuse = false;
+                    break;
+                }
+            }
+        }
+        if (!canReuse)
+            x265_zone_free(dst);
+    }
+
+    if (!dst->rc.zones)
+    {
+        dst->rc.zones = x265_zone_alloc(zoneAllocCount, zonefileCopy);
+        if (!dst->rc.zones)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "unable to allocate zone storage\n");
+            return false;
+        }
+        if (zonefileCopy)
+            dst->rc.zonefileCount = zoneAllocCount;
+        else
+            dst->rc.zoneCount = zoneAllocCount;
+    }
+
+    return true;
+}
+
+static bool prepareFreshParamCopyDestination(x265_param* dst, const x265_param* src)
+{
+    if (!dst || !src)
+        return false;
+
+    std::fill_n(reinterpret_cast<uint8_t*>(dst), sizeof(x265_param), uint8_t(0));
+#ifdef SVT_HEVC
+    if (src->svtHevcParam && !ensureSvtHevcParam(dst))
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+        return false;
+    }
+#endif
+
+    const bool preserveDstZones = (src->rc.zonefileCount && src->rc.zones && src->bResetZoneConfig) ||
+                                  (src->rc.zoneCount && src->rc.zones);
+    const bool zonefileCopy = src->rc.zonefileCount && src->rc.zones && src->bResetZoneConfig;
+    if (preserveDstZones && !ensureZoneCopyDestination(dst, src, zonefileCopy))
+        return false;
+
+    return true;
+}
+
+static const char* parsePresetIndexName(const char* preset);
+
 x265_param *x265_param_alloc()
 {
     x265_param* param = (x265_param*)x265_malloc(sizeof(x265_param));
-    memset(param, 0, sizeof(x265_param));
-#ifdef SVT_HEVC
-    param->svtHevcParam = (EB_H265_ENC_CONFIGURATION*)x265_malloc(sizeof(EB_H265_ENC_CONFIGURATION));
-#endif
+    if (!param)
+        return nullptr;
+
+    std::fill_n(reinterpret_cast<uint8_t*>(param), sizeof(x265_param), uint8_t(0));
+    if (!registerParamInstance(param))
+    {
+        x265_free(param);
+        return nullptr;
+    }
     return param;
 }
 
@@ -110,16 +387,17 @@ void x265_param_free(x265_param* p)
     if (p->logfn)
     {
         free(p->logfn);
-        p->logfn = NULL;
+        p->logfn = nullptr;
     }
     if (p->pgfn)
     {
         free(p->pgfn);
-        p->pgfn = NULL;
+        p->pgfn = nullptr;
     }
 #ifdef SVT_HEVC
-     x265_free(p->svtHevcParam);
+    freeSvtHevcParamStorage(p);
 #endif
+    unregisterParamInstance(p);
     x265_free(p);
 }
 
@@ -152,11 +430,17 @@ static const SCCProfileName validSCCProfileNames[1][4/* bit depth constraint 8=0
 
 void x265_param_default(x265_param* param)
 {
+    if (!param)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "x265_param_default requires a non-null parameter struct\n");
+        return;
+    }
+
 #ifdef SVT_HEVC
-    EB_H265_ENC_CONFIGURATION* svtParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
+    EB_H265_ENC_CONFIGURATION* svtParam = getSvtHevcParamStorage(param);
 #endif
 
-    memset(param, 0, sizeof(x265_param));
+    std::fill_n(reinterpret_cast<uint8_t*>(param), sizeof(x265_param), uint8_t(0));
 
     /* Applying default values to all elements in the param structure */
     param->cpuid = X265_NS::cpu_detect(false);
@@ -164,9 +448,9 @@ void x265_param_default(x265_param* param)
     param->frameNumThreads = 0;
 
     param->logLevel = X265_LOG_INFO;
-    param->logfn = NULL;
+    param->logfn = nullptr;
     param->logfLevel = X265_LOG_INFO;
-    param->pgfn = NULL;
+    param->pgfn = nullptr;
     param->csvLogLevel = 0;
     param->csvfn[0] = 0;
     param->rc.lambdaFileName[0] = 0;
@@ -348,7 +632,7 @@ void x265_param_default(x265_param* param)
     param->rc.qblur = 0.5;
     param->rc.zoneCount = 0;
     param->rc.zonefileCount = 0;
-    param->rc.zones = NULL;
+    param->rc.zones = nullptr;
     param->rc.bEnableSlowFirstPass = 1;
     param->rc.bStrictCbr = 0;
     param->rc.bEnableGrain = 0;
@@ -413,7 +697,7 @@ void x265_param_default(x265_param* param)
     param->mvRefine = 1;
     param->ctuDistortionRefine = 0;
     param->bUseAnalysisFile = 1;
-    param->csvfpt = NULL;
+    param->csvfpt = nullptr;
     param->bStylish = 0;
     param->forceFlush = 0;
     param->bDisableLookahead = 0;
@@ -436,7 +720,11 @@ void x265_param_default(x265_param* param)
 
     /* SVT Hevc Encoder specific params */
     param->bEnableSvtHevc = 0;
-    param->svtHevcParam = NULL;
+#ifdef SVT_HEVC
+    param->svtHevcParam = svtParam;
+    if (svtParam)
+        svt_param_default(param);
+#endif
 
     /* MCSTF */
     param->bEnableTemporalFilter = 0;
@@ -453,13 +741,9 @@ void x265_param_default(x265_param* param)
     param->bEnableAlpha = 0;
     param->numScalableLayers = 1;
 
-#ifdef SVT_HEVC
-    param->svtHevcParam = svtParam;
-    svt_param_default(param);
-#endif
     /* Film grain characteristics model filename */
-    param->filmGrain = NULL;
-    param->aomFilmGrain = NULL;
+    param->filmGrain = nullptr;
+    param->aomFilmGrain = nullptr;
     param->bEnableSBRC = 0;
 
     /* Multi-View Encoding*/
@@ -476,6 +760,12 @@ void x265_param_default(x265_param* param)
 
 int x265_param_default_preset(x265_param* param, const char* preset, const char* tune)
 {
+    if (!param)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "x265_param_default_preset requires a non-null parameter struct\n");
+        return -1;
+    }
+
 #if EXPORT_C_API
     ::x265_param_default(param);
 #else
@@ -484,10 +774,7 @@ int x265_param_default_preset(x265_param* param, const char* preset, const char*
 
     if (preset)
     {
-        char *end;
-        int i = strtol(preset, &end, 10);
-        if (*end == 0 && i >= 0 && i < (int)(sizeof(x265_preset_names) / sizeof(*x265_preset_names) - 1))
-            preset = x265_preset_names[i];
+        preset = parsePresetIndexName(preset);
 
         if (!strcmp(preset, "ultrafast"))
         {
@@ -794,7 +1081,7 @@ int x265_param_default_preset(x265_param* param, const char* preset, const char*
     }
 
 #ifdef SVT_HEVC
-    if (svt_set_preset(param, preset))
+    if (preset && svt_set_preset(param, preset))
         return -1;
 #endif
 
@@ -815,36 +1102,703 @@ static int x265_atobool(const char* str, bool& bError)
     return 0;
 }
 
+static const char* invertBooleanAliasValue(const char* value, bool& bError)
+{
+    if (!value)
+        return "false";
+
+    bool bLocalError = false;
+    int boolValue = x265_atobool(value, bLocalError);
+    if (bLocalError)
+    {
+        bError = true;
+        return value;
+    }
+
+    return boolValue ? "false" : "true";
+}
+
+static int parseOptionIntToken(const char* token, size_t length, bool& bError);
+
 static int parseName(const char* arg, const char* const* names, bool& bError)
 {
     for (int i = 0; names[i]; i++)
         if (!strcmp(arg, names[i]))
             return i;
 
-    return x265_atoi(arg, bError);
-}
-/* internal versions of string-to-int with additional error checking */
-#undef atoi
-#undef atof
-#define atoi(str) x265_atoi(str, bError)
-#define atof(str) x265_atof(str, bError)
-#define atobool(str) (x265_atobool(str, bError))
+    if (!arg)
+    {
+        bError = true;
+        return 0;
+    }
 
+    return parseOptionIntToken(arg, std::strlen(arg), bError);
+}
+
+static int splitCommaOption(const char* value, const char* parts[], size_t lengths[], int maxParts)
+{
+    if (!value || !parts || !lengths || maxParts <= 0)
+        return -1;
+
+    int count = 0;
+    const char* token = value;
+    while (token)
+    {
+        if (count >= maxParts)
+            return -1;
+
+        const char* comma = std::strchr(token, ',');
+        size_t length = comma ? (size_t)(comma - token) : std::strlen(token);
+        if (!length)
+            return -1;
+
+        parts[count] = token;
+        lengths[count] = length;
+        count++;
+
+        token = comma ? comma + 1 : nullptr;
+    }
+
+    return count;
+}
+
+static const char* findTokenChar(const char* token, size_t length, char target)
+{
+    if (!token)
+        return nullptr;
+
+    for (size_t i = 0; i < length; i++)
+    {
+        if (token[i] == target)
+            return token + i;
+    }
+
+    return nullptr;
+}
+
+static int parseHmeSearchMethodToken(const char* token, size_t length, bool& bError)
+{
+    if (!token || !length || length >= 5)
+    {
+        bError = true;
+        return 0;
+    }
+
+    char name[5];
+    std::memcpy(name, token, length);
+    name[length] = '\0';
+    return parseName(name, x265_motion_est_names, bError);
+}
+
+static int parseOptionIntToken(const char* token, size_t length, bool& bError)
+{
+    if (!token || !length)
+    {
+        bError = true;
+        return 0;
+    }
+
+    if (length >= 16)
+    {
+        bError = true;
+        return 0;
+    }
+
+    const char* begin = token;
+    const char* end = token + length;
+    while (begin != end && std::isspace(static_cast<unsigned char>(*begin)))
+        begin++;
+    if (begin == end)
+    {
+        bError = true;
+        return 0;
+    }
+
+    bool negative = false;
+    if (*begin == '+' || *begin == '-')
+    {
+        negative = (*begin == '-');
+        begin++;
+        if (begin == end)
+        {
+            bError = true;
+            return 0;
+        }
+    }
+
+    int base = 10;
+    const char* digitsBegin = begin;
+    if (*digitsBegin == '0' && digitsBegin + 1 < end)
+    {
+        if (digitsBegin[1] == 'x' || digitsBegin[1] == 'X')
+        {
+            base = 16;
+            digitsBegin += 2;
+            if (digitsBegin == end)
+            {
+                bError = true;
+                return 0;
+            }
+        }
+        else
+            base = 8;
+    }
+
+    unsigned long long magnitude = 0;
+    std::from_chars_result parsed = std::from_chars(digitsBegin, end, magnitude, base);
+    if (parsed.ec != std::errc() || parsed.ptr != end)
+    {
+        bError = true;
+        return 0;
+    }
+
+    if (negative)
+    {
+        if (magnitude > (unsigned long long)INT_MAX + 1ULL)
+        {
+            bError = true;
+            return 0;
+        }
+
+        return magnitude == (unsigned long long)INT_MAX + 1ULL ? INT_MIN : -(int)magnitude;
+    }
+
+    if (magnitude > INT_MAX)
+    {
+        bError = true;
+        return 0;
+    }
+
+    return (int)magnitude;
+}
+
+static const char* parsePresetIndexName(const char* preset)
+{
+    if (!preset)
+        return nullptr;
+
+    bool bPresetIndexError = false;
+    int index = parseOptionIntToken(preset, std::strlen(preset), bPresetIndexError);
+    if (!bPresetIndexError && index >= 0 && index < (int)(sizeof(x265_preset_names) / sizeof(*x265_preset_names) - 1))
+        return x265_preset_names[index];
+
+    return preset;
+}
+
+static bool parseOptionNonNegativeIntToken(const char* token, size_t length, int maxValue, int& value)
+{
+    bool bLocalError = false;
+    int parsedValue = parseOptionIntToken(token, length, bLocalError);
+    if (bLocalError || parsedValue < 0 || parsedValue > maxValue)
+        return false;
+
+    value = parsedValue;
+    return true;
+}
+
+static uint16_t parseOptionUint16Token(const char* token, size_t length, bool& bError)
+{
+    int value = 0;
+    if (!parseOptionNonNegativeIntToken(token, length, UINT16_MAX, value))
+    {
+        bError = true;
+        return 0;
+    }
+
+    return (uint16_t)value;
+}
+
+static bool splitOptionPair(const char* value, char separatorChar,
+                            const char*& firstToken, size_t& firstLength,
+                            const char*& secondToken, size_t& secondLength)
+{
+    if (!value)
+        return false;
+
+    const char* separator = std::strchr(value, separatorChar);
+    if (!separator)
+        return false;
+
+    firstToken = value;
+    firstLength = (size_t)(separator - value);
+    secondToken = separator + 1;
+    secondLength = std::strlen(secondToken);
+    return firstLength && secondLength;
+}
+
+static uint32_t parseOptionUint32Token(const char* token, size_t length, bool& bError)
+{
+    int value = 0;
+    if (!parseOptionNonNegativeIntToken(token, length, INT_MAX, value))
+    {
+        bError = true;
+        return 0;
+    }
+
+    return (uint32_t)value;
+}
+
+static int parseOptionIntValue(const char* value, bool& bError)
+{
+    if (!value)
+    {
+        bError = true;
+        return 0;
+    }
+
+    return parseOptionIntToken(value, std::strlen(value), bError);
+}
+
+#ifdef SVT_HEVC
+static uint8_t parseOptionUint8Token(const char* token, size_t length, bool& bError)
+{
+    int value = 0;
+    if (!parseOptionNonNegativeIntToken(token, length, UINT8_MAX, value))
+    {
+        bError = true;
+        return 0;
+    }
+
+    return (uint8_t)value;
+}
+
+static uint8_t parseOptionUint8Value(const char* value, bool& bError)
+{
+    if (!value)
+    {
+        bError = true;
+        return 0;
+    }
+
+    return parseOptionUint8Token(value, std::strlen(value), bError);
+}
+#endif
+
+static void assignParsedOptionLevels(const int parsed[3], int count, int target[3])
+{
+    if (count == 1)
+        target[0] = target[1] = target[2] = parsed[0];
+    else
+        for (int level = 0; level < 3; level++)
+            target[level] = parsed[level];
+}
+
+static bool parseOptionIntPair(const char* value, char separatorChar, int& first, int& second)
+{
+    const char* firstToken = nullptr;
+    size_t firstLength = 0;
+    const char* secondToken = nullptr;
+    size_t secondLength = 0;
+    if (!splitOptionPair(value, separatorChar, firstToken, firstLength, secondToken, secondLength))
+        return false;
+
+    bool bLocalError = false;
+    int parsedFirst = parseOptionIntToken(firstToken, firstLength, bLocalError);
+    int parsedSecond = parseOptionIntToken(secondToken, secondLength, bLocalError);
+    if (bLocalError)
+        return false;
+
+    first = parsedFirst;
+    second = parsedSecond;
+    return true;
+}
+
+static bool parseOptionUintPair(const char* value, char separatorChar, uint32_t& first, uint32_t& second)
+{
+    int parsedFirst = 0;
+    int parsedSecond = 0;
+    if (!parseOptionIntPair(value, separatorChar, parsedFirst, parsedSecond) || parsedFirst < 0 || parsedSecond < 0)
+        return false;
+
+    first = (uint32_t)parsedFirst;
+    second = (uint32_t)parsedSecond;
+    return true;
+}
+
+static bool parseOptionUint16Pair(const char* value, char separatorChar, uint16_t& first, uint16_t& second)
+{
+    const char* firstToken = nullptr;
+    size_t firstLength = 0;
+    const char* secondToken = nullptr;
+    size_t secondLength = 0;
+    if (!splitOptionPair(value, separatorChar, firstToken, firstLength, secondToken, secondLength))
+        return false;
+
+    bool bLocalError = false;
+    uint16_t parsedFirst = parseOptionUint16Token(firstToken, firstLength, bLocalError);
+    uint16_t parsedSecond = parseOptionUint16Token(secondToken, secondLength, bLocalError);
+    if (bLocalError)
+        return false;
+
+    first = parsedFirst;
+    second = parsedSecond;
+    return true;
+}
+
+static bool parseOptionIntQuad(const char* value, int& first, int& second, int& third, int& fourth)
+{
+    const char* parts[4];
+    size_t lengths[4];
+    if (splitCommaOption(value, parts, lengths, 4) != 4)
+        return false;
+
+    bool bLocalError = false;
+    int parsedFirst = parseOptionIntToken(parts[0], lengths[0], bLocalError);
+    int parsedSecond = parseOptionIntToken(parts[1], lengths[1], bLocalError);
+    int parsedThird = parseOptionIntToken(parts[2], lengths[2], bLocalError);
+    int parsedFourth = parseOptionIntToken(parts[3], lengths[3], bLocalError);
+    if (bLocalError)
+        return false;
+
+    first = parsedFirst;
+    second = parsedSecond;
+    third = parsedThird;
+    fourth = parsedFourth;
+    return true;
+}
+
+static bool parseOptionDoubleToken(const char* token, size_t length, double& value)
+{
+    if (!token || !length)
+        return false;
+
+    if (length >= 32)
+        return false;
+
+    double doubleValue = 0.0;
+    std::from_chars_result parsed = std::from_chars(token, token + length, doubleValue);
+    if (parsed.ec == std::errc() && parsed.ptr == token + length && std::isfinite(doubleValue))
+    {
+        value = doubleValue;
+        return true;
+    }
+
+    return false;
+}
+
+static bool parseZoneOptionEntry(char* entry, char* entryEnd, x265_zone& zone)
+{
+    if (!entry || !entryEnd || entry >= entryEnd)
+        return false;
+
+    const char* parts[3];
+    size_t lengths[3];
+    char savedEnd = *entryEnd;
+    *entryEnd = '\0';
+
+    bool parsed = false;
+    do
+    {
+        if (splitCommaOption(entry, parts, lengths, 3) != 3)
+            break;
+
+        bool bLocalError = false;
+        int startFrame = parseOptionIntToken(parts[0], lengths[0], bLocalError);
+        int endFrame = parseOptionIntToken(parts[1], lengths[1], bLocalError);
+        if (bLocalError || startFrame < 0 || endFrame <= startFrame)
+            break;
+
+        const char* equals = findTokenChar(parts[2], lengths[2], '=');
+        if (!equals || equals == parts[2] || equals + 1 >= parts[2] + lengths[2] || (size_t)(equals - parts[2]) != 1)
+            break;
+
+        size_t modeValueLength = (size_t)((parts[2] + lengths[2]) - (equals + 1));
+        if (parts[2][0] == 'q')
+        {
+            int qp = parseOptionIntToken(equals + 1, modeValueLength, bLocalError);
+            if (bLocalError || qp < -6 * (X265_DEPTH - 8) || qp > QP_MAX_MAX)
+                break;
+
+            zone.qp = qp;
+            zone.bForceQp = 1;
+        }
+        else if (parts[2][0] == 'b')
+        {
+            double bitrateFactor = 0.0;
+            if (!parseOptionDoubleToken(equals + 1, modeValueLength, bitrateFactor) || bitrateFactor <= 0.0)
+                break;
+
+            zone.bitrateFactor = bitrateFactor;
+            zone.bForceQp = 0;
+        }
+        else
+            break;
+
+        zone.startFrame = startFrame;
+        zone.endFrame = endFrame;
+        parsed = true;
+    }
+    while (false);
+
+    *entryEnd = savedEnd;
+    return parsed;
+}
+
+static bool parseTenthsOrIntegerLevel(const char* value, int& parsedLevel)
+{
+    double decimalLevel = 0.0;
+    if (!value || !parseOptionDoubleToken(value, std::strlen(value), decimalLevel) || decimalLevel < 0)
+        return false;
+
+    if (decimalLevel < 10)
+    {
+        if (decimalLevel > INT_MAX / 10.0)
+            return false;
+
+        double scaledLevel = 10 * decimalLevel;
+        int roundedLevel = (int)(scaledLevel + .5);
+        if (std::fabs(scaledLevel - roundedLevel) > 1e-6)
+            return false;
+
+        parsedLevel = roundedLevel;
+        return true;
+    }
+
+    bool bLocalError = false;
+    int integerLevel = parseOptionIntValue(value, bLocalError);
+    if (bLocalError || integerLevel >= 100)
+        return false;
+
+    parsedLevel = integerLevel;
+    return true;
+}
+
+#ifdef SVT_HEVC
+static bool parseTenthsOrIntegerLevel(const char* value, uint32_t& parsedLevel)
+{
+    int signedLevel = 0;
+    if (!parseTenthsOrIntegerLevel(value, signedLevel) || signedLevel < 0)
+        return false;
+
+    parsedLevel = (uint32_t)signedLevel;
+    return true;
+}
+#endif
+
+static bool parseFpsValue(const char* value, uint32_t& numerator, uint32_t& denominator)
+{
+    uint32_t parsedNumerator = 0;
+    uint32_t parsedDenominator = 0;
+    if (parseOptionUintPair(value, '/', parsedNumerator, parsedDenominator) && parsedNumerator > 0 && parsedDenominator > 0)
+    {
+        numerator = parsedNumerator;
+        denominator = parsedDenominator;
+        return true;
+    }
+
+    double fps = 0.0;
+    if (!value || !parseOptionDoubleToken(value, std::strlen(value), fps) || fps <= 0 || fps > INT_MAX)
+        return false;
+
+    if (fps <= INT_MAX / 1000.0)
+    {
+        numerator = (uint32_t)(fps * 1000 + .5);
+        denominator = 1000;
+        return true;
+    }
+
+    bool bLocalError = false;
+    int integerFps = parseOptionIntValue(value, bLocalError);
+    if (bLocalError || integerFps <= 0)
+        return false;
+
+    numerator = (uint32_t)integerFps;
+    denominator = 1;
+    return true;
+}
+
+#ifdef SVT_HEVC
+static bool parseFpsValue(const char* value, int32_t& numerator, int32_t& denominator)
+{
+    uint32_t parsedNumerator = 0;
+    uint32_t parsedDenominator = 0;
+    if (!parseFpsValue(value, parsedNumerator, parsedDenominator) ||
+        parsedNumerator > INT32_MAX || parsedDenominator > INT32_MAX)
+        return false;
+
+    numerator = (int32_t)parsedNumerator;
+    denominator = (int32_t)parsedDenominator;
+    return true;
+}
+#endif
+
+static bool parseIndexedNameOrNumber(const char* value, const char* const* names, int indexOffset, int& parsedValue)
+{
+    int maxIndexedValue = indexOffset;
+    for (const char* const* name = names; name && *name; name++, maxIndexedValue++) {}
+
+    bool bLocalError = false;
+    int indexedValue = parseOptionIntValue(value, bLocalError);
+    if (!bLocalError && indexedValue >= indexOffset && indexedValue <= maxIndexedValue)
+    {
+        parsedValue = indexedValue;
+        return true;
+    }
+
+    bLocalError = false;
+    int namedValue = parseName(value, names, bLocalError);
+    if (bLocalError)
+        return false;
+
+    parsedValue = namedValue + indexOffset;
+    return true;
+}
+
+static bool parseBoolOrIntValue(const char* value, int& parsedValue)
+{
+    bool bLocalError = false;
+    int boolValue = x265_atobool(value, bLocalError);
+    if (!bLocalError)
+    {
+        parsedValue = boolValue;
+        return true;
+    }
+
+    bLocalError = false;
+    int intValue = parseOptionIntValue(value, bLocalError);
+    if (!bLocalError)
+        parsedValue = intValue;
+    return !bLocalError;
+}
+
+static bool parseBoolOrNamedValue(const char* value, const char* const* names, int& parsedValue)
+{
+    bool bLocalError = false;
+    int boolValue = x265_atobool(value, bLocalError);
+    if (!bLocalError)
+    {
+        parsedValue = boolValue;
+        return true;
+    }
+
+    bLocalError = false;
+    int namedValue = parseName(value, names, bLocalError);
+    if (!bLocalError)
+        parsedValue = namedValue;
+    return !bLocalError;
+}
+
+static bool parseBoolOrNumericInt(const char* value, int falseValue, int& parsedValue)
+{
+    bool bLocalError = false;
+    int boolValue = x265_atobool(value, bLocalError);
+    if (!bLocalError && !boolValue)
+    {
+        parsedValue = falseValue;
+        return true;
+    }
+
+    bLocalError = false;
+    int intValue = parseOptionIntValue(value, bLocalError);
+    if (!bLocalError)
+        parsedValue = intValue;
+    return !bLocalError;
+}
+
+static bool parseBoolOrNumericDouble(const char* value, double falseValue, double& parsedValue)
+{
+    bool bLocalError = false;
+    int boolValue = x265_atobool(value, bLocalError);
+    if (!bLocalError && !boolValue)
+    {
+        parsedValue = falseValue;
+        return true;
+    }
+
+    bLocalError = false;
+    double doubleValue = x265_atof(value, bLocalError);
+    if (!bLocalError && std::isfinite(doubleValue))
+    {
+        parsedValue = doubleValue;
+        return true;
+    }
+
+    return false;
+}
+
+static bool parseMaskingStrengthTriples(const char* value, int expectedTriples, int window[], double refQpDelta[], double nonRefQpDelta[])
+{
+    const char* parts[36];
+    size_t lengths[36];
+    int parsedWindow[12];
+    double parsedRefQpDelta[12];
+    double parsedNonRefQpDelta[12];
+    const int expectedValues = expectedTriples * 3;
+    if (expectedTriples <= 0 || expectedTriples > 12)
+        return false;
+    if (splitCommaOption(value, parts, lengths, expectedValues) != expectedValues)
+        return false;
+
+    for (int i = 0; i < expectedTriples; i++)
+    {
+        bool bWindowError = false;
+        parsedWindow[i] = parseOptionIntToken(parts[i * 3], lengths[i * 3], bWindowError);
+        if (bWindowError ||
+            !parseOptionDoubleToken(parts[i * 3 + 1], lengths[i * 3 + 1], parsedRefQpDelta[i]) ||
+            !parseOptionDoubleToken(parts[i * 3 + 2], lengths[i * 3 + 2], parsedNonRefQpDelta[i]))
+            return false;
+    }
+
+    for (int i = 0; i < expectedTriples; i++)
+    {
+        window[i] = parsedWindow[i];
+        refQpDelta[i] = parsedRefQpDelta[i];
+        nonRefQpDelta[i] = parsedNonRefQpDelta[i];
+    }
+
+    return true;
+}
+
+static void applyCompactMaskingStrength(int parsedWindow, double parsedRefQpDelta, double parsedNonRefQpDelta,
+                                        int& maxScenecutWindow, int scenecutWindow[],
+                                        double refQpDelta[], double nonRefQpDelta[])
+{
+    if (parsedWindow > 0)
+        maxScenecutWindow = parsedWindow;
+    if (parsedRefQpDelta > 0)
+        refQpDelta[0] = parsedRefQpDelta;
+    if (parsedNonRefQpDelta > 0)
+        nonRefQpDelta[0] = parsedNonRefQpDelta;
+
+    scenecutWindow[0] = maxScenecutWindow / 6;
+    for (int i = 1; i < 6; i++)
+    {
+        scenecutWindow[i] = maxScenecutWindow / 6;
+        refQpDelta[i] = refQpDelta[i - 1] - (0.15 * refQpDelta[i - 1]);
+        nonRefQpDelta[i] = nonRefQpDelta[i - 1] - (0.15 * nonRefQpDelta[i - 1]);
+    }
+}
+
+static void applyExpandedMaskingStrength(const int parsedWindow[], const double parsedRefQpDelta[],
+                                         const double parsedNonRefQpDelta[], int& maxScenecutWindow,
+                                         int scenecutWindow[], double refQpDelta[], double nonRefQpDelta[])
+{
+    maxScenecutWindow = 0;
+    for (int i = 0; i < 6; i++)
+    {
+        scenecutWindow[i] = parsedWindow[i];
+        refQpDelta[i] = parsedRefQpDelta[i];
+        nonRefQpDelta[i] = parsedNonRefQpDelta[i];
+        maxScenecutWindow += scenecutWindow[i];
+    }
+}
 int x265_scenecut_aware_qp_param_parse(x265_param* p, const char* name, const char* value)
 {
     bool bError = false;
     char nameBuf[64];
     if (!name)
         return X265_PARAM_BAD_NAME;
+    if (!p)
+        return X265_PARAM_BAD_VALUE;
     // skip -- prefix if provided
     if (name[0] == '-' && name[1] == '-')
         name += 2;
     // s/_/-/g
-    if (strlen(name) + 1 < sizeof(nameBuf) && strchr(name, '_'))
+    if (std::strlen(name) + 1 < sizeof(nameBuf) && std::strchr(name, '_'))
     {
         char *c;
-        strcpy(nameBuf, name);
-        while ((c = strchr(nameBuf, '_')) != 0)
+        std::memcpy(nameBuf, name, std::strlen(name) + 1);
+        while ((c = std::strchr(nameBuf, '_')) != 0)
             *c = '-';
         name = nameBuf;
     }
@@ -854,7 +1808,25 @@ int x265_scenecut_aware_qp_param_parse(x265_param* p, const char* name, const ch
         value++;
 #define OPT(STR) else if (!strcmp(name, STR))
     if (0);
-    OPT("scenecut-aware-qp") p->bEnableSceneCutAwareQp = x265_atoi(value, bError);
+    OPT("scenecut-aware-qp")
+    {
+        bool bSceneCutAwareQpError = false;
+        int sceneCutAwareQp = parseOptionIntValue(value, bSceneCutAwareQpError);
+        bError |= bSceneCutAwareQpError;
+        if (!bSceneCutAwareQpError)
+            p->bEnableSceneCutAwareQp = sceneCutAwareQp;
+    }
+    OPT("bitrate")
+    {
+        bool bBitrateValueError = false;
+        int bitrate = parseOptionIntValue(value, bBitrateValueError);
+        bError |= bBitrateValueError;
+        if (!bBitrateValueError)
+        {
+            p->rc.bitrate = bitrate;
+            p->rc.rateControlMode = X265_RC_ABR;
+        }
+    }
     OPT("masking-strength") bError = parseMaskingStrength(p, value);
     else
         return X265_PARAM_BAD_NAME;
@@ -863,13 +1835,6 @@ int x265_scenecut_aware_qp_param_parse(x265_param* p, const char* name, const ch
 }
 
 
-/* internal versions of string-to-int with additional error checking */
-#undef atoi
-#undef atof
-#define atoi(str) x265_atoi(str, bError)
-#define atof(str) x265_atof(str, bError)
-#define atobool(str) (x265_atobool(str, bError))
-
 int x265_zone_param_parse(x265_param* p, const char* name, const char* value)
 {
     bool bError = false;
@@ -877,6 +1842,8 @@ int x265_zone_param_parse(x265_param* p, const char* name, const char* value)
 
     if (!name)
         return X265_PARAM_BAD_NAME;
+    if (!p)
+        return X265_PARAM_BAD_VALUE;
 
     // skip -- prefix if provided
     if (name[0] == '-' && name[1] == '-')
@@ -886,7 +1853,7 @@ int x265_zone_param_parse(x265_param* p, const char* name, const char* value)
     if (strlen(name) + 1 < sizeof(nameBuf) && strchr(name, '_'))
     {
         char *c;
-        strcpy(nameBuf, name);
+        std::memcpy(nameBuf, name, strlen(name) + 1);
         while ((c = strchr(nameBuf, '_')) != 0)
             *c = '-';
 
@@ -896,79 +1863,190 @@ int x265_zone_param_parse(x265_param* p, const char* name, const char* value)
     if (!strncmp(name, "no-", 3))
     {
         name += 3;
-        value = !value || x265_atobool(value, bError) ? "false" : "true";
+        value = invertBooleanAliasValue(value, bError);
     }
     else if (!strncmp(name, "no", 2))
     {
         name += 2;
-        value = !value || x265_atobool(value, bError) ? "false" : "true";
+        value = invertBooleanAliasValue(value, bError);
     }
     else if (!value)
         value = "true";
     else if (value[0] == '=')
         value++;
 
+    if (bError)
+        return X265_PARAM_BAD_VALUE;
+
 #define OPT(STR) else if (!strcmp(name, STR))
 #define OPT2(STR1, STR2) else if (!strcmp(name, STR1) || !strcmp(name, STR2))
 
     if (0);
-    OPT("ref") p->maxNumReferences = atoi(value);
-    OPT("fast-intra") p->bEnableFastIntra = atobool(value);
-    OPT("early-skip") p->bEnableEarlySkip = atobool(value);
-    OPT("rskip") p->recursionSkipMode = atoi(value);
-    OPT("rskip-edge-threshold") p->edgeVarThreshold = atoi(value)/100.0f;
-    OPT("me") p->searchMethod = parseName(value, x265_motion_est_names, bError);
-    OPT("subme") p->subpelRefine = atoi(value);
-    OPT("merange") p->searchRange = atoi(value);
-    OPT("rect") p->bEnableRectInter = atobool(value);
-    OPT("amp") p->bEnableAMP = atobool(value);
-    OPT("max-merge") p->maxNumMergeCand = (uint32_t)atoi(value);
-    OPT("rd") p->rdLevel = atoi(value);
-    OPT("radl") p->radl = atoi(value);
+    OPT("ref")
+    {
+        bool bMaxNumReferencesError = false;
+        int maxNumReferences = parseOptionIntValue(value, bMaxNumReferencesError);
+        bError |= bMaxNumReferencesError;
+        if (!bMaxNumReferencesError)
+            p->maxNumReferences = maxNumReferences;
+    }
+    OPT("fast-intra") p->bEnableFastIntra = x265_atobool(value, bError);
+    OPT("early-skip") p->bEnableEarlySkip = x265_atobool(value, bError);
+    OPT("rskip")
+    {
+        bool bRecursionSkipModeError = false;
+        int recursionSkipMode = parseOptionIntValue(value, bRecursionSkipModeError);
+        bError |= bRecursionSkipModeError;
+        if (!bRecursionSkipModeError)
+            p->recursionSkipMode = recursionSkipMode;
+    }
+    OPT("rskip-edge-threshold")
+    {
+        bool bEdgeVarThresholdError = false;
+        int edgeVarThreshold = parseOptionIntValue(value, bEdgeVarThresholdError);
+        bError |= bEdgeVarThresholdError;
+        if (!bEdgeVarThresholdError)
+            p->edgeVarThreshold = edgeVarThreshold / 100.0f;
+    }
+    OPT("me")
+    {
+        bool bSearchMethodError = false;
+        int searchMethod = parseName(value, x265_motion_est_names, bSearchMethodError);
+        bError |= bSearchMethodError;
+        if (!bSearchMethodError)
+            p->searchMethod = searchMethod;
+    }
+    OPT("subme")
+    {
+        bool bSubpelRefineError = false;
+        int subpelRefine = parseOptionIntValue(value, bSubpelRefineError);
+        bError |= bSubpelRefineError;
+        if (!bSubpelRefineError)
+            p->subpelRefine = subpelRefine;
+    }
+    OPT("merange")
+    {
+        bool bSearchRangeError = false;
+        int searchRange = parseOptionIntValue(value, bSearchRangeError);
+        bError |= bSearchRangeError;
+        if (!bSearchRangeError)
+            p->searchRange = searchRange;
+    }
+    OPT("rect") p->bEnableRectInter = x265_atobool(value, bError);
+    OPT("amp") p->bEnableAMP = x265_atobool(value, bError);
+    OPT("max-merge")
+    {
+        bool bMaxNumMergeCandError = false;
+        uint32_t maxNumMergeCand = parseOptionUint32Token(value, std::strlen(value), bMaxNumMergeCandError);
+        bError |= bMaxNumMergeCandError;
+        if (!bMaxNumMergeCandError)
+            p->maxNumMergeCand = maxNumMergeCand;
+    }
+    OPT("rd")
+    {
+        bool bRdLevelError = false;
+        int rdLevel = parseOptionIntValue(value, bRdLevelError);
+        bError |= bRdLevelError;
+        if (!bRdLevelError)
+            p->rdLevel = rdLevel;
+    }
+    OPT("radl")
+    {
+        bool bRadlError = false;
+        int radl = parseOptionIntValue(value, bRadlError);
+        bError |= bRadlError;
+        if (!bRadlError)
+            p->radl = radl;
+    }
     OPT2("rdoq", "rdoq-level")
     {
-        int bval = atobool(value);
-        if (bError || bval)
-        {
-            bError = false;
-            p->rdoqLevel = atoi(value);
-        }
-        else
-            p->rdoqLevel = 0;
+        bool bRdoqTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));
+        bError |= !parseBoolOrNumericInt(value, 0, p->rdoqLevel)
+               || bRdoqTextualTrue
+               || p->rdoqLevel < 0 || p->rdoqLevel > 2;
     }
-    OPT("b-intra") p->bIntraInBFrames = atobool(value);
+    OPT("b-intra") p->bIntraInBFrames = x265_atobool(value, bError);
     OPT("scaling-list") snprintf(p->scalingLists, X265_MAX_STRING_SIZE, "%s", value);
     OPT("crf")
     {
-        p->rc.rfConstant = atof(value);
-        p->rc.rateControlMode = X265_RC_CRF;
+        if (!parseOptionDoubleToken(value, std::strlen(value), p->rc.rfConstant))
+            bError = true;
+        else
+            p->rc.rateControlMode = X265_RC_CRF;
     }
     OPT("qp")
     {
-        p->rc.qp = atoi(value);
-        p->rc.rateControlMode = X265_RC_CQP;
+        bool bQpValueError = false;
+        int qp = parseOptionIntValue(value, bQpValueError);
+        bError |= bQpValueError;
+        if (!bQpValueError)
+        {
+            p->rc.qp = qp;
+            p->rc.rateControlMode = X265_RC_CQP;
+        }
     }
     OPT("bitrate")
     {
-        p->rc.bitrate = atoi(value);
-        p->rc.rateControlMode = X265_RC_ABR;
+        bool bBitrateValueError = false;
+        int bitrate = parseOptionIntValue(value, bBitrateValueError);
+        bError |= bBitrateValueError;
+        if (!bBitrateValueError)
+        {
+            p->rc.bitrate = bitrate;
+            p->rc.rateControlMode = X265_RC_ABR;
+        }
     }
-    OPT("aq-mode") p->rc.aqMode = atoi(value);
-    OPT("limit-aq1") p->rc.limitAq1 = atobool(value);
-    OPT("aq-strength") p->rc.aqStrength = atof(value);
-    OPT("aq-bias-strength") p->rc.aqBiasStrength = atof(value);
-    OPT("limit-aq1-strength") p->rc.limitAq1Strength = atof(value);
-    OPT("nr-intra") p->noiseReductionIntra = atoi(value);
-    OPT("nr-inter") p->noiseReductionInter = atoi(value);
-    OPT("limit-modes") p->limitModes = atobool(value);
-    OPT("splitrd-skip") p->bEnableSplitRdSkip = atobool(value);
-    OPT("cu-lossless") p->bCULossless = atobool(value);
-    OPT("rd-refine") p->bEnableRdRefine = atobool(value);
-    OPT("limit-tu") p->limitTU = atoi(value);
-    OPT("tskip") p->bEnableTransformSkip = atobool(value);
-    OPT("tskip-fast") p->bEnableTSkipFast = atobool(value);
-    OPT("rdpenalty") p->rdPenalty = atoi(value);
-    OPT("dynamic-rd") p->dynamicRd = atof(value);
+    OPT("aq-mode")
+    {
+        bool bAqModeError = false;
+        int aqMode = parseOptionIntValue(value, bAqModeError);
+        bError |= bAqModeError;
+        if (!bAqModeError)
+            p->rc.aqMode = aqMode;
+    }
+    OPT("limit-aq1") p->rc.limitAq1 = x265_atobool(value, bError);
+    OPT("aq-strength") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.aqStrength);
+    OPT("aq-bias-strength") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.aqBiasStrength);
+    OPT("limit-aq1-strength") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.limitAq1Strength);
+    OPT("nr-intra")
+    {
+        bool bNoiseReductionIntraError = false;
+        int noiseReductionIntra = parseOptionIntValue(value, bNoiseReductionIntraError);
+        bError |= bNoiseReductionIntraError;
+        if (!bNoiseReductionIntraError)
+            p->noiseReductionIntra = noiseReductionIntra;
+    }
+    OPT("nr-inter")
+    {
+        bool bNoiseReductionInterError = false;
+        int noiseReductionInter = parseOptionIntValue(value, bNoiseReductionInterError);
+        bError |= bNoiseReductionInterError;
+        if (!bNoiseReductionInterError)
+            p->noiseReductionInter = noiseReductionInter;
+    }
+    OPT("limit-modes") p->limitModes = x265_atobool(value, bError);
+    OPT("splitrd-skip") p->bEnableSplitRdSkip = x265_atobool(value, bError);
+    OPT("cu-lossless") p->bCULossless = x265_atobool(value, bError);
+    OPT("rd-refine") p->bEnableRdRefine = x265_atobool(value, bError);
+    OPT("limit-tu")
+    {
+        bool bLimitTUError = false;
+        int limitTU = parseOptionIntValue(value, bLimitTUError);
+        bError |= bLimitTUError;
+        if (!bLimitTUError)
+            p->limitTU = limitTU;
+    }
+    OPT("tskip") p->bEnableTransformSkip = x265_atobool(value, bError);
+    OPT("tskip-fast") p->bEnableTSkipFast = x265_atobool(value, bError);
+    OPT("rdpenalty")
+    {
+        bool bRdPenaltyError = false;
+        int rdPenalty = parseOptionIntValue(value, bRdPenaltyError);
+        bError |= bRdPenaltyError;
+        if (!bRdPenaltyError)
+            p->rdPenalty = rdPenalty;
+    }
+    OPT("dynamic-rd") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->dynamicRd);
     else
         return X265_PARAM_BAD_NAME;
 
@@ -978,15 +2056,12 @@ int x265_zone_param_parse(x265_param* p, const char* name, const char* value)
     return bError ? X265_PARAM_BAD_VALUE : 0;
 }
 
-#undef atobool
 #undef atoi
 #undef atof
 
 /* internal versions of string-to-int with additional error checking */
 #undef atoi
 #undef atof
-#define atoi(str) x265_atoi(str, bError)
-#define atof(str) x265_atof(str, bError)
 #define atobool(str) (bNameWasBool = true, x265_atobool(str, bError))
 
 int x265_param_parse(x265_param* p, const char* name, const char* value)
@@ -997,14 +2072,16 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
     bool bExtraParams = false;
     char nameBuf[64];
 #ifdef SVT_HEVC
-    static int count;
+    static int svtParseCallCount;
 #endif
 
     if (!name)
         return X265_PARAM_BAD_NAME;
+    if (!p)
+        return X265_PARAM_BAD_VALUE;
 
 #ifdef SVT_HEVC
-    count++;
+    svtParseCallCount++;
 #endif
     // skip -- prefix if provided
     if (name[0] == '-' && name[1] == '-')
@@ -1014,7 +2091,7 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
     if (strlen(name) + 1 < sizeof(nameBuf) && strchr(name, '_'))
     {
         char *c;
-        strcpy(nameBuf, name);
+        std::memcpy(nameBuf, name, strlen(name) + 1);
         while ((c = strchr(nameBuf, '_')) != 0)
             *c = '-';
 
@@ -1024,17 +2101,22 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
     if (!strncmp(name, "no-", 3))
     {
         name += 3;
-        value = !value || x265_atobool(value, bError) ? "false" : "true";
+        value = invertBooleanAliasValue(value, bError);
+        bValueWasNull = false;
     }
     else if (!strncmp(name, "no", 2))
     {
         name += 2;
-        value = !value || x265_atobool(value, bError) ? "false" : "true";
+        value = invertBooleanAliasValue(value, bError);
+        bValueWasNull = false;
     }
     else if (!value)
         value = "true";
     else if (value[0] == '=')
         value++;
+
+    if (bError)
+        return X265_PARAM_BAD_VALUE;
 
 #if defined(_MSC_VER)
 #pragma warning(disable: 4127) // conditional expression is constant
@@ -1069,298 +2151,759 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
             if (bValueWasNull)
                 p->cpuid = atobool(value);
             else
-                p->cpuid = parseCpuName(value, bError, false);
+            {
+                bool bCpuNameError = false;
+                int cpuid = parseCpuName(value, bCpuNameError, false);
+                bError |= bCpuNameError;
+                if (!bCpuNameError)
+                    p->cpuid = cpuid;
+            }
         }
 #else
         if (bValueWasNull)
             p->cpuid = atobool(value);
         else
-            p->cpuid = parseCpuName(value, bError, false);
+        {
+            bool bCpuNameError = false;
+            int cpuid = parseCpuName(value, bCpuNameError, false);
+            bError |= bCpuNameError;
+            if (!bCpuNameError)
+                p->cpuid = cpuid;
+        }
 #endif
     }
     OPT("fps")
     {
-        if (sscanf(value, "%u/%u", &p->fpsNum, &p->fpsDenom) == 2)
-            ;
-        else
-        {
-            float fps = (float)atof(value);
-            if (fps > 0 && fps <= INT_MAX / 1000)
-            {
-                p->fpsNum = (int)(fps * 1000 + .5);
-                p->fpsDenom = 1000;
-            }
-            else
-            {
-                p->fpsNum = atoi(value);
-                p->fpsDenom = 1;
-            }
-        }
+        bError |= !parseFpsValue(value, p->fpsNum, p->fpsDenom);
     }
-    OPT("frame-threads") p->frameNumThreads = atoi(value);
-    OPT("pmode") p->bDistributeModeAnalysis = atobool(value);
-    OPT("pme") p->bDistributeMotionEstimation = atobool(value);
+    OPT("frame-threads")
+    {
+        bool bFrameNumThreadsError = false;
+        int frameNumThreads = parseOptionIntValue(value, bFrameNumThreadsError);
+        bError |= bFrameNumThreadsError;
+        if (!bFrameNumThreadsError)
+            p->frameNumThreads = frameNumThreads;
+    }
+    OPT("pmode")
+    {
+        bNameWasBool = true;
+        p->bDistributeModeAnalysis = x265_atobool(value, bError);
+    }
+    OPT("pme")
+    {
+        bNameWasBool = true;
+        p->bDistributeMotionEstimation = x265_atobool(value, bError);
+    }
     OPT2("level-idc", "level")
     {
         /* allow "5.1" or "51", both converted to integer 51 */
         /* if level-idc specifies an obviously wrong value in either float or int, 
         throw error consistently. Stronger level checking will be done in encoder_open() */
-        if (atof(value) < 10)
-            p->levelIdc = (int)(10 * atof(value) + .5);
-        else if (atoi(value) < 100)
-            p->levelIdc = atoi(value);
-        else 
+        if (!parseTenthsOrIntegerLevel(value, p->levelIdc))
             bError = true;
     }
-    OPT("high-tier") p->bHighTier = atobool(value);
-    OPT("allow-non-conformance") p->bAllowNonConformance = atobool(value);
+    OPT("high-tier")
+    {
+        bNameWasBool = true;
+        p->bHighTier = x265_atobool(value, bError);
+    }
+    OPT("allow-non-conformance")
+    {
+        bNameWasBool = true;
+        p->bAllowNonConformance = x265_atobool(value, bError);
+    }
     OPT2("log-level", "log")
     {
-        p->logLevel = atoi(value);
-        if (bError)
-        {
-            bError = false;
-            p->logLevel = parseName(value, logLevelNames, bError) - 1;
-        }
+        bError |= !parseIndexedNameOrNumber(value, logLevelNames, -1, p->logLevel);
     }
     OPT("log-file")
     {
-        if (p->logfn)
+        char* newLogFile = strdup(value);
+        if (!newLogFile)
+            bError = true;
+        else
         {
             free(p->logfn);
-            p->logfn = NULL;
+            p->logfn = newLogFile;
         }
-        p->logfn = strdup(value);
-        if (!p->logfn)
-            bError = true;
     }
     OPT("log-file-level")
     {
-        p->logfLevel = atoi(value);
-        if (bError)
-        {
-            bError = false;
-            p->logfLevel = parseName(value, logLevelNames, bError) - 1;
-        }
+        bError |= !parseIndexedNameOrNumber(value, logLevelNames, -1, p->logfLevel);
     }
-    OPT("total-frames") p->totalFrames = atoi(value);
-    OPT("annexb") p->bAnnexB = atobool(value);
-    OPT("repeat-headers") p->bRepeatHeaders = atobool(value);
-    OPT("wpp") p->bEnableWavefront = atobool(value);
-    OPT("ctu") p->maxCUSize = (uint32_t)atoi(value);
-    OPT("min-cu-size") p->minCUSize = (uint32_t)atoi(value);
-    OPT("tu-intra-depth") p->tuQTMaxIntraDepth = (uint32_t)atoi(value);
-    OPT("tu-inter-depth") p->tuQTMaxInterDepth = (uint32_t)atoi(value);
-    OPT("max-tu-size") p->maxTUSize = (uint32_t)atoi(value);
-    OPT("subme") p->subpelRefine = atoi(value);
-    OPT("merange") p->searchRange = atoi(value);
-    OPT("rect") p->bEnableRectInter = atobool(value);
-    OPT("amp") p->bEnableAMP = atobool(value);
-    OPT("max-merge") p->maxNumMergeCand = (uint32_t)atoi(value);
-    OPT("temporal-mvp") p->bEnableTemporalMvp = atobool(value);
-    OPT("early-skip") p->bEnableEarlySkip = atobool(value);
-    OPT("rskip") p->recursionSkipMode = atoi(value);
-    OPT("rdpenalty") p->rdPenalty = atoi(value);
-    OPT("tskip") p->bEnableTransformSkip = atobool(value);
-    OPT("no-tskip-fast") p->bEnableTSkipFast = atobool(value);
-    OPT("tskip-fast") p->bEnableTSkipFast = atobool(value);
-    OPT("strong-intra-smoothing") p->bEnableStrongIntraSmoothing = atobool(value);
-    OPT("lossless") p->bLossless = atobool(value);
-    OPT("cu-lossless") p->bCULossless = atobool(value);
-    OPT("constrained-intra") p->bEnableConstrainedIntra = atobool(value);
-    OPT("fast-intra") p->bEnableFastIntra = atobool(value);
-    OPT("open-gop") p->bOpenGOP = atobool(value);
-    OPT("intra-refresh") p->bIntraRefresh = atobool(value);
-    OPT("lookahead-slices") p->lookaheadSlices = atoi(value);
+    OPT("total-frames")
+    {
+        bool bTotalFramesError = false;
+        int totalFrames = parseOptionIntValue(value, bTotalFramesError);
+        bError |= bTotalFramesError;
+        if (!bTotalFramesError)
+            p->totalFrames = totalFrames;
+    }
+    OPT("annexb")
+    {
+        bNameWasBool = true;
+        p->bAnnexB = x265_atobool(value, bError);
+    }
+    OPT("repeat-headers")
+    {
+        bNameWasBool = true;
+        p->bRepeatHeaders = x265_atobool(value, bError);
+    }
+    OPT("wpp")
+    {
+        bNameWasBool = true;
+        p->bEnableWavefront = x265_atobool(value, bError);
+    }
+    OPT("ctu")
+    {
+        bool bMaxCUSizeError = false;
+        uint32_t maxCUSize = parseOptionUint32Token(value, std::strlen(value), bMaxCUSizeError);
+        bError |= bMaxCUSizeError;
+        if (!bMaxCUSizeError)
+            p->maxCUSize = maxCUSize;
+    }
+    OPT("min-cu-size")
+    {
+        bool bMinCUSizeError = false;
+        uint32_t minCUSize = parseOptionUint32Token(value, std::strlen(value), bMinCUSizeError);
+        bError |= bMinCUSizeError;
+        if (!bMinCUSizeError)
+            p->minCUSize = minCUSize;
+    }
+    OPT("tu-intra-depth")
+    {
+        bool bTuQTMaxIntraDepthError = false;
+        uint32_t tuQTMaxIntraDepth = parseOptionUint32Token(value, std::strlen(value), bTuQTMaxIntraDepthError);
+        bError |= bTuQTMaxIntraDepthError;
+        if (!bTuQTMaxIntraDepthError)
+            p->tuQTMaxIntraDepth = tuQTMaxIntraDepth;
+    }
+    OPT("tu-inter-depth")
+    {
+        bool bTuQTMaxInterDepthError = false;
+        uint32_t tuQTMaxInterDepth = parseOptionUint32Token(value, std::strlen(value), bTuQTMaxInterDepthError);
+        bError |= bTuQTMaxInterDepthError;
+        if (!bTuQTMaxInterDepthError)
+            p->tuQTMaxInterDepth = tuQTMaxInterDepth;
+    }
+    OPT("max-tu-size")
+    {
+        bool bMaxTUSizeError = false;
+        uint32_t maxTUSize = parseOptionUint32Token(value, std::strlen(value), bMaxTUSizeError);
+        bError |= bMaxTUSizeError;
+        if (!bMaxTUSizeError)
+            p->maxTUSize = maxTUSize;
+    }
+    OPT("subme")
+    {
+        bool bSubpelRefineError = false;
+        int subpelRefine = parseOptionIntValue(value, bSubpelRefineError);
+        bError |= bSubpelRefineError;
+        if (!bSubpelRefineError)
+            p->subpelRefine = subpelRefine;
+    }
+    OPT("merange")
+    {
+        bool bSearchRangeError = false;
+        int searchRange = parseOptionIntValue(value, bSearchRangeError);
+        bError |= bSearchRangeError;
+        if (!bSearchRangeError)
+            p->searchRange = searchRange;
+    }
+    OPT("rect")
+    {
+        bNameWasBool = true;
+        p->bEnableRectInter = x265_atobool(value, bError);
+    }
+    OPT("amp")
+    {
+        bNameWasBool = true;
+        p->bEnableAMP = x265_atobool(value, bError);
+    }
+    OPT("max-merge")
+    {
+        bool bMaxNumMergeCandError = false;
+        uint32_t maxNumMergeCand = parseOptionUint32Token(value, std::strlen(value), bMaxNumMergeCandError);
+        bError |= bMaxNumMergeCandError;
+        if (!bMaxNumMergeCandError)
+            p->maxNumMergeCand = maxNumMergeCand;
+    }
+    OPT("temporal-mvp")
+    {
+        bNameWasBool = true;
+        p->bEnableTemporalMvp = x265_atobool(value, bError);
+    }
+    OPT("early-skip")
+    {
+        bNameWasBool = true;
+        p->bEnableEarlySkip = x265_atobool(value, bError);
+    }
+    OPT("rskip")
+    {
+        bool bRecursionSkipModeError = false;
+        int recursionSkipMode = parseOptionIntValue(value, bRecursionSkipModeError);
+        bError |= bRecursionSkipModeError;
+        if (!bRecursionSkipModeError)
+            p->recursionSkipMode = recursionSkipMode;
+    }
+    OPT("rdpenalty")
+    {
+        bool bRdPenaltyError = false;
+        int rdPenalty = parseOptionIntValue(value, bRdPenaltyError);
+        bError |= bRdPenaltyError;
+        if (!bRdPenaltyError)
+            p->rdPenalty = rdPenalty;
+    }
+    OPT("tskip")
+    {
+        bNameWasBool = true;
+        p->bEnableTransformSkip = x265_atobool(value, bError);
+    }
+    OPT("no-tskip-fast")
+    {
+        bNameWasBool = true;
+        p->bEnableTSkipFast = x265_atobool(value, bError);
+    }
+    OPT("tskip-fast")
+    {
+        bNameWasBool = true;
+        p->bEnableTSkipFast = x265_atobool(value, bError);
+    }
+    OPT("strong-intra-smoothing")
+    {
+        bNameWasBool = true;
+        p->bEnableStrongIntraSmoothing = x265_atobool(value, bError);
+    }
+    OPT("lossless")
+    {
+        bNameWasBool = true;
+        p->bLossless = x265_atobool(value, bError);
+    }
+    OPT("cu-lossless")
+    {
+        bNameWasBool = true;
+        p->bCULossless = x265_atobool(value, bError);
+    }
+    OPT("constrained-intra")
+    {
+        bNameWasBool = true;
+        p->bEnableConstrainedIntra = x265_atobool(value, bError);
+    }
+    OPT("fast-intra")
+    {
+        bNameWasBool = true;
+        p->bEnableFastIntra = x265_atobool(value, bError);
+    }
+    OPT("open-gop")
+    {
+        bNameWasBool = true;
+        p->bOpenGOP = x265_atobool(value, bError);
+    }
+    OPT("intra-refresh")
+    {
+        bNameWasBool = true;
+        p->bIntraRefresh = x265_atobool(value, bError);
+    }
+    OPT("lookahead-slices")
+    {
+        bool bLookaheadSlicesError = false;
+        int lookaheadSlices = parseOptionIntValue(value, bLookaheadSlicesError);
+        bError |= bLookaheadSlicesError;
+        if (!bLookaheadSlicesError)
+            p->lookaheadSlices = lookaheadSlices;
+    }
     OPT("scenecut")
     {
-       p->scenecutThreshold = atobool(value);
-       if (bError || p->scenecutThreshold)
-       {
-           bError = false;
-           p->scenecutThreshold = atoi(value);
-       }
+       bool bScenecutTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));
+       bError |= !parseBoolOrIntValue(value, p->scenecutThreshold)
+              || bScenecutTextualTrue
+              || p->scenecutThreshold < 0;
     }
-    OPT("temporal-layers") p->bEnableTemporalSubLayers = atoi(value);
-    OPT("keyint") p->keyframeMax = atoi(value);
-    OPT("min-keyint") p->keyframeMin = atoi(value);
-    OPT("rc-lookahead") p->lookaheadDepth = atoi(value);
-    OPT("bframes") p->bframes = atoi(value);
-    OPT("bframe-bias") p->bFrameBias = atoi(value);
+    OPT("temporal-layers")
+    {
+        bool bEnableTemporalSubLayersError = false;
+        int enableTemporalSubLayers = parseOptionIntValue(value, bEnableTemporalSubLayersError);
+        bError |= bEnableTemporalSubLayersError;
+        if (!bEnableTemporalSubLayersError)
+            p->bEnableTemporalSubLayers = enableTemporalSubLayers;
+    }
+    OPT("keyint")
+    {
+        bool bKeyframeMaxError = false;
+        int keyframeMax = parseOptionIntValue(value, bKeyframeMaxError);
+        bError |= bKeyframeMaxError;
+        if (!bKeyframeMaxError)
+            p->keyframeMax = keyframeMax;
+    }
+    OPT("min-keyint")
+    {
+        bool bKeyframeMinError = false;
+        int keyframeMin = parseOptionIntValue(value, bKeyframeMinError);
+        bError |= bKeyframeMinError;
+        if (!bKeyframeMinError)
+            p->keyframeMin = keyframeMin;
+    }
+    OPT("rc-lookahead")
+    {
+        bool bLookaheadDepthError = false;
+        int lookaheadDepth = parseOptionIntValue(value, bLookaheadDepthError);
+        bError |= bLookaheadDepthError;
+        if (!bLookaheadDepthError)
+            p->lookaheadDepth = lookaheadDepth;
+    }
+    OPT("bframes")
+    {
+        bool bBframesError = false;
+        int bframes = parseOptionIntValue(value, bBframesError);
+        bError |= bBframesError;
+        if (!bBframesError)
+            p->bframes = bframes;
+    }
+    OPT("bframe-bias")
+    {
+        bool bBFrameBiasError = false;
+        int bFrameBias = parseOptionIntValue(value, bBFrameBiasError);
+        bError |= bBFrameBiasError;
+        if (!bBFrameBiasError)
+            p->bFrameBias = bFrameBias;
+    }
     OPT("b-adapt")
     {
-        p->bFrameAdaptive = atobool(value);
-        if (bError || p->bFrameAdaptive)
-        {
-            bError = false;
-            p->bFrameAdaptive = atoi(value);
-        }
+        bool bBAdaptTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));
+        bError |= !parseBoolOrIntValue(value, p->bFrameAdaptive)
+               || bBAdaptTextualTrue
+               || p->bFrameAdaptive < 0 || p->bFrameAdaptive > 2;
     }
     OPT("interlace")
     {
-        p->interlaceMode = atobool(value);
-        if (bError || p->interlaceMode)
-        {
-            bError = false;
-            p->interlaceMode = parseName(value, x265_interlace_names, bError);
-        }
+        bool bInterlaceBoolError = false;
+        int interlaceBoolValue = x265_atobool(value, bInterlaceBoolError);
+        bError |= !parseBoolOrNamedValue(value, x265_interlace_names, p->interlaceMode)
+               || (!bInterlaceBoolError && interlaceBoolValue)
+               || p->interlaceMode < 0 || p->interlaceMode > 2;
     }
-    OPT("ref") p->maxNumReferences = atoi(value);
-    OPT("limit-refs") p->limitReferences = atoi(value);
-    OPT("limit-modes") p->limitModes = atobool(value);
-    OPT("weightp") p->bEnableWeightedPred = atobool(value);
-    OPT("weightb") p->bEnableWeightedBiPred = atobool(value);
-    OPT("cbqpoffs") p->cbQpOffset = atoi(value);
-    OPT("crqpoffs") p->crQpOffset = atoi(value);
-    OPT("rd") p->rdLevel = atoi(value);
+    OPT("ref")
+    {
+        bool bMaxNumReferencesError = false;
+        int maxNumReferences = parseOptionIntValue(value, bMaxNumReferencesError);
+        bError |= bMaxNumReferencesError;
+        if (!bMaxNumReferencesError)
+            p->maxNumReferences = maxNumReferences;
+    }
+    OPT("limit-refs")
+    {
+        bool bLimitReferencesError = false;
+        int limitReferences = parseOptionIntValue(value, bLimitReferencesError);
+        bError |= bLimitReferencesError;
+        if (!bLimitReferencesError)
+            p->limitReferences = limitReferences;
+    }
+    OPT("limit-modes")
+    {
+        bNameWasBool = true;
+        p->limitModes = x265_atobool(value, bError);
+    }
+    OPT("weightp")
+    {
+        bNameWasBool = true;
+        p->bEnableWeightedPred = x265_atobool(value, bError);
+    }
+    OPT("weightb")
+    {
+        bNameWasBool = true;
+        p->bEnableWeightedBiPred = x265_atobool(value, bError);
+    }
+    OPT("cbqpoffs")
+    {
+        bool bCbQpOffsetError = false;
+        int cbQpOffset = parseOptionIntValue(value, bCbQpOffsetError);
+        bError |= bCbQpOffsetError;
+        if (!bCbQpOffsetError)
+            p->cbQpOffset = cbQpOffset;
+    }
+    OPT("crqpoffs")
+    {
+        bool bCrQpOffsetError = false;
+        int crQpOffset = parseOptionIntValue(value, bCrQpOffsetError);
+        bError |= bCrQpOffsetError;
+        if (!bCrQpOffsetError)
+            p->crQpOffset = crQpOffset;
+    }
+    OPT("rd")
+    {
+        bool bRdLevelError = false;
+        int rdLevel = parseOptionIntValue(value, bRdLevelError);
+        bError |= bRdLevelError;
+        if (!bRdLevelError)
+            p->rdLevel = rdLevel;
+    }
     OPT2("rdoq", "rdoq-level")
     {
-        int bval = atobool(value);
-        if (bError || bval)
-        {
-            bError = false;
-            p->rdoqLevel = atoi(value);
-        }
-        else
-            p->rdoqLevel = 0;
+        bool bRdoqTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));
+        bError |= !parseBoolOrNumericInt(value, 0, p->rdoqLevel)
+               || bRdoqTextualTrue
+               || p->rdoqLevel < 0 || p->rdoqLevel > 2;
     }
     OPT("psy-rd")
     {
-        int bval = atobool(value);
-        if (bError || bval)
-        {
-            bError = false;
-            p->psyRd = atof(value);
-        }
-        else
-            p->psyRd = 0.0;
+        bool bPsyRdTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));
+        bError |= !parseBoolOrNumericDouble(value, 0.0, p->psyRd)
+               || bPsyRdTextualTrue;
     }
     OPT("psy-rdoq")
     {
-        int bval = atobool(value);
-        if (bError || bval)
-        {
-            bError = false;
-            p->psyRdoq = atof(value);
-        }
-        else
-            p->psyRdoq = 0.0;
+        bool bPsyRdoqTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));
+        bError |= !parseBoolOrNumericDouble(value, 0.0, p->psyRdoq)
+               || bPsyRdoqTextualTrue;
     }
-    OPT("psy-bscale") p->psyScaleB = atoi(value);
-    OPT("psy-pscale") p->psyScaleP = atoi(value);
-    OPT("psy-iscale") p->psyScaleI = atoi(value);
-    OPT("rd-refine") p->bEnableRdRefine = atobool(value);
-    OPT("signhide") p->bEnableSignHiding = atobool(value);
-    OPT("b-intra") p->bIntraInBFrames = atobool(value);
+    OPT("psy-bscale")
+    {
+        bool bPsyScaleBError = false;
+        int psyScaleB = parseOptionIntValue(value, bPsyScaleBError);
+        bError |= bPsyScaleBError;
+        if (!bPsyScaleBError)
+            p->psyScaleB = psyScaleB;
+    }
+    OPT("psy-pscale")
+    {
+        bool bPsyScalePError = false;
+        int psyScaleP = parseOptionIntValue(value, bPsyScalePError);
+        bError |= bPsyScalePError;
+        if (!bPsyScalePError)
+            p->psyScaleP = psyScaleP;
+    }
+    OPT("psy-iscale")
+    {
+        bool bPsyScaleIError = false;
+        int psyScaleI = parseOptionIntValue(value, bPsyScaleIError);
+        bError |= bPsyScaleIError;
+        if (!bPsyScaleIError)
+            p->psyScaleI = psyScaleI;
+    }
+    OPT("rd-refine")
+    {
+        bNameWasBool = true;
+        p->bEnableRdRefine = x265_atobool(value, bError);
+    }
+    OPT("signhide")
+    {
+        bNameWasBool = true;
+        p->bEnableSignHiding = x265_atobool(value, bError);
+    }
+    OPT("b-intra")
+    {
+        bNameWasBool = true;
+        p->bIntraInBFrames = x265_atobool(value, bError);
+    }
     OPT("deblock")
     {
-        if (2 == sscanf(value, "%d:%d", &p->deblockingFilterTCOffset, &p->deblockingFilterBetaOffset) ||
-            2 == sscanf(value, "%d,%d", &p->deblockingFilterTCOffset, &p->deblockingFilterBetaOffset))
+        const char* separator = std::strchr(value, ':');
+        if (!separator)
+            separator = std::strchr(value, ',');
+
+        if (separator)
         {
-            p->bEnableLoopFilter = true;
-        }
-        else if (sscanf(value, "%d", &p->deblockingFilterTCOffset))
-        {
-            p->bEnableLoopFilter = 1;
-            p->deblockingFilterBetaOffset = p->deblockingFilterTCOffset;
+            int tcOffset = 0;
+            int betaOffset = 0;
+            bool bLocalError = !parseOptionIntPair(value, *separator, tcOffset, betaOffset);
+            if (!bLocalError)
+            {
+                p->deblockingFilterTCOffset = tcOffset;
+                p->deblockingFilterBetaOffset = betaOffset;
+            }
+
+            if (bLocalError)
+                bError = true;
+            else
+                p->bEnableLoopFilter = true;
         }
         else
-            p->bEnableLoopFilter = atobool(value);
+        {
+            bool bLocalError = false;
+            int offset = parseOptionIntToken(value, std::strlen(value), bLocalError);
+            if (!bLocalError)
+            {
+                p->bEnableLoopFilter = 1;
+                p->deblockingFilterTCOffset = offset;
+                p->deblockingFilterBetaOffset = offset;
+            }
+            else
+                p->bEnableLoopFilter = atobool(value);
+        }
     }
-    OPT("sao") p->bEnableSAO = atobool(value);
-    OPT("sao-non-deblock") p->bSaoNonDeblocked = atobool(value);
-    OPT("ssim") p->bEnableSsim = atobool(value);
-    OPT("psnr") p->bEnablePsnr = atobool(value);
-    OPT("hash") p->decodedPictureHashSEI = atoi(value);
-    OPT("aud") p->bEnableAccessUnitDelimiters = atobool(value);
-    OPT("info") p->bEmitInfoSEI = atobool(value);
-    OPT("b-pyramid") p->bBPyramid = atobool(value);
-    OPT("hrd") p->bEmitHRDSEI = atobool(value);
-    OPT("ipratio") p->rc.ipFactor = atof(value);
-    OPT("pbratio") p->rc.pbFactor = atof(value);
-    OPT("hevc-aq") p->rc.hevcAq = atobool(value);
+    OPT("sao")
+    {
+        bNameWasBool = true;
+        p->bEnableSAO = x265_atobool(value, bError);
+    }
+    OPT("sao-non-deblock")
+    {
+        bNameWasBool = true;
+        p->bSaoNonDeblocked = x265_atobool(value, bError);
+    }
+    OPT("ssim")
+    {
+        bNameWasBool = true;
+        p->bEnableSsim = x265_atobool(value, bError);
+    }
+    OPT("psnr")
+    {
+        bNameWasBool = true;
+        p->bEnablePsnr = x265_atobool(value, bError);
+    }
+    OPT("hash")
+    {
+        bool bDecodedPictureHashSEIError = false;
+        int decodedPictureHashSEI = parseOptionIntValue(value, bDecodedPictureHashSEIError);
+        bError |= bDecodedPictureHashSEIError;
+        if (!bDecodedPictureHashSEIError)
+            p->decodedPictureHashSEI = decodedPictureHashSEI;
+    }
+    OPT("aud")
+    {
+        bNameWasBool = true;
+        p->bEnableAccessUnitDelimiters = x265_atobool(value, bError);
+    }
+    OPT("info")
+    {
+        bNameWasBool = true;
+        p->bEmitInfoSEI = x265_atobool(value, bError);
+    }
+    OPT("b-pyramid")
+    {
+        bNameWasBool = true;
+        p->bBPyramid = x265_atobool(value, bError);
+    }
+    OPT("hrd")
+    {
+        bNameWasBool = true;
+        p->bEmitHRDSEI = x265_atobool(value, bError);
+    }
+    OPT("ipratio") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.ipFactor);
+    OPT("pbratio") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.pbFactor);
+    OPT("hevc-aq")
+    {
+        bNameWasBool = true;
+        p->rc.hevcAq = x265_atobool(value, bError);
+    }
     OPT("qcomp")
     {
-        double qCompress = atof(value);
-        p->rc.qCompress = qCompress;
-        p->rc.cuTreeStrength = (p->rc.hevcAq ? 6.0 : 5.0) * (1.0 - qCompress);
+        double qCompress = 0.0;
+        if (!parseOptionDoubleToken(value, std::strlen(value), qCompress))
+            bError = true;
+        else
+        {
+            p->rc.qCompress = qCompress;
+            p->rc.cuTreeStrength = (p->rc.hevcAq ? 6.0 : 5.0) * (1.0 - qCompress);
+        }
     }
-    OPT("cutree-strength") p->rc.cuTreeStrength = atof(value);
-    OPT("cutree-minqpoffs") p->rc.cuTreeMinQpOffset = atof(value);
-    OPT("cutree-maxqpoffs") p->rc.cuTreeMaxQpOffset = atof(value);
-    OPT("qscale-mode") p->rc.qScaleMode = atoi(value);
-    OPT("qpstep") p->rc.qpStep = atoi(value);
-    OPT("cplxblur") p->rc.complexityBlur = atof(value);
-    OPT("qblur") p->rc.qblur = atof(value);
-    OPT("aq-mode") p->rc.aqMode = atoi(value);
-    OPT("limit-aq1") p->rc.limitAq1 = atobool(value);
-    OPT("aq-strength") p->rc.aqStrength = atof(value);
-    OPT("aq-bias-strength") p->rc.aqBiasStrength = atof(value);
-    OPT("limit-aq1-strength") p->rc.limitAq1Strength = atof(value);
-    OPT("vbv-maxrate") p->rc.vbvMaxBitrate = atoi(value);
-    OPT("vbv-bufsize") p->rc.vbvBufferSize = atoi(value);
-    OPT("vbv-init")    p->rc.vbvBufferInit = atof(value);
-    OPT("crf-max")     p->rc.rfConstantMax = atof(value);
-    OPT("crf-min")     p->rc.rfConstantMin = atof(value);
-    OPT("qpmax")       p->rc.qpMax = atoi(value);
+    OPT("cutree-strength") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.cuTreeStrength);
+    OPT("cutree-minqpoffs") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.cuTreeMinQpOffset);
+    OPT("cutree-maxqpoffs") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.cuTreeMaxQpOffset);
+    OPT("qscale-mode")
+    {
+        bool bQScaleModeError = false;
+        int qScaleMode = parseOptionIntValue(value, bQScaleModeError);
+        bError |= bQScaleModeError;
+        if (!bQScaleModeError)
+            p->rc.qScaleMode = qScaleMode;
+    }
+    OPT("qpstep")
+    {
+        bool bQpStepError = false;
+        int qpStep = parseOptionIntValue(value, bQpStepError);
+        bError |= bQpStepError;
+        if (!bQpStepError)
+            p->rc.qpStep = qpStep;
+    }
+    OPT("cplxblur") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.complexityBlur);
+    OPT("qblur") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.qblur);
+    OPT("aq-mode")
+    {
+        bool bAqModeError = false;
+        int aqMode = parseOptionIntValue(value, bAqModeError);
+        bError |= bAqModeError;
+        if (!bAqModeError)
+            p->rc.aqMode = aqMode;
+    }
+    OPT("limit-aq1")
+    {
+        bNameWasBool = true;
+        p->rc.limitAq1 = x265_atobool(value, bError);
+    }
+    OPT("aq-strength") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.aqStrength);
+    OPT("aq-bias-strength") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.aqBiasStrength);
+    OPT("limit-aq1-strength") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.limitAq1Strength);
+    OPT("vbv-maxrate")
+    {
+        bool bVbvMaxBitrateError = false;
+        int vbvMaxBitrate = parseOptionIntValue(value, bVbvMaxBitrateError);
+        bError |= bVbvMaxBitrateError;
+        if (!bVbvMaxBitrateError)
+            p->rc.vbvMaxBitrate = vbvMaxBitrate;
+    }
+    OPT("vbv-bufsize")
+    {
+        bool bVbvBufferSizeError = false;
+        int vbvBufferSize = parseOptionIntValue(value, bVbvBufferSizeError);
+        bError |= bVbvBufferSizeError;
+        if (!bVbvBufferSizeError)
+            p->rc.vbvBufferSize = vbvBufferSize;
+    }
+    OPT("vbv-init")    bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.vbvBufferInit);
+    OPT("crf-max")     bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.rfConstantMax);
+    OPT("crf-min")     bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.rfConstantMin);
+    OPT("qpmax")
+    {
+        bool bQpMaxError = false;
+        int qpMax = parseOptionIntValue(value, bQpMaxError);
+        bError |= bQpMaxError;
+        if (!bQpMaxError)
+            p->rc.qpMax = qpMax;
+    }
     OPT("crf")
     {
-        p->rc.rfConstant = atof(value);
-        p->rc.rateControlMode = X265_RC_CRF;
+        if (!parseOptionDoubleToken(value, std::strlen(value), p->rc.rfConstant))
+            bError = true;
+        else
+            p->rc.rateControlMode = X265_RC_CRF;
     }
     OPT("bitrate")
     {
-        p->rc.bitrate = atoi(value);
-        p->rc.rateControlMode = X265_RC_ABR;
+        bool bBitrateValueError = false;
+        int bitrate = parseOptionIntValue(value, bBitrateValueError);
+        bError |= bBitrateValueError;
+        if (!bBitrateValueError)
+        {
+            p->rc.bitrate = bitrate;
+            p->rc.rateControlMode = X265_RC_ABR;
+        }
     }
     OPT("qp")
     {
-        p->rc.qp = atoi(value);
-        p->rc.rateControlMode = X265_RC_CQP;
+        bool bQpValueError = false;
+        int qp = parseOptionIntValue(value, bQpValueError);
+        bError |= bQpValueError;
+        if (!bQpValueError)
+        {
+            p->rc.qp = qp;
+            p->rc.rateControlMode = X265_RC_CQP;
+        }
     }
-    OPT("rc-grain") p->rc.bEnableGrain = atobool(value);
+    OPT("rc-grain")
+    {
+        bNameWasBool = true;
+        p->rc.bEnableGrain = x265_atobool(value, bError);
+    }
     OPT("zones")
     {
-        p->rc.zoneCount = 1;
+        int zoneCount = 1;
         const char* c;
 
         for (c = value; *c; c++)
-            p->rc.zoneCount += (*c == '/');
+            zoneCount += (*c == '/');
 
-        p->rc.zones = X265_MALLOC(x265_zone, p->rc.zoneCount);
-        c = value;
-        for (int i = 0; i < p->rc.zoneCount; i++ )
+        x265_zone* zones = X265_MALLOC(x265_zone, zoneCount);
+        char* zoneText = nullptr;
+        bool bZoneParseError = false;
+        if (!zones)
+            bZoneParseError = true;
+        else
         {
-            int len;
-            if (3 == sscanf(c, "%d,%d,q=%d%n", &p->rc.zones[i].startFrame, &p->rc.zones[i].endFrame, &p->rc.zones[i].qp, &len))
-                p->rc.zones[i].bForceQp = 1;
-            else if (3 == sscanf(c, "%d,%d,b=%f%n", &p->rc.zones[i].startFrame, &p->rc.zones[i].endFrame, &p->rc.zones[i].bitrateFactor, &len))
-                p->rc.zones[i].bForceQp = 0;
-            else
-            {
-                bError = true;
-                break;
-            }
-            c += len + 1;
+            zoneText = strdup(value);
+            if (!zoneText)
+                bZoneParseError = true;
         }
+
+        if (!bZoneParseError)
+        {
+            std::fill_n(zones, zoneCount, x265_zone());
+            c = zoneText;
+            for (int i = 0; i < zoneCount; i++)
+            {
+                char* zoneEnd = (i + 1 < zoneCount) ? std::strchr((char*)c, '/') : nullptr;
+                char* entryEnd = zoneEnd ? zoneEnd : (char*)c + std::strlen(c);
+                if (!parseZoneOptionEntry((char*)c, entryEnd, zones[i]))
+                {
+                    bZoneParseError = true;
+                    break;
+                }
+
+                if (zoneEnd)
+                    c = zoneEnd + 1;
+            }
+        }
+
+        free(zoneText);
+        bError |= bZoneParseError;
+        if (!bZoneParseError)
+        {
+            x265_zone_free(p);
+            p->rc.zoneCount = zoneCount;
+            p->rc.zones = zones;
+        }
+        else
+            X265_FREE(zones);
     }
-    OPT("input-res") bError |= sscanf(value, "%dx%d", &p->sourceWidth, &p->sourceHeight) != 2;
-    OPT("input-csp") p->internalCsp = parseName(value, x265_source_csp_names, bError);
-    OPT("me")        p->searchMethod = parseName(value, x265_motion_est_names, bError);
-    OPT("cutree")    p->rc.cuTree = atobool(value);
-    OPT("slow-firstpass") p->rc.bEnableSlowFirstPass = atobool(value);
+    OPT("input-res")
+    {
+        bError |= !parseOptionIntPair(value, 'x', p->sourceWidth, p->sourceHeight);
+    }
+    OPT("input-csp")
+    {
+        bool bInternalCspError = false;
+        int internalCsp = parseName(value, x265_source_csp_names, bInternalCspError);
+        bError |= bInternalCspError;
+        if (!bInternalCspError)
+            p->internalCsp = internalCsp;
+    }
+    OPT("me")
+    {
+        bool bSearchMethodError = false;
+        int searchMethod = parseName(value, x265_motion_est_names, bSearchMethodError);
+        bError |= bSearchMethodError;
+        if (!bSearchMethodError)
+            p->searchMethod = searchMethod;
+    }
+    OPT("cutree")
+    {
+        bNameWasBool = true;
+        p->rc.cuTree = x265_atobool(value, bError);
+    }
+    OPT("slow-firstpass")
+    {
+        bNameWasBool = true;
+        p->rc.bEnableSlowFirstPass = x265_atobool(value, bError);
+    }
     OPT("strict-cbr")
     {
-        p->rc.bStrictCbr = atobool(value);
-        p->rc.pbFactor = 1.0;
+        bool bStrictCbrError = false;
+        int bStrictCbr = x265_atobool(value, bStrictCbrError);
+        bError |= bStrictCbrError;
+        if (!bStrictCbrError)
+        {
+            p->rc.bStrictCbr = bStrictCbr;
+            p->rc.pbFactor = 1.0;
+        }
     }
     OPT("sar")
     {
-        p->vui.aspectRatioIdc = parseName(value, x265_sar_names, bError);
-        if (bError)
+        bool bSarNameError = false;
+        int aspectRatioIdc = parseName(value, x265_sar_names, bSarNameError);
+        if (!bSarNameError)
+            p->vui.aspectRatioIdc = aspectRatioIdc;
+        else
         {
-            p->vui.aspectRatioIdc = X265_EXTENDED_SAR;
-            bError = sscanf(value, "%d:%d", &p->vui.sarWidth, &p->vui.sarHeight) != 2;
+            int sarWidth = 0;
+            int sarHeight = 0;
+            bool bLocalError = !parseOptionIntPair(value, ':', sarWidth, sarHeight);
+            if (!bLocalError)
+            {
+                p->vui.aspectRatioIdc = X265_EXTENDED_SAR;
+                p->vui.sarWidth = sarWidth;
+                p->vui.sarHeight = sarHeight;
+            }
+            bError |= bLocalError;
         }
     }
     OPT("overscan")
@@ -1379,67 +2922,161 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
     }
     OPT("videoformat")
     {
+        bool bVideoFormatError = false;
+        int videoFormat = parseName(value, x265_video_format_names, bVideoFormatError);
+        bError |= bVideoFormatError;
         p->vui.bEnableVideoSignalTypePresentFlag = 1;
-        p->vui.videoFormat = parseName(value, x265_video_format_names, bError);
+        if (!bVideoFormatError)
+            p->vui.videoFormat = videoFormat;
     }
     OPT("range")
     {
+        bool bVideoFullRangeError = false;
+        int videoFullRange = parseName(value, x265_fullrange_names, bVideoFullRangeError);
+        bError |= bVideoFullRangeError;
         p->vui.bEnableVideoSignalTypePresentFlag = 1;
-        p->vui.bEnableVideoFullRangeFlag = parseName(value, x265_fullrange_names, bError);
+        if (!bVideoFullRangeError)
+            p->vui.bEnableVideoFullRangeFlag = videoFullRange;
     }
     OPT("colorprim")
     {
+        bool bColorPrimariesError = false;
+        int colorPrimaries = parseName(value, x265_colorprim_names, bColorPrimariesError);
+        bError |= bColorPrimariesError;
         p->vui.bEnableVideoSignalTypePresentFlag = 1;
         p->vui.bEnableColorDescriptionPresentFlag = 1;
-        p->vui.colorPrimaries = parseName(value, x265_colorprim_names, bError);
+        if (!bColorPrimariesError)
+            p->vui.colorPrimaries = colorPrimaries;
     }
     OPT("transfer")
     {
+        bool bTransferCharacteristicsError = false;
+        int transferCharacteristics = parseName(value, x265_transfer_names, bTransferCharacteristicsError);
+        bError |= bTransferCharacteristicsError;
         p->vui.bEnableVideoSignalTypePresentFlag = 1;
         p->vui.bEnableColorDescriptionPresentFlag = 1;
-        p->vui.transferCharacteristics = parseName(value, x265_transfer_names, bError);
+        if (!bTransferCharacteristicsError)
+            p->vui.transferCharacteristics = transferCharacteristics;
     }
     OPT("colormatrix")
     {
+        bool bMatrixCoeffsError = false;
+        int matrixCoeffs = parseName(value, x265_colmatrix_names, bMatrixCoeffsError);
+        bError |= bMatrixCoeffsError;
         p->vui.bEnableVideoSignalTypePresentFlag = 1;
         p->vui.bEnableColorDescriptionPresentFlag = 1;
-        p->vui.matrixCoeffs = parseName(value, x265_colmatrix_names, bError);
+        if (!bMatrixCoeffsError)
+            p->vui.matrixCoeffs = matrixCoeffs;
     }
     OPT("chromaloc")
     {
-        p->vui.bEnableChromaLocInfoPresentFlag = 1;
-        p->vui.chromaSampleLocTypeTopField = atoi(value);
-        p->vui.chromaSampleLocTypeBottomField = p->vui.chromaSampleLocTypeTopField;
+        bool bChromaSampleLocTypeError = false;
+        int chromaSampleLocType = parseOptionIntValue(value, bChromaSampleLocTypeError);
+        bError |= bChromaSampleLocTypeError;
+        if (!bChromaSampleLocTypeError)
+        {
+            p->vui.bEnableChromaLocInfoPresentFlag = 1;
+            p->vui.chromaSampleLocTypeTopField = chromaSampleLocType;
+            p->vui.chromaSampleLocTypeBottomField = chromaSampleLocType;
+        }
     }
     OPT("display-window")
     {
-        p->vui.bEnableDefaultDisplayWindowFlag = 1;
-        bError |= sscanf(value, "%d,%d,%d,%d",
-                         &p->vui.defDispWinLeftOffset,
-                         &p->vui.defDispWinTopOffset,
-                         &p->vui.defDispWinRightOffset,
-                         &p->vui.defDispWinBottomOffset) != 4;
+        int defDispWinLeftOffset = 0;
+        int defDispWinTopOffset = 0;
+        int defDispWinRightOffset = 0;
+        int defDispWinBottomOffset = 0;
+        bool bDisplayWindowError = !parseOptionIntQuad(value,
+                                                       defDispWinLeftOffset,
+                                                       defDispWinTopOffset,
+                                                       defDispWinRightOffset,
+                                                       defDispWinBottomOffset);
+        bError |= bDisplayWindowError;
+        if (!bDisplayWindowError)
+        {
+            p->vui.bEnableDefaultDisplayWindowFlag = 1;
+            p->vui.defDispWinLeftOffset = defDispWinLeftOffset;
+            p->vui.defDispWinTopOffset = defDispWinTopOffset;
+            p->vui.defDispWinRightOffset = defDispWinRightOffset;
+            p->vui.defDispWinBottomOffset = defDispWinBottomOffset;
+        }
     }
-    OPT("nr-intra") p->noiseReductionIntra = atoi(value);
-    OPT("nr-inter") p->noiseReductionInter = atoi(value);
+        OPT("nr-intra")
+        {
+            bool bNoiseReductionIntraError = false;
+            int noiseReductionIntra = parseOptionIntValue(value, bNoiseReductionIntraError);
+            bError |= bNoiseReductionIntraError;
+            if (!bNoiseReductionIntraError)
+                p->noiseReductionIntra = noiseReductionIntra;
+        }
+        OPT("nr-inter")
+        {
+            bool bNoiseReductionInterError = false;
+            int noiseReductionInter = parseOptionIntValue(value, bNoiseReductionInterError);
+            bError |= bNoiseReductionInterError;
+            if (!bNoiseReductionInterError)
+                p->noiseReductionInter = noiseReductionInter;
+        }
     OPT("pass")
     {
-        int pass = x265_clip3(0, 3, atoi(value));
-        p->rc.bStatWrite = pass & 1;
-        p->rc.bStatRead = pass & 2;
-        p->rc.dataShareMode = X265_SHARE_MODE_FILE;
+        bool bPassError = false;
+        int parsedPass = parseOptionIntValue(value, bPassError);
+        bError |= bPassError;
+        if (!bPassError)
+        {
+            int pass = x265_clip3(0, 3, parsedPass);
+            p->rc.bStatWrite = pass & 1;
+            p->rc.bStatRead = pass & 2;
+            p->rc.dataShareMode = X265_SHARE_MODE_FILE;
+        }
     }
     OPT("stats") snprintf(p->rc.statFileName, X265_MAX_STRING_SIZE, "%s", value);
     OPT("scaling-list") snprintf(p->scalingLists, X265_MAX_STRING_SIZE, "%s", value);
     OPT2("pools", "numa-pools") snprintf(p->numaPools, X265_MAX_STRING_SIZE, "%s", value);
     OPT("lambda-file") snprintf(p->rc.lambdaFileName, X265_MAX_STRING_SIZE, "%s", value);
     OPT("analysis-reuse-file") snprintf(p->analysisReuseFileName, X265_MAX_STRING_SIZE, "%s", value);
-    OPT("qg-size") p->rc.qgSize = atoi(value);
+    OPT("qg-size")
+    {
+        bool bQgSizeError = false;
+        int qgSize = parseOptionIntValue(value, bQgSizeError);
+        bError |= bQgSizeError;
+        if (!bQgSizeError)
+            p->rc.qgSize = qgSize;
+    }
     OPT("master-display") snprintf(p->masteringDisplayColorVolume, X265_MAX_STRING_SIZE, "%s", value);
-    OPT("max-cll") bError |= sscanf(value, "%hu,%hu", &p->maxCLL, &p->maxFALL) != 2;
-    OPT("min-luma") p->minLuma = (uint16_t)atoi(value);
-    OPT("max-luma") p->maxLuma = (uint16_t)atoi(value);
-    OPT("uhd-bd") p->uhdBluray = atobool(value);
+    OPT("max-cll")
+    {
+        uint16_t maxCLL = 0;
+        uint16_t maxFALL = 0;
+        bool bLocalError = !parseOptionUint16Pair(value, ',', maxCLL, maxFALL);
+        if (!bLocalError)
+        {
+            p->maxCLL = maxCLL;
+            p->maxFALL = maxFALL;
+        }
+        bError |= bLocalError;
+    }
+    OPT("min-luma")
+    {
+        bool bMinLumaError = false;
+        uint16_t minLuma = parseOptionUint16Token(value, std::strlen(value), bMinLumaError);
+        bError |= bMinLumaError;
+        if (!bMinLumaError)
+            p->minLuma = minLuma;
+    }
+    OPT("max-luma")
+    {
+        bool bMaxLumaError = false;
+        uint16_t maxLuma = parseOptionUint16Token(value, std::strlen(value), bMaxLumaError);
+        bError |= bMaxLumaError;
+        if (!bMaxLumaError)
+            p->maxLuma = maxLuma;
+    }
+    OPT("uhd-bd")
+    {
+        bNameWasBool = true;
+        p->uhdBluray = x265_atobool(value, bError);
+    }
     else
         bExtraParams = true;
 
@@ -1450,46 +3087,123 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
         OPT("csv") snprintf(p->csvfn, X265_MAX_STRING_SIZE, "%s", value);
         OPT("progress-file")
         {
-            if (p->pgfn)
+            char* newProgressFile = strdup(value);
+            if (!newProgressFile)
+                bError = true;
+            else
             {
                 free(p->pgfn);
-                p->pgfn = NULL;
+                p->pgfn = newProgressFile;
             }
-            p->pgfn = strdup(value);
-            if (!p->pgfn)
-                bError = true;
         }
-        OPT("csv-log-level") p->csvLogLevel = atoi(value);
-        OPT("qpmin") p->rc.qpMin = atoi(value);
-        OPT("analyze-src-pics") p->bSourceReferenceEstimation = atobool(value);
-        OPT("log2-max-poc-lsb") p->log2MaxPocLsb = atoi(value);
-        OPT("vui-timing-info") p->bEmitVUITimingInfo = atobool(value);
-        OPT("vui-hrd-info") p->bEmitVUIHRDInfo = atobool(value);
-        OPT("slices") p->maxSlices = atoi(value);
-        OPT("limit-tu") p->limitTU = atoi(value);
+        OPT("csv-log-level")
+        {
+            bool bCsvLogLevelError = false;
+            int csvLogLevel = parseOptionIntValue(value, bCsvLogLevelError);
+            bError |= bCsvLogLevelError;
+            if (!bCsvLogLevelError)
+                p->csvLogLevel = csvLogLevel;
+        }
+        OPT("qpmin")
+        {
+            bool bQpMinError = false;
+            int qpMin = parseOptionIntValue(value, bQpMinError);
+            bError |= bQpMinError;
+            if (!bQpMinError)
+                p->rc.qpMin = qpMin;
+        }
+        OPT("analyze-src-pics")
+        {
+            bNameWasBool = true;
+            p->bSourceReferenceEstimation = x265_atobool(value, bError);
+        }
+        OPT("log2-max-poc-lsb")
+        {
+            bool bLog2MaxPocLsbError = false;
+            int log2MaxPocLsb = parseOptionIntValue(value, bLog2MaxPocLsbError);
+            bError |= bLog2MaxPocLsbError;
+            if (!bLog2MaxPocLsbError)
+                p->log2MaxPocLsb = log2MaxPocLsb;
+        }
+        OPT("vui-timing-info")
+        {
+            bNameWasBool = true;
+            p->bEmitVUITimingInfo = x265_atobool(value, bError);
+        }
+        OPT("vui-hrd-info")
+        {
+            bNameWasBool = true;
+            p->bEmitVUIHRDInfo = x265_atobool(value, bError);
+        }
+        OPT("slices")
+        {
+            bool bMaxSlicesError = false;
+            int maxSlices = parseOptionIntValue(value, bMaxSlicesError);
+            bError |= bMaxSlicesError;
+            if (!bMaxSlicesError)
+                p->maxSlices = maxSlices;
+        }
+        OPT("limit-tu")
+        {
+            bool bLimitTUError = false;
+            int limitTU = parseOptionIntValue(value, bLimitTUError);
+            bError |= bLimitTUError;
+            if (!bLimitTUError)
+                p->limitTU = limitTU;
+        }
         OPT("opt-qp-pps") p->bOptQpPPS = atobool(value);
         OPT("opt-ref-list-length-pps") p->bOptRefListLengthPPS = atobool(value);
         OPT("multi-pass-opt-rps") p->bMultiPassOptRPS = atobool(value);
-        OPT("scenecut-bias") p->scenecutBias = atof(value);
+        OPT("scenecut-bias") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->scenecutBias);
         OPT("hist-scenecut") p->bHistBasedSceneCut = atobool(value);
-        OPT("rskip-edge-threshold") p->edgeVarThreshold = atoi(value)/100.0f;
-        OPT("lookahead-threads") p->lookaheadThreads = atoi(value);
+        OPT("rskip-edge-threshold")
+        {
+            bool bEdgeVarThresholdError = false;
+            int edgeVarThreshold = parseOptionIntValue(value, bEdgeVarThresholdError);
+            bError |= bEdgeVarThresholdError;
+            if (!bEdgeVarThresholdError)
+                p->edgeVarThreshold = edgeVarThreshold / 100.0f;
+        }
+        OPT("lookahead-threads")
+        {
+            bool bLookaheadThreadsError = false;
+            int lookaheadThreads = parseOptionIntValue(value, bLookaheadThreadsError);
+            bError |= bLookaheadThreadsError;
+            if (!bLookaheadThreadsError)
+                p->lookaheadThreads = lookaheadThreads;
+        }
         OPT("opt-cu-delta-qp") p->bOptCUDeltaQP = atobool(value);
         OPT("multi-pass-opt-analysis") p->analysisMultiPassRefine = atobool(value);
         OPT("multi-pass-opt-distortion") p->analysisMultiPassDistortion = atobool(value);
         OPT("aq-motion") p->bAQMotion = atobool(value);
-        OPT("dynamic-rd") p->dynamicRd = atof(value);
+        OPT("dynamic-rd") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->dynamicRd);
 		OPT("cra-nal") p->craNal = atobool(value);
-        OPT("analysis-save-reuse-level") p->analysisSaveReuseLevel = atoi(value);
-        OPT("analysis-load-reuse-level") p->analysisLoadReuseLevel = atoi(value);
+        OPT("analysis-save-reuse-level")
+        {
+            bool bAnalysisSaveReuseLevelError = false;
+            int analysisSaveReuseLevel = parseOptionIntValue(value, bAnalysisSaveReuseLevelError);
+            bError |= bAnalysisSaveReuseLevelError;
+            if (!bAnalysisSaveReuseLevelError)
+                p->analysisSaveReuseLevel = analysisSaveReuseLevel;
+        }
+        OPT("analysis-load-reuse-level")
+        {
+            bool bAnalysisLoadReuseLevelError = false;
+            int analysisLoadReuseLevel = parseOptionIntValue(value, bAnalysisLoadReuseLevelError);
+            bError |= bAnalysisLoadReuseLevelError;
+            if (!bAnalysisLoadReuseLevelError)
+                p->analysisLoadReuseLevel = analysisLoadReuseLevel;
+        }
         OPT("ssim-rd")
         {
-            int bval = atobool(value);
-            if (bError || bval)
+            bool bSsimRdError = false;
+            int bSsimRd = x265_atobool(value, bSsimRdError);
+            bError |= bSsimRdError;
+            if (!bSsimRdError)
             {
-                bError = false;
-                p->psyRd = 0.0;
-                p->bSsimRd = atobool(value);
+                p->bSsimRd = bSsimRd;
+                if (bSsimRd)
+                    p->psyRd = 0.0;
             }
         }
         OPT("hdr") p->bEmitHDR10SEI = atobool(value);
@@ -1500,17 +3214,59 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
         OPT("dhdr10-opt") p->bDhdr10opt = atobool(value);
         OPT("idr-recovery-sei") p->bEmitIDRRecoverySEI = atobool(value);
         OPT("const-vbv") p->rc.bEnableConstVbv = atobool(value);
-        OPT("ctu-info") p->bCTUInfo = atoi(value);
-        OPT("scale-factor") p->scaleFactor = atoi(value);
-        OPT("refine-intra")p->intraRefine = atoi(value);
-        OPT("refine-inter")p->interRefine = atoi(value);
-        OPT("refine-mv")p->mvRefine = atoi(value);
-        OPT("force-flush")p->forceFlush = atoi(value);
+        OPT("ctu-info")
+        {
+            bool bCTUInfoError = false;
+            int ctuInfo = parseOptionIntValue(value, bCTUInfoError);
+            bError |= bCTUInfoError;
+            if (!bCTUInfoError)
+                p->bCTUInfo = ctuInfo;
+        }
+        OPT("scale-factor")
+        {
+            bool bScaleFactorError = false;
+            int scaleFactor = parseOptionIntValue(value, bScaleFactorError);
+            bError |= bScaleFactorError;
+            if (!bScaleFactorError)
+                p->scaleFactor = scaleFactor;
+        }
+        OPT("refine-intra")
+        {
+            bool bIntraRefineError = false;
+            int intraRefine = parseOptionIntValue(value, bIntraRefineError);
+            bError |= bIntraRefineError;
+            if (!bIntraRefineError)
+                p->intraRefine = intraRefine;
+        }
+        OPT("refine-inter")
+        {
+            bool bInterRefineError = false;
+            int interRefine = parseOptionIntValue(value, bInterRefineError);
+            bError |= bInterRefineError;
+            if (!bInterRefineError)
+                p->interRefine = interRefine;
+        }
+        OPT("refine-mv")
+        {
+            bool bMvRefineError = false;
+            int mvRefine = parseOptionIntValue(value, bMvRefineError);
+            bError |= bMvRefineError;
+            if (!bMvRefineError)
+                p->mvRefine = mvRefine;
+        }
+        OPT("force-flush")
+        {
+            bool bForceFlushError = false;
+            int forceFlush = parseOptionIntValue(value, bForceFlushError);
+            bError |= bForceFlushError;
+            if (!bForceFlushError)
+                p->forceFlush = forceFlush;
+        }
         OPT("splitrd-skip") p->bEnableSplitRdSkip = atobool(value);
         OPT("lowpass-dct") p->bLowPassDct = atobool(value);
         OPT("stylish") p->bStylish = atobool(value);
-        OPT("vbv-end") p->vbvBufferEnd = atof(value);
-        OPT("vbv-end-fr-adj") p->vbvEndFrameAdjust = atof(value);
+        OPT("vbv-end") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->vbvBufferEnd);
+        OPT("vbv-end-fr-adj") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->vbvEndFrameAdjust);
         OPT("copy-pic") p->bCopyPicToFrame = atobool(value);
         OPT("refine-analysis-type")
         {
@@ -1531,39 +3287,103 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
                 bError = true;
             }
         }
-        OPT("gop-lookahead") p->gopLookahead = atoi(value);
+        OPT("gop-lookahead")
+        {
+            bool bGopLookaheadError = false;
+            int gopLookahead = parseOptionIntValue(value, bGopLookaheadError);
+            bError |= bGopLookaheadError;
+            if (!bGopLookaheadError)
+                p->gopLookahead = gopLookahead;
+        }
         OPT("analysis-save") snprintf(p->analysisSave, X265_MAX_STRING_SIZE, "%s", value);
         OPT("analysis-load") snprintf(p->analysisLoad, X265_MAX_STRING_SIZE, "%s", value);
-        OPT("radl") p->radl = atoi(value);
-        OPT("max-ausize-factor") p->maxAUSizeFactor = atof(value);
+        OPT("radl")
+        {
+            bool bRadlError = false;
+            int radl = parseOptionIntValue(value, bRadlError);
+            bError |= bRadlError;
+            if (!bRadlError)
+                p->radl = radl;
+        }
+        OPT("max-ausize-factor") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->maxAUSizeFactor);
         OPT("dynamic-refine") p->bDynamicRefine = atobool(value);
         OPT("single-sei") p->bSingleSeiNal = atobool(value);
-        OPT("atc-sei") p->preferredTransferCharacteristics = atoi(value);
-        OPT("pic-struct") p->pictureStructure = atoi(value);
-        OPT("chunk-start") p->chunkStart = atoi(value);
-        OPT("chunk-end") p->chunkEnd = atoi(value);
+        OPT("atc-sei")
+        {
+            bool bPreferredTransferCharacteristicsError = false;
+            int preferredTransferCharacteristics = parseOptionIntValue(value, bPreferredTransferCharacteristicsError);
+            const bool bPreferredTransferCharacteristicsRangeError = preferredTransferCharacteristics < -1
+                                                                  || preferredTransferCharacteristics > UINT8_MAX;
+            bError |= bPreferredTransferCharacteristicsError || bPreferredTransferCharacteristicsRangeError;
+            if (!bPreferredTransferCharacteristicsError && !bPreferredTransferCharacteristicsRangeError)
+                p->preferredTransferCharacteristics = preferredTransferCharacteristics;
+        }
+        OPT("pic-struct")
+        {
+            bool bPictureStructureError = false;
+            int pictureStructure = parseOptionIntValue(value, bPictureStructureError);
+            const bool bPictureStructureRangeError = pictureStructure < -1
+                                                  || pictureStructure > 8;
+            bError |= bPictureStructureError || bPictureStructureRangeError;
+            if (!bPictureStructureError && !bPictureStructureRangeError)
+                p->pictureStructure = pictureStructure;
+        }
+        OPT("chunk-start")
+        {
+            bool bChunkStartError = false;
+            int chunkStart = parseOptionIntValue(value, bChunkStartError);
+            const bool bChunkStartRangeError = chunkStart < 0;
+            bError |= bChunkStartError || bChunkStartRangeError;
+            if (!bChunkStartError && !bChunkStartRangeError)
+                p->chunkStart = chunkStart;
+        }
+        OPT("chunk-end")
+        {
+            bool bChunkEndError = false;
+            int chunkEnd = parseOptionIntValue(value, bChunkEndError);
+            const bool bChunkEndRangeError = chunkEnd < 0;
+            bError |= bChunkEndError || bChunkEndRangeError;
+            if (!bChunkEndError && !bChunkEndRangeError)
+                p->chunkEnd = chunkEnd;
+        }
         OPT("nalu-file") snprintf(p->naluFile, X265_MAX_STRING_SIZE, "%s", value);
         OPT("dolby-vision-profile")
         {
-            if (atof(value) < 10)
-                p->dolbyProfile = (int)(10 * atof(value) + .5);
-            else if (atoi(value) < 100)
-                p->dolbyProfile = atoi(value);
-            else
+            if (!parseTenthsOrIntegerLevel(value, p->dolbyProfile))
                 bError = true;
         }
         OPT("hrd-concat") p->bEnableHRDConcatFlag = atobool(value);
-        OPT("refine-ctu-distortion") p->ctuDistortionRefine = atoi(value);
+        OPT("refine-ctu-distortion")
+        {
+            bool bCtuDistortionRefineError = false;
+            int ctuDistortionRefine = parseOptionIntValue(value, bCtuDistortionRefineError);
+            bError |= bCtuDistortionRefineError;
+            if (!bCtuDistortionRefineError)
+                p->ctuDistortionRefine = ctuDistortionRefine;
+        }
         OPT("hevc-aq") p->rc.hevcAq = atobool(value);
-        OPT("qp-adaptation-range") p->rc.qpAdaptationRange = atof(value);
+        OPT("qp-adaptation-range") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->rc.qpAdaptationRange);
 #ifdef SVT_HEVC
         OPT("svt")
         {
             p->bEnableSvtHevc = atobool(value);
-            if (count > 1 && p->bEnableSvtHevc)
+            if (svtParseCallCount > 1 && p->bEnableSvtHevc)
             {
-                x265_log(NULL, X265_LOG_ERROR, "Enable SVT should be the first call to x265_parse_parse \n");
+                x265_log(nullptr, X265_LOG_ERROR, "Enable SVT should be the first call to x265_parse_parse \n");
                 bError = true;
+            }
+            if (p->bEnableSvtHevc)
+            {
+                EB_H265_ENC_CONFIGURATION* svtParam = ensureSvtHevcParam(p);
+                if (!svtParam)
+                {
+                    x265_log(p, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+                    bError = true;
+                }
+            }
+            else
+            {
+                freeSvtHevcParamStorage(p);
             }
         }
         OPT("svt-hme") x265_log(p, X265_LOG_WARNING, "Option %s is SVT-HEVC Encoder specific; Disabling it here \n", name);
@@ -1580,44 +3400,92 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
 #endif
         OPT("selective-sao")
         {
-            p->selectiveSAO = atoi(value);
+            bool bSelectiveSaoError = false;
+            int selectiveSao = parseOptionIntValue(value, bSelectiveSaoError);
+            bError |= bSelectiveSaoError;
+            if (!bSelectiveSaoError)
+                p->selectiveSAO = selectiveSao;
         }
         OPT("fades") p->bEnableFades = atobool(value);
-        OPT("scenecut-aware-qp") p->bEnableSceneCutAwareQp = atoi(value);
+        OPT("scenecut-aware-qp")
+        {
+            bool bSceneCutAwareQpError = false;
+            int sceneCutAwareQp = parseOptionIntValue(value, bSceneCutAwareQpError);
+            bError |= bSceneCutAwareQpError;
+            if (!bSceneCutAwareQpError)
+                p->bEnableSceneCutAwareQp = sceneCutAwareQp;
+        }
         OPT("masking-strength") bError |= parseMaskingStrength(p, value);
         OPT("field") p->bField = atobool( value );
         OPT("cll") p->bEmitCLL = atobool(value);
         OPT("frame-dup") p->bEnableFrameDuplication = atobool(value);
-        OPT("dup-threshold") p->dupThreshold = atoi(value);
+        OPT("dup-threshold")
+        {
+            bool bDupThresholdError = false;
+            int dupThreshold = parseOptionIntValue(value, bDupThresholdError);
+            bError |= bDupThresholdError;
+            if (!bDupThresholdError)
+                p->dupThreshold = dupThreshold;
+        }
         OPT("hme") p->bEnableHME = atobool(value);
         OPT("hme-search")
         {
-            char search[3][5];
-            memset(search, '\0', 15 * sizeof(char));
-            if(3 == sscanf(value, "%d,%d,%d", &p->hmeSearchMethod[0], &p->hmeSearchMethod[1], &p->hmeSearchMethod[2]) ||
-               3 == sscanf(value, "%4[^,],%4[^,],%4[^,]", search[0], search[1], search[2]))
+            const char* search[3];
+            size_t searchLengths[3];
+            int count = splitCommaOption(value, search, searchLengths, 3);
+            bool bLocalError = false;
+            if (count == 1 || count == 3)
             {
-                if(search[0][0])
-                    for(int level = 0; level < 3; level++)
-                        p->hmeSearchMethod[level] = parseName(search[level], x265_motion_est_names, bError);
-            }
-            else if (sscanf(value, "%d", &p->hmeSearchMethod[0]) || sscanf(value, "%s", search[0]))
-            {
-                if (search[0][0]) {
-                    p->hmeSearchMethod[0] = parseName(search[0], x265_motion_est_names, bError);
-                    p->hmeSearchMethod[1] = p->hmeSearchMethod[2] = p->hmeSearchMethod[0];
+                bool bNumeric = true;
+                for (int level = 0; level < count; level++)
+                    bNumeric &= std::isdigit((unsigned char)search[level][0]) || search[level][0] == '-' || search[level][0] == '+';
+
+                if (bNumeric)
+                {
+                    int parsed[3];
+                    for (int level = 0; level < count; level++)
+                        parsed[level] = parseOptionIntToken(search[level], searchLengths[level], bLocalError);
+
+                    if (!bLocalError)
+                        assignParsedOptionLevels(parsed, count, p->hmeSearchMethod);
+                }
+                else
+                {
+                    int parsed[3];
+                    for (int level = 0; level < count; level++)
+                        parsed[level] = parseHmeSearchMethodToken(search[level], searchLengths[level], bLocalError);
+                    if (!bLocalError)
+                        assignParsedOptionLevels(parsed, count, p->hmeSearchMethod);
                 }
             }
-            p->bEnableHME = true;
+            else
+                bLocalError = true;
+            bError |= bLocalError;
+            if (!bLocalError)
+                p->bEnableHME = true;
         }
         OPT("hme-range")
         {
-            sscanf(value, "%d,%d,%d", &p->hmeRange[0], &p->hmeRange[1], &p->hmeRange[2]);
-            p->bEnableHME = true;
+            const char* range[3];
+            size_t rangeLengths[3];
+            bool bLocalError = false;
+            if (splitCommaOption(value, range, rangeLengths, 3) != 3)
+                bLocalError = true;
+            else
+            {
+                int parsed[3];
+                for (int level = 0; level < 3; level++)
+                    parsed[level] = parseOptionIntToken(range[level], rangeLengths[level], bLocalError);
+                if (!bLocalError)
+                    assignParsedOptionLevels(parsed, 3, p->hmeRange);
+            }
+            bError |= bLocalError;
+            if (!bLocalError)
+                p->bEnableHME = true;
         }
         OPT("vbv-live-multi-pass") p->bliveVBV2pass = atobool(value);
-        OPT("min-vbv-fullness") p->minVbvFullness = atof(value);
-        OPT("max-vbv-fullness") p->maxVbvFullness = atof(value);
+        OPT("min-vbv-fullness") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->minVbvFullness);
+        OPT("max-vbv-fullness") bError |= !parseOptionDoubleToken(value, std::strlen(value), p->maxVbvFullness);
         OPT("video-signal-type-preset") snprintf(p->videoSignalTypePreset, X265_MAX_STRING_SIZE, "%s", value);
         OPT("eob") p->bEnableEndOfBitstream = atobool(value);
         OPT("eos") p->bEnableEndOfSequence = atobool(value);
@@ -1639,16 +3507,30 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
 #endif
 #if ENABLE_MULTIVIEW
         OPT("format")
-            p->format = atoi(value);
+        {
+            bool bFormatError = false;
+            int format = parseOptionIntValue(value, bFormatError);
+            bError |= bFormatError;
+            if (!bFormatError)
+                p->format = format;
+        }
         OPT("num-views")
         {
-            p->numViews = atoi(value);
+            bool bNumViewsError = false;
+            int numViews = parseOptionIntValue(value, bNumViewsError);
+            bError |= bNumViewsError;
+            if (!bNumViewsError)
+                p->numViews = numViews;
         }
 #endif
 #if ENABLE_SCC_EXT
         OPT("scc")
         {
-            p->bEnableSCC = atoi(value);
+            bool bSccError = false;
+            int bEnableSCC = parseOptionIntValue(value, bSccError);
+            bError |= bSccError;
+            if (!bSccError)
+                p->bEnableSCC = bEnableSCC;
         }
 #endif
         OPT("frame-rc") p->bConfigRCFrame = atobool(value);
@@ -1670,22 +3552,46 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
 namespace X265_NS {
 // internal encoder functions
 
+bool isAllocatedParamInstance(const x265_param* param)
+{
+    return ::isAllocatedParamInstance(param);
+}
+
+void finalizeZoneParamCopy(x265_param* zoneParam, const x265_param* src)
+{
+    ::finalizeZoneParamCopy(zoneParam, src);
+}
+
 int x265_atoi(const char* str, bool& bError)
 {
-    char *end;
-    int v = strtol(str, &end, 0);
-
-    if (end == str || *end != '\0')
+    if (!str)
+    {
         bError = true;
-    return v;
+        return 0;
+    }
+
+    errno = 0;
+    char *end;
+    long parsed = strtol(str, &end, 0);
+
+    if (errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX || end == str || *end != '\0')
+        bError = true;
+    return (int)parsed;
 }
 
 double x265_atof(const char* str, bool& bError)
 {
+    if (!str)
+    {
+        bError = true;
+        return 0.0;
+    }
+
+    errno = 0;
     char *end;
     double v = strtod(str, &end);
 
-    if (end == str || *end != '\0')
+    if (errno == ERANGE || end == str || *end != '\0')
         bError = true;
     return v;
 }
@@ -1704,18 +3610,34 @@ int parseCpuName(const char* value, bool& bError, bool bEnableavx512)
     }
     int cpu;
     if (isdigit(value[0]))
-        cpu = x265_atoi(value, bError);
+        cpu = parseOptionIntValue(value, bError);
     else
         cpu = !strcmp(value, "auto") || x265_atobool(value, bError) ? X265_NS::cpu_detect(bEnableavx512) : 0;
 
     if (bError)
     {
         char *buf = strdup(value);
-        char *tok, *saveptr = NULL, *init;
+        if (!buf)
+        {
+            bError = 1;
+            return 0;
+        }
+        char *tok;
         bError = 0;
         cpu = 0;
-        for (init = buf; (tok = strtok_r(init, ",", &saveptr)); init = NULL)
+        for (char* scan = buf; scan && *scan; )
         {
+            char* separator = std::strchr(scan, ',');
+            if (separator)
+                *separator = '\0';
+            tok = scan;
+            scan = separator ? separator + 1 : nullptr;
+            if (!*tok)
+            {
+                bError = 1;
+                continue;
+            }
+
             int i;
             for (i = 0; X265_NS::cpu_names[i].flags && strcasecmp(tok, X265_NS::cpu_names[i].name); i++)
             {
@@ -1800,6 +3722,12 @@ static inline int _confirm(x265_param* param, bool bflag, const char* message)
 
 int x265_check_params(x265_param* param)
 {
+    if (!param)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "x265_check_params requires a non-null parameter struct\n");
+        return X265_PARAM_BAD_VALUE;
+    }
+
 #define CHECK(expr, msg) check_failed |= _confirm(param, expr, msg)
     int check_failed = 0; /* abort if there is a fatal configuration problem */
     CHECK((uint64_t)param->sourceWidth * param->sourceHeight > 142606336ULL && !param->bAllowNonConformance,
@@ -1815,6 +3743,8 @@ int x265_check_params(x265_param* param)
     uint32_t tuQTMaxLog2Size = X265_MIN(maxLog2CUSize, 5);
     uint32_t tuQTMinLog2Size = 2; //log2(4)
 
+    CHECK(param->maxSlices < 1,
+        "maxSlices must be 1 or greater");
     CHECK((param->maxSlices > 1) && !param->bEnableWavefront,
         "Multiple-Slices mode must be enable Wavefront Parallel Processing (--wpp)");
     CHECK(param->internalBitDepth != X265_DEPTH,
@@ -1874,9 +3804,9 @@ int x265_check_params(x265_param* param)
           "Picture size must be at least one CTU");
     CHECK(param->internalCsp < X265_CSP_I400 || X265_CSP_I444 < param->internalCsp,
           "chroma subsampling must be i400 (4:0:0 monochrome), i420 (4:2:0 default), i422 (4:2:0), i444 (4:4:4)");
-    CHECK(param->sourceWidth & !!CHROMA_H_SHIFT(param->internalCsp),
+    CHECK(CHROMA_H_SHIFT(param->internalCsp) && (param->sourceWidth & 1),
           "Picture width must be an integer multiple of the specified chroma subsampling");
-    CHECK(param->sourceHeight & !!CHROMA_V_SHIFT(param->internalCsp),
+    CHECK(CHROMA_V_SHIFT(param->internalCsp) && (param->sourceHeight & 1),
           "Picture height must be an integer multiple of the specified chroma subsampling");
 
     CHECK(param->rc.rateControlMode > X265_RC_CRF || param->rc.rateControlMode < X265_RC_ABR,
@@ -1904,10 +3834,16 @@ int x265_check_params(x265_param* param)
           "Lookahead depth must be less than 256");
     CHECK(param->lookaheadSlices > 16 || param->lookaheadSlices < 0,
           "Lookahead slices must between 0 and 16");
+    CHECK(param->lookaheadThreads < 0 || param->lookaheadThreads > MAX_POOL_THREADS,
+          "Lookahead threads must be between 0 and MAX_POOL_THREADS");
     CHECK(param->rc.aqMode < X265_AQ_NONE || X265_AQ_EDGE_BIASED < param->rc.aqMode,
           "Aq-Mode is out of range");
     CHECK(param->rc.aqStrength < 0 || param->rc.aqStrength > 3,
           "Aq-Strength is out of range");
+    CHECK(param->rc.ipFactor <= 0,
+          "ipratio must be greater than 0");
+    CHECK(param->rc.pbFactor <= 0,
+          "pbratio must be greater than 0");
     CHECK(param->rc.aqBiasStrength < 0 || param->rc.aqBiasStrength > 3,
           "Aq-Bias-Strength is out of range");
     CHECK(param->rc.limitAq1Strength < 0 || param->rc.limitAq1Strength > 3,
@@ -1993,8 +3929,8 @@ int x265_check_params(x265_param* param)
           "Valid penalty for 32x32 intra TU in non-I slices. 0:disabled 1:RD-penalty 2:maximum");
     CHECK(param->keyframeMax < -1,
           "Invalid max IDR period in frames. value should be greater than -1");
-    CHECK(param->gopLookahead < -1,
-          "GOP lookahead must be greater than -1");
+    CHECK(param->gopLookahead < 0,
+          "GOP lookahead must be 0 or greater");
     CHECK(param->decodedPictureHashSEI < 0 || param->decodedPictureHashSEI > 3,
           "Invalid hash option. Decoded Picture Hash SEI 0: disabled, 1: MD5, 2: CRC, 3: Checksum");
     CHECK(param->rc.vbvBufferSize < 0,
@@ -2005,16 +3941,18 @@ int x265_check_params(x265_param* param)
           "Valid initial VBV buffer occupancy must be a fraction 0 - 1, or size in kbits");
     CHECK(param->vbvBufferEnd < 0,
         "Valid final VBV buffer emptiness must be a fraction 0 - 1, or size in kbits");
-    CHECK(param->vbvEndFrameAdjust < 0,
+    CHECK(param->vbvEndFrameAdjust < 0 || param->vbvEndFrameAdjust > 1,
         "Valid vbv-end-fr-adj must be a fraction 0 - 1");
+    CHECK(param->vbvBufferEnd > 0 && param->vbvEndFrameAdjust == 0,
+        "vbv-end-fr-adj must be greater than 0 when vbv-end is enabled");
     if ((param->rc.vbvBufferSize > 0 || param->rc.vbvMaxBitrate > 0) && param->bThreadedME)
     {
         param->bThreadedME = 0;
         x265_log(param, X265_LOG_WARNING, "VBV and threaded-me both enabled. Disabling threaded-me\n");
     }
-    CHECK(param->minVbvFullness < 0 && param->minVbvFullness > 100,
+    CHECK(param->minVbvFullness < 0 || param->minVbvFullness > 100,
         "min-vbv-fullness must be a fraction 0 - 100");
-    CHECK(param->maxVbvFullness < 0 && param->maxVbvFullness > 100,
+    CHECK(param->maxVbvFullness < 0 || param->maxVbvFullness > 100,
         "max-vbv-fullness must be a fraction 0 - 100");
     CHECK(param->rc.bitrate < 0,
           "Target bitrate can not be less than zero");
@@ -2028,13 +3966,54 @@ int x265_check_params(x265_param* param)
           "Constant QP is incompatible with 2pass");
     CHECK(param->rc.bStrictCbr && (param->rc.bitrate <= 0 || param->rc.vbvBufferSize <=0),
           "Strict-cbr cannot be applied without specifying both target bitrate and vbv bufsize");
+    CHECK(!param->bResetZoneConfig && !param->rc.zonefileCount,
+          "Zone reconfiguration without RC reset requires configured zonefile state");
+    CHECK(param->rc.zonefileCount && !param->bResetZoneConfig && !param->reconfigWindowSize,
+          "Zonefile reconfiguration without RC reset requires a non-zero reconfig window size");
+    CHECK((size_t)param->reconfigWindowSize > SIZE_MAX / sizeof(double),
+          "Zonefile reconfiguration window size exceeds supported relativeComplexity storage");
+    if (param->rc.zonefileCount && param->rc.zones)
+    {
+        for (int i = 0; i < param->rc.zonefileCount; i++)
+        {
+            CHECK(param->rc.zones[i].startFrame < 0,
+                "Zonefile start frames must be non-negative");
+            CHECK(param->rc.zones[i].zoneParam->radl < 0 || param->rc.zones[i].zoneParam->radl > param->rc.zones[i].zoneParam->bframes,
+                "Zonefile radl must be between 0 and the configured bframes");
+            CHECK(param->rc.zones[i].zoneParam->rc.bitrate < 0,
+                "Zonefile bitrate must be non-negative");
+            CHECK(param->rc.zones[i].zoneParam->rc.vbvMaxBitrate < 0,
+                "Zonefile vbv-maxrate must be non-negative");
+            if (!param->bResetZoneConfig)
+            {
+                CHECK(param->rc.zones[i].startFrame % param->reconfigWindowSize != 0,
+                    "Zonefile start frames must align with the reconfig window size");
+            }
+            if (i > 0)
+            {
+                CHECK(param->rc.zones[i - 1].startFrame >= param->rc.zones[i].startFrame,
+                    "Zonefile start frames must be strictly increasing");
+                if (param->bResetZoneConfig)
+                {
+                    int prevEffectiveStart = param->rc.zones[i - 1].startFrame;
+                    prevEffectiveStart += prevEffectiveStart ? param->rc.zones[i - 1].zoneParam->radl : 0;
+                    int effectiveStart = param->rc.zones[i].startFrame;
+                    effectiveStart += effectiveStart ? param->rc.zones[i].zoneParam->radl : 0;
+                    CHECK(prevEffectiveStart >= effectiveStart,
+                        "Zonefile effective start frames must be strictly increasing");
+                }
+            }
+        }
+    }
     CHECK(strlen(param->analysisSave) && (param->analysisSaveReuseLevel < 0 || param->analysisSaveReuseLevel > 10),
         "Invalid analysis save refine level. Value must be between 1 and 10 (inclusive)");
     CHECK(strlen(param->analysisLoad) && (param->analysisLoadReuseLevel < 0 || param->analysisLoadReuseLevel > 10),
         "Invalid analysis load refine level. Value must be between 1 and 10 (inclusive)");
+    CHECK(param->bAnalysisType == AVC_INFO && (strlen(param->analysisSave) || strlen(param->analysisLoad)),
+        "AVC analysis refinement expects API-supplied analysis data and cannot be combined with analysis save/load files");
     CHECK(strlen(param->analysisLoad) && (param->mvRefine < 1 || param->mvRefine > 3),
         "Invalid mv refinement level. Value must be between 1 and 3 (inclusive)");
-    CHECK(param->scaleFactor > 2, "Invalid scale-factor. Supports factor <= 2");
+    CHECK(param->scaleFactor < 0 || param->scaleFactor > 2, "Invalid scale-factor. Supports factor between 0 and 2");
     CHECK(param->rc.qpMax < QP_MIN || param->rc.qpMax > QP_MAX_MAX,
         "qpmax exceeds supported range (0 to 69)");
     CHECK(param->rc.qpMin < QP_MIN || param->rc.qpMin > QP_MAX_MAX,
@@ -2118,7 +4097,7 @@ int x265_check_params(x265_param* param)
                      || param->bEmitInfoSEI
                      || param->bEmitHDR10SEI
                      || param->bEmitIDRRecoverySEI
-                   || !!param->interlaceMode
+                   || param->interlaceMode != 0
                      || param->preferredTransferCharacteristics > 1
                      || strlen(param->toneMapFile)
                      || strlen(param->naluFile));
@@ -2141,17 +4120,44 @@ int x265_check_params(x265_param* param)
         }
     }
     CHECK(param->rc.dataShareMode != X265_SHARE_MODE_FILE && param->rc.dataShareMode != X265_SHARE_MODE_SHAREDMEM, "Invalid data share mode. It must be one of the X265_DATA_SHARE_MODES enum values\n" );
+    const int expectedNumLayers = param->numViews > 1 ? param->numViews : (param->numScalableLayers > 1) ? param->numScalableLayers : 1;
+    CHECK(param->numScalableLayers < 1, "numScalableLayers must be at least 1");
+#if ENABLE_ALPHA
+    CHECK(param->numScalableLayers > MAX_SCALABLE_LAYERS, "Alpha encoding currently support only 2 scalable layers");
+#else
+    CHECK(param->numScalableLayers > MAX_SCALABLE_LAYERS, "Alpha encoding is unsupported in this build");
+#endif
+    CHECK(param->numViews < 1, "numViews must be at least 1");
+#if ENABLE_MULTIVIEW
+    CHECK(param->numViews > MAX_VIEWS, "Multi-View Encoding currently support only 2 views");
+#else
+    CHECK(param->numViews > MAX_VIEWS, "Multi-View Encoding is unsupported in this build");
+#endif
+    CHECK(param->numViews > 1 && param->numScalableLayers > 1, "Alpha and Multi-View cannot be enabled together in this build");
+#if ENABLE_ALPHA || ENABLE_MULTIVIEW
+    CHECK(expectedNumLayers > MAX_LAYERS, "Derived layered encoding configuration exceeds this build");
+#else
+    CHECK(expectedNumLayers > MAX_LAYERS, "Layered encoding is unsupported in this build");
+#endif
+    param->numLayers = expectedNumLayers;
 #if ENABLE_ALPHA
     if (param->bEnableAlpha)
     {
+        CHECK(param->numScalableLayers != MAX_SCALABLE_LAYERS, "Alpha encoding requires exactly 2 scalable layers");
         CHECK((param->internalCsp != X265_CSP_I420), "Alpha encode supported only with i420a colorspace");
         CHECK((param->internalBitDepth > 10), "BitDepthConstraint must be 8 and 10  for Scalable main profile");
         CHECK((param->analysisMultiPassDistortion || param->analysisMultiPassRefine), "Alpha encode doesnot support multipass feature");
         CHECK((strlen(param->analysisSave) || strlen(param->analysisLoad)), "Alpha encode doesnot support analysis save and load  feature");
     }
+    CHECK(param->numScalableLayers > 1 && !param->bEnableAlpha, "Multiple scalable layers require alpha encoding");
+#else
+    CHECK(param->bEnableAlpha, "Alpha encoding is unsupported in this build");
 #endif
 #if ENABLE_MULTIVIEW
+    CHECK((param->numViews < 1), "Multi-View Encoding requires at least one view");
     CHECK((param->numViews > 2), "Multi-View Encoding currently support only 2 views");
+    CHECK((param->format < 0 || param->format > 2), "Multi-View input format must be 0 (normal), 1 (side-by-side), or 2 (over-under)");
+    CHECK(param->format && param->numViews <= 1, "Multi-View input format requires more than one view");
     if (param->numViews > 1)
     {
         CHECK(param->internalBitDepth != 8, "BitDepthConstraint must be 8 for Multiview main profile");
@@ -2159,11 +4165,13 @@ int x265_check_params(x265_param* param)
         CHECK(strlen(param->analysisSave) || strlen(param->analysisLoad), "Multiview encode doesnot support analysis save and load feature");
         CHECK(param->isAbrLadderEnable, "Multiview encode and Abr-Ladder feature can't be enabled together");
     }
+#else
+    CHECK(param->format, "Multi-View input format is unsupported in this build");
 #endif
 #if ENABLE_SCC_EXT
     bool checkValid = false;
 
-    if (!!param->bEnableSCC)
+    if (param->bEnableSCC != 0)
     {
         checkValid = param->keyframeMax <= 1 || param->totalFrames == 1;
         if (checkValid)     x265_log(param, X265_LOG_WARNING, "intra constraint flag must be 0 for SCC profiles. Disabling SCC  \n");
@@ -2176,7 +4184,7 @@ int x265_check_params(x265_param* param)
         if (checkValid)
             param->bEnableSCC = 0;
     }
-    if (!!param->bEnableSCC)
+    if (param->bEnableSCC != 0)
     {
         if (param->bEnableRdRefine && param->bDynamicRefine)
         {
@@ -2189,7 +4197,7 @@ int x265_check_params(x265_param* param)
             x265_log(param, X265_LOG_WARNING, "Disabling rd-refine as it can not be used with scc and inter-refine\n");
         }
     }
-    CHECK(!!param->bEnableSCC&& param->rdLevel != 6, "Enabling scc extension in x265 requires rdlevel of 6 ");
+    CHECK(param->bEnableSCC != 0 && param->rdLevel != 6, "Enabling scc extension in x265 requires rdlevel of 6 ");
 #endif
 
     if (param->rc.hevcAq && param->rc.aqMode != X265_AQ_NONE)
@@ -2237,6 +4245,12 @@ int x265_check_params(x265_param* param)
 
 void x265_param_apply_fastfirstpass(x265_param* param)
 {
+    if (!param)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "x265_param_apply_fastfirstpass requires a non-null parameter struct\n");
+        return;
+    }
+
     /* Set faster options in case of turbo firstpass */
     if (param->rc.bStatWrite && !param->rc.bStatRead)
     {
@@ -2263,13 +4277,19 @@ static void appendtool(x265_param* param, char* buf, size_t size, const char* to
     }
     else
     {
-        strcat(buf, " ");
-        strcat(buf, toolstr);
+        size_t used = strlen(buf);
+        snprintf(buf + used, size - used, " %s", toolstr);
     }
 }
 
 void x265_print_params(x265_param* param)
 {
+    if (!param)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "x265_print_params requires a non-null parameter struct\n");
+        return;
+    }
+
     if (param->logLevel < X265_LOG_INFO)
         return;
 
@@ -2406,7 +4426,7 @@ void x265_print_params(x265_param* param)
     TOOLOPT(param->numViews > 1, "multi-view");
 #endif
 #if ENABLE_HDR10_PLUS
-    TOOLOPT(param->toneMapFile != NULL, "dhdr10-info");
+    TOOLOPT(param->toneMapFile[0] != '\0', "dhdr10-info");
 #endif
     if(param->bEnableTemporalFilter)
         TOOLOPT(param->bEnableTemporalFilter, "mcstf");
@@ -2417,17 +4437,25 @@ void x265_print_params(x265_param* param)
 char *x265_param2string(x265_param* p, int padx, int pady)
 {
     char *buf, *s;
-    size_t bufSize = 4000 + p->rc.zoneCount * 64;
+    size_t bufSize = 4001 + p->rc.zoneCount * 64;
     if (strlen(p->numaPools))
         bufSize += strlen(p->numaPools);
     if (strlen(p->masteringDisplayColorVolume))
         bufSize += strlen(p->masteringDisplayColorVolume);
     if (strlen(p->videoSignalTypePreset))
         bufSize += strlen(p->videoSignalTypePreset);
+    if (p->logfn)
+        bufSize += strlen(p->logfn);
+    if (p->pgfn)
+        bufSize += strlen(p->pgfn);
+    if (p->filmGrain)
+        bufSize += strlen(p->filmGrain);
+    if (p->aomFilmGrain)
+        bufSize += strlen(p->aomFilmGrain);
 
     buf = s = X265_MALLOC(char, bufSize);
     if (!buf)
-        return NULL;
+        return nullptr;
 #define BOOL(param, cliopt) \
     s += snprintf(s, bufSize - (s - buf), " %s", (param) ? cliopt : "no-" cliopt);
 
@@ -2679,7 +4707,7 @@ char *x265_param2string(x265_param* p, int padx, int pady)
     s += snprintf(s, bufSize - (s - buf), " scenecut-aware-qp=%d", p->bEnableSceneCutAwareQp);
     if (p->bEnableSceneCutAwareQp)
         s += snprintf(s, bufSize - (s - buf), " fwd-scenecut-window=%d fwd-ref-qp-delta=%f fwd-nonref-qp-delta=%f bwd-scenecut-window=%d bwd-ref-qp-delta=%f bwd-nonref-qp-delta=%f", p->fwdMaxScenecutWindow, p->fwdRefQpDelta[0], p->fwdNonRefQpDelta[0], p->bwdMaxScenecutWindow, p->bwdRefQpDelta[0], p->bwdNonRefQpDelta[0]);
-    s += snprintf(s, bufSize - (s - buf), "conformance-window-offsets right=%d bottom=%d", p->confWinRightOffset, p->confWinBottomOffset);
+    s += snprintf(s, bufSize - (s - buf), " conformance-window-offsets right=%d bottom=%d", p->confWinRightOffset, p->confWinBottomOffset);
     s += snprintf(s, bufSize - (s - buf), " decoder-max-rate=%d", p->decoderVbvMaxRate);
     BOOL(p->bliveVBV2pass, "vbv-live-multi-pass");
     if (p->filmGrain)
@@ -2714,9 +4742,20 @@ bool parseLambdaFile(x265_param* param)
         x265_log_file(param, X265_LOG_ERROR, "unable to read lambda file <%s>\n", param->rc.lambdaFileName);
         return true;
     }
+    else if (ferror(lfn))
+    {
+        bool closeFailed = ferror(lfn) != 0;
+        if (fclose(lfn))
+            closeFailed = true;
+        if (closeFailed)
+            x265_log(param, X265_LOG_WARNING, "unable to close lambda file after open failure\n");
+        x265_log_file(param, X265_LOG_ERROR, "unable to read lambda file <%s>\n", param->rc.lambdaFileName);
+        return true;
+    }
 
     char line[2048];
-    char *toksave = NULL, *tok = NULL, *buf = NULL;
+    char *tok = nullptr, *buf = nullptr;
+    char *scan = nullptr;
 
     for (int t = 0; t < 3; t++)
     {
@@ -2733,34 +4772,86 @@ bool parseLambdaFile(x265_param* param)
                     /* consume a line of text file */
                     if (!fgets(line, sizeof(line), lfn))
                     {
-                        fclose(lfn);
-
+                        if (ferror(lfn))
+                        {
+                            bool closeFailed = ferror(lfn) != 0;
+                            if (fclose(lfn))
+                                closeFailed = true;
+                            if (closeFailed)
+                                x265_log(param, X265_LOG_WARNING, "unable to close lambda file after read failure\n");
+                            x265_log_file(param, X265_LOG_ERROR, "unable to read lambda file <%s>\n", param->rc.lambdaFileName);
+                            return true;
+                        }
                         if (t < 2)
                         {
+                            bool closeFailed = ferror(lfn) != 0;
+                            if (fclose(lfn))
+                                closeFailed = true;
+                            if (closeFailed)
+                                x265_log(param, X265_LOG_WARNING, "unable to close lambda file after incomplete parse\n");
                             x265_log(param, X265_LOG_ERROR, "lambda file is incomplete\n");
                             return true;
                         }
                         else
+                        {
+                            bool closeFailed = ferror(lfn) != 0;
+                            if (fclose(lfn))
+                                closeFailed = true;
+                            if (closeFailed)
+                                x265_log(param, X265_LOG_WARNING, "unable to close lambda file after truncated parse\n");
                             return false;
+                        }
                     }
 
                     /* truncate at first hash */
                     char *hash = strchr(line, '#');
                     if (hash) *hash = 0;
                     buf = line;
+                    scan = buf;
                 }
 
-                tok = strtok_r(buf, " ,", &toksave);
-                buf = NULL;
-                if (tok && sscanf(tok, "%lf", &value) == 1)
+                tok = nullptr;
+                while (scan && *scan)
+                {
+                    while (*scan == ',' || std::isspace((unsigned char)*scan))
+                        scan++;
+                    if (!*scan)
+                    {
+                        scan = nullptr;
+                        break;
+                    }
+                    tok = scan;
+                    while (*scan && *scan != ',' && !std::isspace((unsigned char)*scan))
+                        scan++;
+                    if (*scan)
+                        *scan++ = '\0';
                     break;
+                }
+                if (tok)
+                {
+                    bool bValueError = false;
+                    value = x265_atof(tok, bValueError);
+                    if (!bValueError)
+                        break;
+                    x265_log(param, X265_LOG_ERROR, "invalid lambda value: %s\n", tok);
+                    bool closeFailed = ferror(lfn) != 0;
+                    if (fclose(lfn))
+                        closeFailed = true;
+                    if (closeFailed)
+                        x265_log(param, X265_LOG_WARNING, "unable to close lambda file after invalid value\n");
+                    return true;
+                }
             }
             while (1);
 
             if (t == 2)
             {
                 x265_log(param, X265_LOG_ERROR, "lambda file contains too many values\n");
-                fclose(lfn);
+                bool closeFailed = ferror(lfn) != 0;
+                if (fclose(lfn))
+                    closeFailed = true;
+                if (closeFailed)
+                    x265_log(param, X265_LOG_WARNING, "unable to close lambda file after oversized table\n");
                 return true;
             }
             else
@@ -2769,7 +4860,14 @@ bool parseLambdaFile(x265_param* param)
         }
     }
 
-    fclose(lfn);
+    bool closeFailed = ferror(lfn) != 0;
+    if (fclose(lfn))
+        closeFailed = true;
+    if (closeFailed)
+    {
+        x265_log(param, X265_LOG_WARNING, "unable to finalize lambda file state\n");
+        return true;
+    }
     return false;
 }
 
@@ -2780,138 +4878,68 @@ bool parseMaskingStrength(x265_param* p, const char* value)
     double refQpDelta1[6], nonRefQpDelta1[6];
     if (p->bEnableSceneCutAwareQp == FORWARD)
     {
-        if (3 == sscanf(value, "%d,%lf,%lf", &window1[0], &refQpDelta1[0], &nonRefQpDelta1[0]))
-        {
-            if (window1[0] > 0)
-                p->fwdMaxScenecutWindow = window1[0];
-            if (refQpDelta1[0] > 0)
-                p->fwdRefQpDelta[0] = refQpDelta1[0];
-            if (nonRefQpDelta1[0] > 0)
-                p->fwdNonRefQpDelta[0] = nonRefQpDelta1[0];
-
-            p->fwdScenecutWindow[0] = p->fwdMaxScenecutWindow / 6;
-            for (int i = 1; i < 6; i++)
-            {
-                p->fwdScenecutWindow[i] = p->fwdMaxScenecutWindow / 6;
-                p->fwdRefQpDelta[i] = p->fwdRefQpDelta[i - 1] - (0.15 * p->fwdRefQpDelta[i - 1]);
-                p->fwdNonRefQpDelta[i] = p->fwdNonRefQpDelta[i - 1] - (0.15 * p->fwdNonRefQpDelta[i - 1]);
-            }
-        }
-        else if (18 == sscanf(value, "%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf"
-            , &window1[0], &refQpDelta1[0], &nonRefQpDelta1[0], &window1[1], &refQpDelta1[1], &nonRefQpDelta1[1]
-            , &window1[2], &refQpDelta1[2], &nonRefQpDelta1[2], &window1[3], &refQpDelta1[3], &nonRefQpDelta1[3]
-            , &window1[4], &refQpDelta1[4], &nonRefQpDelta1[4], &window1[5], &refQpDelta1[5], &nonRefQpDelta1[5]))
-        {
-            p->fwdMaxScenecutWindow = 0;
-            for (int i = 0; i < 6; i++)
-            {
-                p->fwdScenecutWindow[i] = window1[i];
-                p->fwdRefQpDelta[i] = refQpDelta1[i];
-                p->fwdNonRefQpDelta[i] = nonRefQpDelta1[i];
-                p->fwdMaxScenecutWindow += p->fwdScenecutWindow[i];
-            }
-        }
+        if (parseMaskingStrengthTriples(value, 1, window1, refQpDelta1, nonRefQpDelta1))
+            applyCompactMaskingStrength(window1[0], refQpDelta1[0], nonRefQpDelta1[0],
+                                        p->fwdMaxScenecutWindow, p->fwdScenecutWindow,
+                                        p->fwdRefQpDelta, p->fwdNonRefQpDelta);
+        else if (parseMaskingStrengthTriples(value, 6, window1, refQpDelta1, nonRefQpDelta1))
+            applyExpandedMaskingStrength(window1, refQpDelta1, nonRefQpDelta1,
+                                         p->fwdMaxScenecutWindow, p->fwdScenecutWindow,
+                                         p->fwdRefQpDelta, p->fwdNonRefQpDelta);
         else
         {
-            x265_log(NULL, X265_LOG_ERROR, "Specify all the necessary offsets for masking-strength \n");
+            x265_log(nullptr, X265_LOG_ERROR, "Specify all the necessary offsets for masking-strength \n");
             bError = true;
         }
     }
     else if (p->bEnableSceneCutAwareQp == BACKWARD)
     {
-        if (3 == sscanf(value, "%d,%lf,%lf", &window1[0], &refQpDelta1[0], &nonRefQpDelta1[0]))
-        {
-            if (window1[0] > 0)
-                p->bwdMaxScenecutWindow = window1[0];
-            if (refQpDelta1[0] > 0)
-                p->bwdRefQpDelta[0] = refQpDelta1[0];
-            if (nonRefQpDelta1[0] > 0)
-                p->bwdNonRefQpDelta[0] = nonRefQpDelta1[0];
-
-            p->bwdScenecutWindow[0] = p->bwdMaxScenecutWindow / 6;
-            for (int i = 1; i < 6; i++)
-            {
-                p->bwdScenecutWindow[i] = p->bwdMaxScenecutWindow / 6;
-                p->bwdRefQpDelta[i] = p->bwdRefQpDelta[i - 1] - (0.15 * p->bwdRefQpDelta[i - 1]);
-                p->bwdNonRefQpDelta[i] = p->bwdNonRefQpDelta[i - 1] - (0.15 * p->bwdNonRefQpDelta[i - 1]);
-            }
-        }
-        else if (18 == sscanf(value, "%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf"
-            , &window1[0], &refQpDelta1[0], &nonRefQpDelta1[0], &window1[1], &refQpDelta1[1], &nonRefQpDelta1[1]
-            , &window1[2], &refQpDelta1[2], &nonRefQpDelta1[2], &window1[3], &refQpDelta1[3], &nonRefQpDelta1[3]
-            , &window1[4], &refQpDelta1[4], &nonRefQpDelta1[4], &window1[5], &refQpDelta1[5], &nonRefQpDelta1[5]))
-        {
-            p->bwdMaxScenecutWindow = 0;
-            for (int i = 0; i < 6; i++)
-            {
-                p->bwdScenecutWindow[i] = window1[i];
-                p->bwdRefQpDelta[i] = refQpDelta1[i];
-                p->bwdNonRefQpDelta[i] = nonRefQpDelta1[i];
-                p->bwdMaxScenecutWindow += p->bwdScenecutWindow[i];
-            }
-        }
+        if (parseMaskingStrengthTriples(value, 1, window1, refQpDelta1, nonRefQpDelta1))
+            applyCompactMaskingStrength(window1[0], refQpDelta1[0], nonRefQpDelta1[0],
+                                        p->bwdMaxScenecutWindow, p->bwdScenecutWindow,
+                                        p->bwdRefQpDelta, p->bwdNonRefQpDelta);
+        else if (parseMaskingStrengthTriples(value, 6, window1, refQpDelta1, nonRefQpDelta1))
+            applyExpandedMaskingStrength(window1, refQpDelta1, nonRefQpDelta1,
+                                         p->bwdMaxScenecutWindow, p->bwdScenecutWindow,
+                                         p->bwdRefQpDelta, p->bwdNonRefQpDelta);
         else
         {
-            x265_log(NULL, X265_LOG_ERROR, "Specify all the necessary offsets for masking-strength \n");
+            x265_log(nullptr, X265_LOG_ERROR, "Specify all the necessary offsets for masking-strength \n");
             bError = true;
         }
     }
     else if (p->bEnableSceneCutAwareQp == BI_DIRECTIONAL)
     {
-        int window2[6];
-        double refQpDelta2[6], nonRefQpDelta2[6];
-        if (6 == sscanf(value, "%d,%lf,%lf,%d,%lf,%lf", &window1[0], &refQpDelta1[0], &nonRefQpDelta1[0], &window2[0], &refQpDelta2[0], &nonRefQpDelta2[0]))
+        int window2[12];
+        double refQpDelta2[12], nonRefQpDelta2[12];
+        if (parseMaskingStrengthTriples(value, 2, window2, refQpDelta2, nonRefQpDelta2))
         {
-            if (window1[0] > 0)
-                p->fwdMaxScenecutWindow = window1[0];
-            if (refQpDelta1[0] > 0)
-                p->fwdRefQpDelta[0] = refQpDelta1[0];
-            if (nonRefQpDelta1[0] > 0)
-                p->fwdNonRefQpDelta[0] = nonRefQpDelta1[0];
-            if (window2[0] > 0)
-                p->bwdMaxScenecutWindow = window2[0];
-            if (refQpDelta2[0] > 0)
-                p->bwdRefQpDelta[0] = refQpDelta2[0];
-            if (nonRefQpDelta2[0] > 0)
-                p->bwdNonRefQpDelta[0] = nonRefQpDelta2[0];
-
-            p->fwdScenecutWindow[0] = p->fwdMaxScenecutWindow / 6;
-            p->bwdScenecutWindow[0] = p->bwdMaxScenecutWindow / 6;
-            for (int i = 1; i < 6; i++)
-            {
-                p->fwdScenecutWindow[i] = p->fwdMaxScenecutWindow / 6;
-                p->bwdScenecutWindow[i] = p->bwdMaxScenecutWindow / 6;
-                p->fwdRefQpDelta[i] = p->fwdRefQpDelta[i - 1] - (0.15 * p->fwdRefQpDelta[i - 1]);
-                p->fwdNonRefQpDelta[i] = p->fwdNonRefQpDelta[i - 1] - (0.15 * p->fwdNonRefQpDelta[i - 1]);
-                p->bwdRefQpDelta[i] = p->bwdRefQpDelta[i - 1] - (0.15 * p->bwdRefQpDelta[i - 1]);
-                p->bwdNonRefQpDelta[i] = p->bwdNonRefQpDelta[i - 1] - (0.15 * p->bwdNonRefQpDelta[i - 1]);
-            }
+            applyCompactMaskingStrength(window2[0], refQpDelta2[0], nonRefQpDelta2[0],
+                                        p->fwdMaxScenecutWindow, p->fwdScenecutWindow,
+                                        p->fwdRefQpDelta, p->fwdNonRefQpDelta);
+            applyCompactMaskingStrength(window2[1], refQpDelta2[1], nonRefQpDelta2[1],
+                                        p->bwdMaxScenecutWindow, p->bwdScenecutWindow,
+                                        p->bwdRefQpDelta, p->bwdNonRefQpDelta);
         }
-        else if (36 == sscanf(value, "%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf,%d,%lf,%lf"
-            , &window1[0], &refQpDelta1[0], &nonRefQpDelta1[0], &window1[1], &refQpDelta1[1], &nonRefQpDelta1[1]
-            , &window1[2], &refQpDelta1[2], &nonRefQpDelta1[2], &window1[3], &refQpDelta1[3], &nonRefQpDelta1[3]
-            , &window1[4], &refQpDelta1[4], &nonRefQpDelta1[4], &window1[5], &refQpDelta1[5], &nonRefQpDelta1[5]
-            , &window2[0], &refQpDelta2[0], &nonRefQpDelta2[0], &window2[1], &refQpDelta2[1], &nonRefQpDelta2[1]
-            , &window2[2], &refQpDelta2[2], &nonRefQpDelta2[2], &window2[3], &refQpDelta2[3], &nonRefQpDelta2[3]
-            , &window2[4], &refQpDelta2[4], &nonRefQpDelta2[4], &window2[5], &refQpDelta2[5], &nonRefQpDelta2[5]))
+        else if (parseMaskingStrengthTriples(value, 12, window2, refQpDelta2, nonRefQpDelta2))
         {
             p->fwdMaxScenecutWindow = 0;
             p->bwdMaxScenecutWindow = 0;
             for (int i = 0; i < 6; i++)
             {
-                p->fwdScenecutWindow[i] = window1[i];
-                p->fwdRefQpDelta[i] = refQpDelta1[i];
-                p->fwdNonRefQpDelta[i] = nonRefQpDelta1[i];
-                p->bwdScenecutWindow[i] = window2[i];
-                p->bwdRefQpDelta[i] = refQpDelta2[i];
-                p->bwdNonRefQpDelta[i] = nonRefQpDelta2[i];
+                p->fwdScenecutWindow[i] = window2[i];
+                p->fwdRefQpDelta[i] = refQpDelta2[i];
+                p->fwdNonRefQpDelta[i] = nonRefQpDelta2[i];
+                p->bwdScenecutWindow[i] = window2[i + 6];
+                p->bwdRefQpDelta[i] = refQpDelta2[i + 6];
+                p->bwdNonRefQpDelta[i] = nonRefQpDelta2[i + 6];
                 p->fwdMaxScenecutWindow += p->fwdScenecutWindow[i];
                 p->bwdMaxScenecutWindow += p->bwdScenecutWindow[i];
             }
         }
         else
         {
-            x265_log(NULL, X265_LOG_ERROR, "Specify all the necessary offsets for masking-strength \n");
+            x265_log(nullptr, X265_LOG_ERROR, "Specify all the necessary offsets for masking-strength \n");
             bError = true;
         }
     }
@@ -2920,6 +4948,21 @@ bool parseMaskingStrength(x265_param* p, const char* value)
 
 void x265_copy_params(x265_param* dst, x265_param* src)
 {
+#ifdef SVT_HEVC
+    if (src->svtHevcParam && !ensureSvtHevcParam(dst))
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+        return;
+    }
+#endif
+    const bool preserveDstZones = (src->rc.zonefileCount && src->rc.zones && src->bResetZoneConfig) ||
+                                  (src->rc.zoneCount && src->rc.zones);
+    const bool zonefileCopy = src->rc.zonefileCount && src->rc.zones && src->bResetZoneConfig;
+    if (dst->rc.zones && !preserveDstZones)
+        x265_zone_free(dst);
+    if (preserveDstZones && !ensureZoneCopyDestination(dst, src, zonefileCopy))
+        return;
+
     dst->mcstfFrameRange = src->mcstfFrameRange;
     dst->cpuid = src->cpuid;
     dst->frameNumThreads = src->frameNumThreads;
@@ -2933,28 +4976,40 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     dst->bEnablePsnr = src->bEnablePsnr;
     dst->bEnableSsim = src->bEnableSsim;
     dst->logLevel = src->logLevel;
-    if (dst->logfn)
-    {
-        free(dst->logfn);
-        dst->logfn = NULL;
-    }
+    char* newLogfn = nullptr;
     if (src->logfn)
     {
-        dst->logfn = strdup(src->logfn);
-        if (!dst->logfn)
-            x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory\n");
+        newLogfn = strdup(src->logfn);
+        if (!newLogfn)
+            x265_log(nullptr, X265_LOG_ERROR, "unable to allocate memory\n");
+    }
+    else if (dst->logfn)
+    {
+        free(dst->logfn);
+        dst->logfn = nullptr;
+    }
+    if (newLogfn)
+    {
+        free(dst->logfn);
+        dst->logfn = newLogfn;
     }
     dst->logfLevel = src->logfLevel;
-    if (dst->pgfn)
-    {
-        free(dst->pgfn);
-        dst->pgfn = NULL;
-    }
+    char* newPgfn = nullptr;
     if (src->pgfn)
     {
-        dst->pgfn = strdup(src->pgfn);
-        if (!dst->pgfn)
-            x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory\n");
+        newPgfn = strdup(src->pgfn);
+        if (!newPgfn)
+            x265_log(nullptr, X265_LOG_ERROR, "unable to allocate memory\n");
+    }
+    else if (dst->pgfn)
+    {
+        free(dst->pgfn);
+        dst->pgfn = nullptr;
+    }
+    if (newPgfn)
+    {
+        free(dst->pgfn);
+        dst->pgfn = newPgfn;
     }
     dst->csvLogLevel = src->csvLogLevel;
     if (strlen(src->csvfn)) snprintf(dst->csvfn, X265_MAX_STRING_SIZE, "%s", src->csvfn);
@@ -3104,14 +5159,35 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     dst->bNoResetZoneConfig = src->bNoResetZoneConfig;
     dst->decoderVbvMaxRate = src->decoderVbvMaxRate;
 
-    if (src->rc.zonefileCount && src->rc.zones && src->bResetZoneConfig)
+    if (src->rc.zonefileCount)
     {
-        for (int i = 0; i < src->rc.zonefileCount; i++)
+        dst->rc.zoneCount = 0;
+        if (src->rc.zones && src->bResetZoneConfig)
         {
-            dst->rc.zones[i].startFrame = src->rc.zones[i].startFrame;
-            dst->rc.zones[0].keyframeMax = src->rc.zones[0].keyframeMax;
-            memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+            for (int i = 0; i < src->rc.zonefileCount; i++)
+            {
+                if (!src->rc.zones[i].zoneParam || !dst->rc.zones[i].zoneParam)
+                {
+                    x265_log(nullptr, X265_LOG_ERROR, "zonefile param copy requires non-null zoneParam storage\n");
+                    return;
+                }
+                dst->rc.zones[i].startFrame = src->rc.zones[i].startFrame;
+                dst->rc.zones[0].keyframeMax = src->rc.zones[0].keyframeMax;
+#ifdef SVT_HEVC
+                void* dstZoneSvtHevcParam = dst->rc.zones[i].zoneParam->svtHevcParam;
+                memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+                dst->rc.zones[i].zoneParam->svtHevcParam = dstZoneSvtHevcParam;
+                finalizeZoneParamCopy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam);
+#else
+                memcpy(dst->rc.zones[i].zoneParam, src->rc.zones[i].zoneParam, sizeof(x265_param));
+                dst->rc.zones[i].zoneParam->rc.zones = nullptr;
+                dst->rc.zones[i].zoneParam->rc.zoneCount = 0;
+                dst->rc.zones[i].zoneParam->rc.zonefileCount = 0;
+#endif
+            }
         }
+        else
+            dst->rc.zones = nullptr;
     }
     else if (src->rc.zoneCount && src->rc.zones)
     {
@@ -3125,7 +5201,7 @@ void x265_copy_params(x265_param* dst, x265_param* src)
         }
     }
     else
-        dst->rc.zones = NULL;
+        dst->rc.zones = nullptr;
 
     if (strlen(src->rc.lambdaFileName)) snprintf(dst->rc.lambdaFileName, X265_MAX_STRING_SIZE, "%s", src->rc.lambdaFileName);
     else dst->rc.lambdaFileName[0] = 0;
@@ -3272,7 +5348,8 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     if (strlen(src->videoSignalTypePreset)) snprintf(dst->videoSignalTypePreset, X265_MAX_STRING_SIZE, "%s", src->videoSignalTypePreset);
     else dst->videoSignalTypePreset[0] = 0;
 #ifdef SVT_HEVC
-    memcpy(dst->svtHevcParam, src->svtHevcParam, sizeof(EB_H265_ENC_CONFIGURATION));
+    if (!copySvtHevcParamStorage(dst, src))
+        x265_log(nullptr, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
 #endif
     /* Film grain */
     dst->filmGrain = src->filmGrain;
@@ -3281,6 +5358,14 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     dst->bEnableSBRC = src->bEnableSBRC;
     dst->bConfigRCFrame = src->bConfigRCFrame;
     dst->isAbrLadderEnable = src->isAbrLadderEnable;
+}
+
+void x265_copy_params_writeonly(x265_param* dst, x265_param* src)
+{
+    if (!prepareFreshParamCopyDestination(dst, src))
+        return;
+
+    x265_copy_params(dst, src);
 }
 
 #ifdef SVT_HEVC
@@ -3400,12 +5485,19 @@ void svt_param_default(x265_param* param)
 
 int svt_set_preset(x265_param* param, const char* preset)
 {
-    EB_H265_ENC_CONFIGURATION* svtHevcParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
-    
+    EB_H265_ENC_CONFIGURATION* svtHevcParam = ensureSvtHevcParam(param);
+    if (!svtHevcParam)
+    {
+        x265_log(param, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+        return -1;
+    }
+
     if (preset)
     {
-        if (!strcmp(preset, "ultrafast")) svtHevcParam->encMode = 11;
-        else if (!strcmp(preset, "superfast")) svtHevcParam->encMode = 10;
+        preset = parsePresetIndexName(preset);
+
+        if (!strcmp(preset, "ultrafast")) svtHevcParam->encMode = 9;
+        else if (!strcmp(preset, "superfast")) svtHevcParam->encMode = 9;
         else if (!strcmp(preset, "veryfast")) svtHevcParam->encMode = 9;
         else if (!strcmp(preset, "faster")) svtHevcParam->encMode = 8;
         else if (!strcmp(preset, "fast")) svtHevcParam->encMode = 7;
@@ -3424,25 +5516,58 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
     bool bError = false;
 #define OPT(STR) else if (!strcmp(name, STR))
 
-    EB_H265_ENC_CONFIGURATION* svtHevcParam = (EB_H265_ENC_CONFIGURATION*)param->svtHevcParam;
-    if (0);
-    OPT("input-res")  bError |= sscanf(value, "%dx%d", &svtHevcParam->sourceWidth, &svtHevcParam->sourceHeight) != 2;
-    OPT("input-depth") svtHevcParam->encoderBitDepth = atoi(value);
-    OPT("total-frames") svtHevcParam->framesToBeEncoded = atoi(value);
-    OPT("frames") svtHevcParam->framesToBeEncoded = atoi(value);
-    OPT("fps")
+    EB_H265_ENC_CONFIGURATION* svtHevcParam = ensureSvtHevcParam(param);
+    if (!svtHevcParam)
     {
-        if (sscanf(value, "%u/%u", &svtHevcParam->frameRateNumerator, &svtHevcParam->frameRateDenominator) == 2)
-            ;
+        x265_log(param, X265_LOG_ERROR, "unable to allocate SVT parameter storage\n");
+        return X265_PARAM_BAD_VALUE;
+    }
+    if (0);
+    OPT("input-res")
+    {
+        int sourceWidth = 0;
+        int sourceHeight = 0;
+        if (!parseOptionIntPair(value, 'x', sourceWidth, sourceHeight))
+            bError = true;
         else
         {
-            int fps = atoi(value);
-            svtHevcParam->frameRateDenominator = 1;
-
-            if (fps < 1000)
-                svtHevcParam->frameRate = fps << 16;
-            else
-                svtHevcParam->frameRate = fps;
+            svtHevcParam->sourceWidth = (uint32_t)sourceWidth;
+            svtHevcParam->sourceHeight = (uint32_t)sourceHeight;
+        }
+    }
+    OPT("input-depth")
+    {
+        bool bEncoderBitDepthError = false;
+        int encoderBitDepth = parseOptionIntValue(value, bEncoderBitDepthError);
+        bError |= bEncoderBitDepthError;
+        if (!bEncoderBitDepthError)
+            svtHevcParam->encoderBitDepth = encoderBitDepth;
+    }
+    OPT("total-frames")
+    {
+        bool bFramesToBeEncodedError = false;
+        int framesToBeEncoded = parseOptionIntValue(value, bFramesToBeEncodedError);
+        bError |= bFramesToBeEncodedError;
+        if (!bFramesToBeEncodedError)
+            svtHevcParam->framesToBeEncoded = framesToBeEncoded;
+    }
+    OPT("frames")
+    {
+        bool bFramesToBeEncodedError = false;
+        int framesToBeEncoded = parseOptionIntValue(value, bFramesToBeEncodedError);
+        bError |= bFramesToBeEncodedError;
+        if (!bFramesToBeEncodedError)
+            svtHevcParam->framesToBeEncoded = framesToBeEncoded;
+    }
+    OPT("fps")
+    {
+        bError |= !parseFpsValue(value, svtHevcParam->frameRateNumerator, svtHevcParam->frameRateDenominator);
+        if (!bError)
+        {
+            if (svtHevcParam->frameRateDenominator == 1 && svtHevcParam->frameRateNumerator < 1000)
+                svtHevcParam->frameRate = svtHevcParam->frameRateNumerator << 16;
+            else if (svtHevcParam->frameRateDenominator == 1)
+                svtHevcParam->frameRate = svtHevcParam->frameRateNumerator;
         }
     }
     OPT2("level-idc", "level")
@@ -3450,123 +5575,266 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
         /* allow "5.1" or "51", both converted to integer 51 */
         /* if level-idc specifies an obviously wrong value in either float or int,
         throw error consistently. Stronger level checking will be done in encoder_open() */
-        if (atof(value) < 10)
-            svtHevcParam->level = (int)(10 * atof(value) + .5);
-        else if (atoi(value) < 100)
-            svtHevcParam->level = atoi(value);
-        else
+        if (!parseTenthsOrIntegerLevel(value, svtHevcParam->level))
             bError = true;
     }
     OPT2("pools", "numa-pools")
     {
         char *pools = strdup(value);
-        char *temp1, *temp2;
-        int count = 0;
-
-        for (temp1 = strstr(pools, ","); temp1 != NULL; temp1 = strstr(temp2, ","))
+        if (!pools)
         {
-            temp2 = ++temp1;
-            count++;
-        }
-
-        if (count > 1)
-            x265_log(param, X265_LOG_WARNING, "SVT-HEVC Encoder supports pools option only upto 2 sockets \n");
-        else if (count == 1)
-        {
-            temp1 = strtok(pools, ",");
-            temp2 = strtok(NULL, ",");
-
-            if (!strcmp(temp1, "+"))
-            {
-                if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = -1;
-                else if (!strcmp(temp2, "-")) svtHevcParam->targetSocket = 0;
-                else svtHevcParam->targetSocket = -1;
-            }
-            else if (!strcmp(temp1, "-"))
-            {
-                if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = 1;
-                else if (!strcmp(temp2, "-")) x265_log(param, X265_LOG_ERROR, "Shouldn't exclude both sockets for pools option %s \n", pools);
-                else if (!strcmp(temp2, "*")) svtHevcParam->targetSocket = 1;
-                else
-                {
-                    svtHevcParam->targetSocket = 1;
-                    svtHevcParam->logicalProcessors = atoi(temp2);
-                }
-            }
-            else svtHevcParam->targetSocket = -1;
+            x265_log(param, X265_LOG_ERROR, "unable to allocate memory for SVT pools option\n");
+            bError = true;
         }
         else
         {
-            if (!strcmp(temp1, "*")) svtHevcParam->targetSocket = -1;
+            char *temp1, *temp2;
+            int count = 0;
+
+            for (temp1 = strstr(pools, ","); temp1 != nullptr; temp1 = strstr(temp2, ","))
+            {
+                temp2 = ++temp1;
+                count++;
+            }
+
+            if (count > 1)
+                x265_log(param, X265_LOG_WARNING, "SVT-HEVC Encoder supports pools option only upto 2 sockets \n");
+            else if (count == 1)
+            {
+                char* separator = std::strchr(pools, ',');
+                if (!separator || separator == pools || !separator[1])
+                {
+                    x265_log(param, X265_LOG_ERROR, "Invalid pools option %s\n", value);
+                    bError = true;
+                }
+                else
+                {
+                    *separator = '\0';
+                    temp1 = pools;
+                    temp2 = separator + 1;
+                    if (!strcmp(temp1, "+"))
+                    {
+                        if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = -1;
+                        else if (!strcmp(temp2, "-")) svtHevcParam->targetSocket = 0;
+                        else svtHevcParam->targetSocket = -1;
+                    }
+                    else if (!strcmp(temp1, "-"))
+                    {
+                        if (!strcmp(temp2, "+")) svtHevcParam->targetSocket = 1;
+                        else if (!strcmp(temp2, "-"))
+                        {
+                            x265_log(param, X265_LOG_ERROR, "Shouldn't exclude both sockets for pools option %s \n", pools);
+                            bError = true;
+                        }
+                        else if (!strcmp(temp2, "*")) svtHevcParam->targetSocket = 1;
+                        else
+                        {
+                            bool bLogicalProcessorsError = false;
+                            int logicalProcessors = parseOptionIntValue(temp2, bLogicalProcessorsError);
+                            bError |= bLogicalProcessorsError;
+                            if (!bLogicalProcessorsError)
+                            {
+                                svtHevcParam->targetSocket = 1;
+                                svtHevcParam->logicalProcessors = logicalProcessors;
+                            }
+                        }
+                    }
+                    else svtHevcParam->targetSocket = -1;
+                }
+            }
             else
             {
-                svtHevcParam->targetSocket = 0;
-                svtHevcParam->logicalProcessors = atoi(temp1);
+                temp1 = pools;
+                if (!strcmp(temp1, "*")) svtHevcParam->targetSocket = -1;
+                else
+                {
+                    bool bLogicalProcessorsError = false;
+                    int logicalProcessors = parseOptionIntValue(temp1, bLogicalProcessorsError);
+                    bError |= bLogicalProcessorsError;
+                    if (!bLogicalProcessorsError)
+                    {
+                        svtHevcParam->targetSocket = 0;
+                        svtHevcParam->logicalProcessors = logicalProcessors;
+                    }
+                }
             }
+            free(pools);
         }
-        free(pools);
     }
-    OPT("high-tier") svtHevcParam->tier = x265_atobool(value, bError);
-    OPT("qpmin") svtHevcParam->minQpAllowed = atoi(value);
-    OPT("qpmax") svtHevcParam->maxQpAllowed = atoi(value);
-    OPT("rc-lookahead") svtHevcParam->lookAheadDistance = atoi(value);
+    OPT("high-tier")
+    {
+        int tier = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->tier = tier;
+    }
+    OPT("qpmin")
+    {
+        bool bMinQpAllowedError = false;
+        int minQpAllowed = parseOptionIntValue(value, bMinQpAllowedError);
+        bError |= bMinQpAllowedError;
+        if (!bMinQpAllowedError)
+            svtHevcParam->minQpAllowed = minQpAllowed;
+    }
+    OPT("qpmax")
+    {
+        bool bMaxQpAllowedError = false;
+        int maxQpAllowed = parseOptionIntValue(value, bMaxQpAllowedError);
+        bError |= bMaxQpAllowedError;
+        if (!bMaxQpAllowedError)
+            svtHevcParam->maxQpAllowed = maxQpAllowed;
+    }
+    OPT("rc-lookahead")
+    {
+        bool bLookAheadDistanceError = false;
+        int lookAheadDistance = parseOptionIntValue(value, bLookAheadDistanceError);
+        bError |= bLookAheadDistanceError;
+        if (!bLookAheadDistanceError)
+            svtHevcParam->lookAheadDistance = lookAheadDistance;
+    }
     OPT("scenecut")
     {
-        svtHevcParam->sceneChangeDetection = x265_atobool(value, bError);
-        if (bError || svtHevcParam->sceneChangeDetection)
+        bool bSceneChangeDetectionError = false;
+        int sceneChangeDetection = x265_atobool(value, bSceneChangeDetectionError);
+        bError |= bSceneChangeDetectionError;
+        if (!bSceneChangeDetectionError)
         {
-            bError = false;
-            svtHevcParam->sceneChangeDetection = 1;
+            svtHevcParam->sceneChangeDetection = sceneChangeDetection;
+            if (svtHevcParam->sceneChangeDetection)
+                svtHevcParam->sceneChangeDetection = 1;
         }
     }
     OPT("open-gop")
     {
-        if (x265_atobool(value, bError))
+        int bOpenGop = x265_atobool(value, bError);
+        if (!bError && bOpenGop)
             svtHevcParam->intraRefreshType = 1;
-        else
+        else if (!bError)
             svtHevcParam->intraRefreshType = 2;
     }
     OPT("deblock")
     {
-        if (strtol(value, NULL, 0))
-            svtHevcParam->disableDlfFlag = 0;
-        else if (x265_atobool(value, bError) == 0 && !bError)
-            svtHevcParam->disableDlfFlag = 1;
+        bool bDeblockValueError = false;
+        int deblockValue = parseOptionIntValue(value, bDeblockValueError);
+        if (!bDeblockValueError)
+            svtHevcParam->disableDlfFlag = deblockValue ? 0 : 1;
+        else
+        {
+            int deblockEnabled = x265_atobool(value, bError);
+            if (!bError)
+                svtHevcParam->disableDlfFlag = deblockEnabled ? 0 : 1;
+        }
     }
-    OPT("sao") svtHevcParam->enableSaoFlag = (uint8_t)x265_atobool(value, bError);
-    OPT("keyint") svtHevcParam->intraPeriodLength = atoi(value);
-    OPT("constrained-intra") svtHevcParam->constrainedIntra = (uint8_t)x265_atobool(value, bError);
-    OPT("vui-timing-info") svtHevcParam->videoUsabilityInfo = x265_atobool(value, bError);
-    OPT("hdr") svtHevcParam->highDynamicRangeInput = x265_atobool(value, bError);
-    OPT("aud") svtHevcParam->accessUnitDelimiter = x265_atobool(value, bError);
+    OPT("sao")
+    {
+        int bEnableSao = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->enableSaoFlag = (uint8_t)bEnableSao;
+    }
+    OPT("keyint")
+    {
+        bool bIntraPeriodLengthError = false;
+        int intraPeriodLength = parseOptionIntValue(value, bIntraPeriodLengthError);
+        bError |= bIntraPeriodLengthError;
+        if (!bIntraPeriodLengthError)
+            svtHevcParam->intraPeriodLength = intraPeriodLength;
+    }
+    OPT("constrained-intra")
+    {
+        int constrainedIntra = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->constrainedIntra = (uint8_t)constrainedIntra;
+    }
+    OPT("vui-timing-info")
+    {
+        int videoUsabilityInfo = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->videoUsabilityInfo = videoUsabilityInfo;
+    }
+    OPT("hdr")
+    {
+        int highDynamicRangeInput = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->highDynamicRangeInput = highDynamicRangeInput;
+    }
+    OPT("aud")
+    {
+        int accessUnitDelimiter = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->accessUnitDelimiter = accessUnitDelimiter;
+    }
     OPT("qp")
     {
-        svtHevcParam->rateControlMode = 0;
-        svtHevcParam->qp = atoi(value);
+        bool bQpValueError = false;
+        int qp = parseOptionIntValue(value, bQpValueError);
+        bError |= bQpValueError;
+        if (!bQpValueError)
+        {
+            svtHevcParam->rateControlMode = 0;
+            svtHevcParam->qp = qp;
+        }
     }
     OPT("bitrate")
     {
-        svtHevcParam->rateControlMode = 1;
-        svtHevcParam->targetBitRate = atoi(value);
+        bool bBitrateValueError = false;
+        int bitrate = parseOptionIntValue(value, bBitrateValueError);
+        bError |= bBitrateValueError;
+        if (!bBitrateValueError)
+        {
+            svtHevcParam->rateControlMode = 1;
+            svtHevcParam->targetBitRate = bitrate;
+        }
     }
     OPT("interlace")
     {
-        svtHevcParam->interlacedVideo = (uint8_t)x265_atobool(value, bError);
-        if (bError || svtHevcParam->interlacedVideo)
+        bool bInterlacedVideoError = false;
+        int interlacedVideo = x265_atobool(value, bInterlacedVideoError);
+        bError |= bInterlacedVideoError;
+        if (!bInterlacedVideoError)
         {
-            bError = false;
-            svtHevcParam->interlacedVideo = 1;
+            svtHevcParam->interlacedVideo = (uint8_t)interlacedVideo;
+            if (svtHevcParam->interlacedVideo)
+                svtHevcParam->interlacedVideo = 1;
         }
     }
     OPT("svt-hme")
     {
-        svtHevcParam->enableHmeFlag = (uint8_t)x265_atobool(value, bError);
-        if (svtHevcParam->enableHmeFlag) svtHevcParam->useDefaultMeHme = 1;
+        int bEnableHme = x265_atobool(value, bError);
+        if (!bError)
+        {
+            svtHevcParam->enableHmeFlag = (uint8_t)bEnableHme;
+            if (svtHevcParam->enableHmeFlag)
+                svtHevcParam->useDefaultMeHme = 1;
+        }
     }
-    OPT("svt-search-width") svtHevcParam->searchAreaWidth = atoi(value);
-    OPT("svt-search-height") svtHevcParam->searchAreaHeight = atoi(value);
-    OPT("svt-compressed-ten-bit-format") svtHevcParam->compressedTenBitFormat = x265_atobool(value, bError);
-    OPT("svt-speed-control") svtHevcParam->speedControlFlag = x265_atobool(value, bError);
+    OPT("svt-search-width")
+    {
+        bool bSearchAreaWidthError = false;
+        int searchAreaWidth = parseOptionIntValue(value, bSearchAreaWidthError);
+        bError |= bSearchAreaWidthError;
+        if (!bSearchAreaWidthError)
+            svtHevcParam->searchAreaWidth = searchAreaWidth;
+    }
+    OPT("svt-search-height")
+    {
+        bool bSearchAreaHeightError = false;
+        int searchAreaHeight = parseOptionIntValue(value, bSearchAreaHeightError);
+        bError |= bSearchAreaHeightError;
+        if (!bSearchAreaHeightError)
+            svtHevcParam->searchAreaHeight = searchAreaHeight;
+    }
+    OPT("svt-compressed-ten-bit-format")
+    {
+        int compressedTenBitFormat = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->compressedTenBitFormat = compressedTenBitFormat;
+    }
+    OPT("svt-speed-control")
+    {
+        int speedControlFlag = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->speedControlFlag = speedControlFlag;
+    }
+    OPT("preset") bError |= svt_set_preset(param, value) < 0;
     OPT("svt-preset-tuner")
     {
         if (svtHevcParam->encMode == 2)
@@ -3582,32 +5850,108 @@ int svt_param_parse(x265_param* param, const char* name, const char* value)
         else
             x265_log(param, X265_LOG_WARNING, " svt-preset-tuner should be used only with ultrafast preset; Ignoring it \n");
     }
-    OPT("svt-hierarchical-level") svtHevcParam->hierarchicalLevels = atoi(value);
-    OPT("svt-base-layer-switch-mode") svtHevcParam->baseLayerSwitchMode = atoi(value);
-    OPT("svt-pred-struct") svtHevcParam->predStructure = (uint8_t)atoi(value);
-    OPT("svt-fps-in-vps") svtHevcParam->fpsInVps = (uint8_t)x265_atobool(value, bError);
-    OPT("master-display") svtHevcParam->useMasteringDisplayColorVolume = (uint8_t)atoi(value);
-    OPT("max-cll") bError |= sscanf(value, "%hu,%hu", &svtHevcParam->maxCLL, &svtHevcParam->maxFALL) != 2;
-    OPT("nalu-file") svtHevcParam->useNaluFile = (uint8_t)atoi(value);
+    OPT("svt-hierarchical-level")
+    {
+        bool bHierarchicalLevelsError = false;
+        int hierarchicalLevels = parseOptionIntValue(value, bHierarchicalLevelsError);
+        bError |= bHierarchicalLevelsError;
+        if (!bHierarchicalLevelsError)
+            svtHevcParam->hierarchicalLevels = hierarchicalLevels;
+    }
+    OPT("svt-base-layer-switch-mode")
+    {
+        bool bBaseLayerSwitchModeError = false;
+        int baseLayerSwitchMode = parseOptionIntValue(value, bBaseLayerSwitchModeError);
+        bError |= bBaseLayerSwitchModeError;
+        if (!bBaseLayerSwitchModeError)
+            svtHevcParam->baseLayerSwitchMode = baseLayerSwitchMode;
+    }
+    OPT("svt-pred-struct")
+    {
+        bool bPredStructureError = false;
+        uint8_t predStructure = parseOptionUint8Value(value, bPredStructureError);
+        bError |= bPredStructureError;
+        if (!bPredStructureError)
+            svtHevcParam->predStructure = predStructure;
+    }
+    OPT("svt-fps-in-vps")
+    {
+        int fpsInVps = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->fpsInVps = (uint8_t)fpsInVps;
+    }
+    OPT("master-display")
+    {
+        bool bMasterDisplayError = false;
+        uint8_t useMasteringDisplayColorVolume = parseOptionUint8Value(value, bMasterDisplayError);
+        bError |= bMasterDisplayError;
+        if (!bMasterDisplayError)
+            svtHevcParam->useMasteringDisplayColorVolume = useMasteringDisplayColorVolume;
+    }
+    OPT("max-cll")
+    {
+        uint16_t maxCLL = 0;
+        uint16_t maxFALL = 0;
+        bool bLocalError = !parseOptionUint16Pair(value, ',', maxCLL, maxFALL);
+        if (!bLocalError)
+        {
+            svtHevcParam->maxCLL = maxCLL;
+            svtHevcParam->maxFALL = maxFALL;
+        }
+        bError |= bLocalError;
+    }
+    OPT("nalu-file")
+    {
+        bool bNaluFileError = false;
+        uint8_t useNaluFile = parseOptionUint8Value(value, bNaluFileError);
+        bError |= bNaluFileError;
+        if (!bNaluFileError)
+            svtHevcParam->useNaluFile = useNaluFile;
+    }
     OPT("dolby-vision-profile")
     {
-        if (atof(value) < 10)
-            svtHevcParam->dolbyVisionProfile = (int)(10 * atof(value) + .5);
-        else if (atoi(value) < 100)
-            svtHevcParam->dolbyVisionProfile = atoi(value);
-        else
+        if (!parseTenthsOrIntegerLevel(value, svtHevcParam->dolbyVisionProfile))
             bError = true;
     }
     OPT("hrd")
-        svtHevcParam->hrdFlag = (uint32_t)x265_atobool(value, bError);
+    {
+        int hrdFlag = x265_atobool(value, bError);
+        if (!bError)
+            svtHevcParam->hrdFlag = (uint32_t)hrdFlag;
+    }
     OPT("vbv-maxrate")
-        svtHevcParam->vbvMaxrate = (uint32_t)x265_atoi(value, bError);
+    {
+        bool bVbvMaxrateError = false;
+        int vbvMaxrate = parseOptionIntValue(value, bVbvMaxrateError);
+        bError |= bVbvMaxrateError;
+        if (!bVbvMaxrateError)
+            svtHevcParam->vbvMaxrate = (uint32_t)vbvMaxrate;
+    }
     OPT("vbv-bufsize")
-        svtHevcParam->vbvBufsize = (uint32_t)x265_atoi(value, bError);
+    {
+        bool bVbvBufsizeError = false;
+        int vbvBufsize = parseOptionIntValue(value, bVbvBufsizeError);
+        bError |= bVbvBufsizeError;
+        if (!bVbvBufsizeError)
+            svtHevcParam->vbvBufsize = (uint32_t)vbvBufsize;
+    }
     OPT("vbv-init")
-        svtHevcParam->vbvBufInit = (uint64_t)x265_atof(value, bError);
+    {
+        bool bVbvBufInitError = false;
+        double vbvBufInit = 0.0;
+        bVbvBufInitError = !parseOptionDoubleToken(value, std::strlen(value), vbvBufInit);
+        bError |= bVbvBufInitError;
+        if (!bVbvBufInitError)
+            svtHevcParam->vbvBufInit = (uint64_t)vbvBufInit;
+    }
     OPT("frame-threads")
-        svtHevcParam->threadCount = (uint32_t)x265_atoi(value, bError);
+    {
+        bool bThreadCountError = false;
+        int threadCount = parseOptionIntValue(value, bThreadCountError);
+        bError |= bThreadCountError;
+        if (!bThreadCountError)
+            svtHevcParam->threadCount = (uint32_t)threadCount;
+    }
     else
         x265_log(param, X265_LOG_INFO, "SVT doesn't support %s param; Disabling it \n", name);
 

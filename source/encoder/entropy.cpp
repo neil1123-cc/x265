@@ -32,6 +32,9 @@
 #include "sao.h"
 #include "entropy.h"
 
+#include <cstdlib>
+#include <cstring>
+
 #define CU_DQP_TU_CMAX 5 // max number bins for truncated unary
 #define CU_DQP_EG_k    0 // exp-golomb order
 #define START_VALUE    8 // start value for dpcm mode
@@ -1631,7 +1634,7 @@ void Entropy::codeSaoOffset(const SaoCtuParam& ctuParam, int plane)
         if (typeIdx == SAO_BO)
         {
             for (int i = 0; i < SAO_NUM_OFFSET; i++)
-                codeSaoMaxUvlc(abs(ctuParam.offset[i]), OFFSET_THRESH - 1);
+                codeSaoMaxUvlc(std::abs(ctuParam.offset[i]), OFFSET_THRESH - 1);
 
             for (int i = 0; i < SAO_NUM_OFFSET; i++)
                 if (ctuParam.offset[i] != 0)
@@ -1680,7 +1683,7 @@ void Entropy::codeSaoOffsetBO(int *offset, int bandPos, int plane)
     enum { OFFSET_THRESH = 1 << X265_MIN(X265_DEPTH - 5, 5) };
 
     for (int i = 0; i < SAO_NUM_OFFSET; i++)
-        codeSaoMaxUvlc(abs(offset[i]), OFFSET_THRESH - 1);
+        codeSaoMaxUvlc(std::abs(offset[i]), OFFSET_THRESH - 1);
 
     for (int i = 0; i < SAO_NUM_OFFSET; i++)
         if (offset[i] != 0)
@@ -1780,7 +1783,7 @@ void Entropy::codePredWeightTable(const Slice& slice)
                     assert(!wp[0].wtPresent);
                 else
 #endif
-                    WRITE_FLAG(!!wp[0].wtPresent, "luma_weight_lX_flag");
+                    WRITE_FLAG(wp[0].wtPresent != 0, "luma_weight_lX_flag");
                 totalSignalledWeightFlags = totalSignalledWeightFlags + wp[0].wtPresent;
             }
 
@@ -1794,7 +1797,7 @@ void Entropy::codePredWeightTable(const Slice& slice)
                         assert(!wp[1].wtPresent);
                     else
 #endif
-                        WRITE_FLAG(!!wp[1].wtPresent, "chroma_weight_lX_flag");
+                        WRITE_FLAG(wp[1].wtPresent != 0, "chroma_weight_lX_flag");
                     totalSignalledWeightFlags = totalSignalledWeightFlags + 2 * wp[1].wtPresent;
                 }
             }
@@ -1918,7 +1921,7 @@ void Entropy::copyFrom(const Entropy& src)
 
     copyState(src);
 
-    memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(uint8_t));
+    std::memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(uint8_t));
     markValid();
 }
 
@@ -2021,7 +2024,7 @@ void Entropy::codeIntraDirLumaAng(const CUData& cu, uint32_t absPartIdx, bool is
             //       0 = 0
             //       1 = 10
             //       2 = 11
-            int nonzero = (!!predIdx[j]);
+            int nonzero = predIdx[j] != 0;
             encodeBinsEP(predIdx[j] + nonzero, 1 + nonzero);
         }
         else
@@ -2316,17 +2319,12 @@ void Entropy::codeCoeffNxN(const CUData& cu, const coeff_t* coeff, uint32_t absP
     uint8_t * const baseCtx = bIsLuma ? &m_contextState[OFF_SIG_FLAG_CTX] : &m_contextState[OFF_SIG_FLAG_CTX + NUM_SIG_FLAG_CTX_LUMA];
     uint32_t c1 = 1;
     int scanPosSigOff = scanPosLast - (lastScanSet << MLS_CG_SIZE) - 1;
-    ALIGN_VAR_32(uint16_t, absCoeff[(1 << MLS_CG_SIZE) + 1]);   // extra 2 bytes(+1) space for AVX2 assembly, +1 because (numNonZero<=1) in costCoeffNxN path
+    ALIGN_VAR_32(uint16_t, absCoeff[(1 << MLS_CG_SIZE) + 1]) = {};   // extra 2 bytes(+1) space for AVX2 assembly, +1 because (numNonZero<=1) in costCoeffNxN path
     uint32_t numNonZero = 1;
     unsigned long lastNZPosInCG = 0;
     unsigned long firstNZPosInCG = 0;
 
-#if _DEBUG
-    // Unnecessary, for Valgrind-3.10.0 only
-    memset(absCoeff, 0, sizeof(absCoeff));
-#endif
-
-    absCoeff[0] = (uint16_t)abs(coeff[posLast]);
+    absCoeff[0] = (uint16_t)std::abs(coeff[posLast]);
 
     for (int subSet = lastScanSet; subSet >= 0; subSet--)
     {
@@ -2408,16 +2406,15 @@ void Entropy::codeCoeffNxN(const CUData& cu, const coeff_t* coeff, uint32_t absP
             X265_CHECK(scanPosSigOff >= 0, "scanPosSigOff check failure\n");
             if (m_bitIf)
             {
-                ALIGN_VAR_32(uint16_t, tmpCoeff[SCAN_SET_SIZE]);
-                memset(tmpCoeff, 0, sizeof(tmpCoeff));
+                ALIGN_VAR_32(uint16_t, tmpCoeff[SCAN_SET_SIZE]) = {};
 
                 // TODO: accelerate by PABSW
                 for (int i = 0; i < MLS_CG_SIZE; i++)
                 {
-                    tmpCoeff[i * MLS_CG_SIZE + 0] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 0]);
-                    tmpCoeff[i * MLS_CG_SIZE + 1] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 1]);
-                    tmpCoeff[i * MLS_CG_SIZE + 2] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 2]);
-                    tmpCoeff[i * MLS_CG_SIZE + 3] = (uint16_t)abs(coeff[blkPosBase + i * trSize + 3]);
+                    tmpCoeff[i * MLS_CG_SIZE + 0] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 0]);
+                    tmpCoeff[i * MLS_CG_SIZE + 1] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 1]);
+                    tmpCoeff[i * MLS_CG_SIZE + 2] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 2]);
+                    tmpCoeff[i * MLS_CG_SIZE + 3] = (uint16_t)std::abs(coeff[blkPosBase + i * trSize + 3]);
                 }
 
                 if (log2TrSize == 2)
@@ -2606,7 +2603,7 @@ void Entropy::codeSaoMaxUvlc(uint32_t code, uint32_t maxSymbol)
 {
     X265_CHECK(maxSymbol > 0, "maxSymbol too small\n");
 
-    uint32_t isCodeNonZero = !!code;
+    uint32_t isCodeNonZero = code != 0;
 
     encodeBinEP(isCodeNonZero);
     if (isCodeNonZero)
@@ -2796,7 +2793,7 @@ void Entropy::copyContextsFrom(const Entropy& src)
 {
     X265_CHECK(src.m_valid, "invalid copy source context\n");
 
-    memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(m_contextState[0]));
+    std::memcpy(m_contextState, src.m_contextState, MAX_OFF_CTX_MOD * sizeof(m_contextState[0]));
     markValid();
 }
 

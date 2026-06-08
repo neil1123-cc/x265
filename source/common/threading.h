@@ -35,7 +35,7 @@
 #else
 #include <pthread.h>
 #include <semaphore.h>
-#include <errno.h>
+#include <cerrno>
 #include <fcntl.h>
 #endif
 
@@ -83,9 +83,9 @@ int64_t no_atomic_add64(int64_t* ptr, int64_t val);
 #define BSF64(id, x)          (id) = ((unsigned long)__builtin_ctzll(x))
 #define ATOMIC_OR(ptr, mask)  __sync_fetch_and_or(ptr, mask)
 #define ATOMIC_AND(ptr, mask) __sync_fetch_and_and(ptr, mask)
-#define ATOMIC_INC(ptr)       __sync_add_and_fetch((volatile int32_t*)ptr, 1)
-#define ATOMIC_DEC(ptr)       __sync_add_and_fetch((volatile int32_t*)ptr, -1)
-#define ATOMIC_ADD(ptr, val)  __sync_fetch_and_add((volatile __typeof__(*(ptr))*)ptr, (__typeof__(*(ptr) + 0))(val))
+#define ATOMIC_INC(ptr)       __sync_add_and_fetch((int32_t*)ptr, 1)
+#define ATOMIC_DEC(ptr)       __sync_add_and_fetch((int32_t*)ptr, -1)
+#define ATOMIC_ADD(ptr, val)  __sync_fetch_and_add((__typeof__(*(ptr))*)ptr, (__typeof__(*(ptr) + 0))(val))
 #define GIVE_UP_TIME()        usleep(0)
 
 #elif defined(_MSC_VER)       /* Windows atomic intrinsics */
@@ -591,11 +591,21 @@ public:
         }
 
 #else  //__APPLE__
+        bool created = false;
         m_sem = sem_open(name, O_CREAT | O_EXCL, 0666, initcnt);
         if (m_sem != SEM_FAILED) 
         {
+            created = true;
             m_name = strdup(name);
-            ret = true;
+            if (m_name)
+                ret = true;
+            else
+            {
+                if (created)
+                    sem_unlink(name);
+                sem_close(m_sem);
+                m_sem = nullptr;
+            }
         }
         else 
         {
@@ -605,7 +615,13 @@ public:
                 if (m_sem != SEM_FAILED) 
                 {
                     m_name = strdup(name);
-                    ret = true;
+                    if (m_name)
+                        ret = true;
+                    else
+                    {
+                        sem_close(m_sem);
+                        m_sem = nullptr;
+                    }
                 }
             }
         }
@@ -762,7 +778,8 @@ public:
             m_sem = nullptr;
 #else //__APPLE__
             sem_close(m_sem);
-            sem_unlink(m_name);
+            if (m_name)
+                sem_unlink(m_name);
             m_sem = nullptr;
             free(m_name);
             m_name = nullptr;

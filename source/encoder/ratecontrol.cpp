@@ -37,6 +37,11 @@
 #include "slicetype.h"
 #include "ratecontrol.h"
 #include "sei.h"
+#include <cerrno>
+#include <new>
+#include <atomic>
+#include <cmath>
+#include <cstring>
 
 #define BR_SHIFT  6
 #define CPB_SHIFT 4
@@ -53,22 +58,358 @@ const int RateControl::s_slidingWindowFrames = 20;
 const char *RateControl::s_defaultStatFileName = "x265_2pass.log";
 
 namespace {
+static bool parseRateControlIntToken(const char* token, int& value);
+static bool parseRateControlDoubleToken(const char* token, double& value);
+
+static bool parseFirstPassOptionValue(const char* p, const char* opt, int& value)
+{
+    if (!p || !opt)
+        return false;
+
+    size_t optLength = std::strlen(opt);
+    if (std::strncmp(p, opt, optLength) || p[optLength] != '=')
+        return false;
+
+    const char* cursor = p + optLength + 1;
+    const char* end = cursor;
+    while (*end && *end != ' ')
+        end++;
+
+    size_t tokenLength = (size_t)(end - cursor);
+    if (!tokenLength || tokenLength >= 16)
+        return false;
+
+    char token[16];
+    std::memcpy(token, cursor, tokenLength);
+    token[tokenLength] = '\0';
+    return parseRateControlIntToken(token, value) && (*end == ' ' || *end == '\0');
+}
+
+static bool parseStatsIntValue(const char* p, const char* prefix, int& value)
+{
+    if (!p || !prefix)
+        return false;
+
+    size_t prefixLength = std::strlen(prefix);
+    if (std::strncmp(p, prefix, prefixLength))
+        return false;
+
+    const char* cursor = p + prefixLength;
+    const char* end = cursor;
+    while (*end && *end != ' ')
+        end++;
+
+    size_t tokenLength = (size_t)(end - cursor);
+    if (!tokenLength || tokenLength >= 16)
+        return false;
+
+    char token[16];
+    std::memcpy(token, cursor, tokenLength);
+    token[tokenLength] = '\0';
+    return parseRateControlIntToken(token, value) && (*end == ' ' || *end == '\0');
+}
+
+static bool parseStatsUintPair(const char* p, const char* prefix, char separator, uint32_t& first, uint32_t& second)
+{
+    if (!p || !prefix)
+        return false;
+
+    size_t prefixLength = std::strlen(prefix);
+    if (std::strncmp(p, prefix, prefixLength))
+        return false;
+
+    const char* cursor = p + prefixLength;
+    if (*cursor == '-')
+        return false;
+    errno = 0;
+    char* end = nullptr;
+    unsigned long parsedFirst = std::strtoul(cursor, &end, 10);
+    if (errno == ERANGE || end == cursor || parsedFirst > UINT_MAX || *end != separator)
+        return false;
+
+    cursor = end + 1;
+    if (*cursor == '-')
+        return false;
+    errno = 0;
+    unsigned long parsedSecond = std::strtoul(cursor, &end, 10);
+    if (errno == ERANGE || end == cursor || parsedSecond > UINT_MAX || (*end != ' ' && *end != '\0'))
+        return false;
+
+    first = (uint32_t)parsedFirst;
+    second = (uint32_t)parsedSecond;
+    return true;
+}
+
+static bool parseStatsOptionalIntValue(const char* opts, const char* prefix, int& value)
+{
+    const char* p = opts ? std::strstr(opts, prefix) : nullptr;
+    return p && parseStatsIntValue(p, prefix, value);
+}
+
+static bool parseStatsOptionalUintValue(const char* opts, const char* prefix, uint32_t& value)
+{
+    if (!opts || !prefix)
+        return false;
+
+    const char* p = std::strstr(opts, prefix);
+    if (!p)
+        return false;
+
+    int parsed = 0;
+    if (!parseStatsIntValue(p, prefix, parsed) || parsed < 0)
+        return false;
+
+    value = (uint32_t)parsed;
+    return true;
+}
+
+static bool validateStatsRpsCounts(int numberOfPictures, int numberOfNegativePictures, int numberOfPositivePictures)
+{
+    return numberOfPictures >= 0
+        && numberOfPictures <= MAX_NUM_REF_PICS
+        && numberOfNegativePictures >= 0
+        && numberOfNegativePictures <= numberOfPictures
+        && numberOfPositivePictures >= 0
+        && numberOfPositivePictures == numberOfPictures - numberOfNegativePictures;
+}
+
 #define CMP_OPT_FIRST_PASS(opt, param_val)\
 {\
     bErr = 0;\
     p = strstr(opts, opt "=");\
     char* q = strstr(opts, "no-" opt " ");\
-    if (p && sscanf(p, opt "=%d" , &i) && param_val != i)\
-        bErr = 1;\
+    bool bParsedFirstPassValue = false;\
+    if (p)\
+    {\
+        bParsedFirstPassValue = parseFirstPassOptionValue(p, opt, i);\
+        if (!bParsedFirstPassValue || param_val != i)\
+            bErr = 1;\
+    }\
     else if (!param_val && !q && !p)\
         bErr = 1;\
     else if (param_val && (q || !strstr(opts, opt)))\
         bErr = 1;\
     if (bErr)\
     {\
-        x265_log(m_param, X265_LOG_ERROR, "different " opt " setting than first pass (%d vs %d)\n", param_val, i);\
+        if (p && !bParsedFirstPassValue)\
+            x265_log(m_param, X265_LOG_ERROR, opt " specified in stats file not valid\n");\
+        else\
+            x265_log(m_param, X265_LOG_ERROR, "different " opt " setting than first pass (%d vs %d)\n", param_val, i);\
         return false;\
     }\
+}
+
+static bool parseStatsPrefix(const char* p, int& frameNumber, int& encodeOrder, int& consumedPrefix)
+{
+    if (!p)
+        return false;
+
+    const char* cursor = p;
+    while (*cursor == ' ' || *cursor == '\r' || *cursor == '\n')
+        cursor++;
+
+    if (std::strncmp(cursor, "in:", 3))
+        return false;
+
+    cursor += 3;
+    const char* end = cursor;
+    while (*end && *end != ' ')
+        end++;
+
+    size_t tokenLength = (size_t)(end - cursor);
+    if (!tokenLength || tokenLength >= 16 || std::strncmp(end, " out:", 5))
+        return false;
+
+    char token[16];
+    std::memcpy(token, cursor, tokenLength);
+    token[tokenLength] = '\0';
+    if (!parseRateControlIntToken(token, frameNumber))
+        return false;
+
+    cursor = end + 5;
+    end = cursor;
+    while (*end && *end != ' ')
+        end++;
+
+    tokenLength = (size_t)(end - cursor);
+    if (!tokenLength || tokenLength >= 16 || *end != ' ')
+        return false;
+
+    std::memcpy(token, cursor, tokenLength);
+    token[tokenLength] = '\0';
+    if (!parseRateControlIntToken(token, encodeOrder))
+        return false;
+
+    consumedPrefix = (int)(end - p);
+    return consumedPrefix > 0;
+}
+
+static bool parseStatsLineLabel(const char*& cursor, const char* label)
+{
+    if (!cursor || !label)
+        return false;
+
+    size_t labelLength = std::strlen(label);
+    if (std::strncmp(cursor, label, labelLength))
+        return false;
+
+    cursor += labelLength;
+    return true;
+}
+
+static bool parseStatsLineCharValue(const char*& cursor, const char* label, char& value)
+{
+    if (!parseStatsLineLabel(cursor, label) || *cursor == '\0')
+        return false;
+
+    value = *cursor++;
+    return *cursor == ' ' || *cursor == '\0';
+}
+
+static bool parseStatsLineIntValue(const char*& cursor, const char* label, int& value)
+{
+    if (!parseStatsLineLabel(cursor, label))
+        return false;
+
+    const char* end = cursor;
+    while (*end && *end != ' ')
+        end++;
+
+    size_t tokenLength = (size_t)(end - cursor);
+    if (!tokenLength || tokenLength >= 16)
+        return false;
+
+    char token[16];
+    std::memcpy(token, cursor, tokenLength);
+    token[tokenLength] = '\0';
+    if (!parseRateControlIntToken(token, value))
+        return false;
+
+    cursor = end;
+    return true;
+}
+
+static bool parseStatsLineDoubleValue(const char*& cursor, const char* label, double& value)
+{
+    if (!parseStatsLineLabel(cursor, label))
+        return false;
+
+    const char* end = cursor;
+    while (*end && *end != ' ')
+        end++;
+
+    size_t tokenLength = (size_t)(end - cursor);
+    if (!tokenLength || tokenLength >= 64)
+        return false;
+
+    char token[64];
+    std::memcpy(token, cursor, tokenLength);
+    token[tokenLength] = '\0';
+    if (!parseRateControlDoubleToken(token, value))
+        return false;
+
+    cursor = end;
+    return true;
+}
+
+static bool parseStatsLineTokenValue(const char*& cursor, const char* label, char* value, size_t valueSize)
+{
+    if (!value || valueSize < 2 || !parseStatsLineLabel(cursor, label))
+        return false;
+
+    const char* start = cursor;
+    while (*cursor && *cursor != ' ')
+        cursor++;
+
+    size_t tokenLength = (size_t)(cursor - start);
+    if (!tokenLength || tokenLength >= valueSize)
+        return false;
+
+    std::memcpy(value, start, tokenLength);
+    value[tokenLength] = '\0';
+    return *cursor == ' ' || *cursor == '\0';
+}
+
+static bool parseRateControlIntToken(const char* token, int& value)
+{
+    bool bError = false;
+    int parsedValue = x265_atoi(token, bError);
+    if (bError)
+        return false;
+
+    value = parsedValue;
+    return true;
+}
+
+static bool parseRateControlDoubleToken(const char* token, double& value)
+{
+    if (!token || !token[0])
+        return false;
+
+    errno = 0;
+    char* end = nullptr;
+    double parsed = std::strtod(token, &end);
+    if (errno == ERANGE || !end || *end != '\0' || end == token || !std::isfinite(parsed))
+        return false;
+
+    value = parsed;
+    return true;
+}
+
+static bool parseStatsLineEnd(const char*& cursor)
+{
+    while (*cursor == ' ')
+        cursor++;
+
+    return *cursor == '\0';
+}
+
+static bool parseStatsLineFields(const char* p, char& picType, double& qpRc, double& qpAq, double& qNoVbv,
+                                 double& qRceq, int& coeffBits, int& mvBits, int& miscBits,
+                                 double& iCuCount, double& pCuCount, double& skipCuCount, int& scenecut)
+{
+    const char* cursor = p;
+    return parseStatsLineCharValue(cursor, " type:", picType)
+        && parseStatsLineDoubleValue(cursor, " q:", qpRc)
+        && parseStatsLineDoubleValue(cursor, " q-aq:", qpAq)
+        && parseStatsLineDoubleValue(cursor, " q-noVbv:", qNoVbv)
+        && parseStatsLineDoubleValue(cursor, " q-Rceq:", qRceq)
+        && parseStatsLineIntValue(cursor, " tex:", coeffBits)
+        && parseStatsLineIntValue(cursor, " mv:", mvBits)
+        && parseStatsLineIntValue(cursor, " misc:", miscBits)
+        && parseStatsLineDoubleValue(cursor, " icu:", iCuCount)
+        && parseStatsLineDoubleValue(cursor, " pcu:", pCuCount)
+        && parseStatsLineDoubleValue(cursor, " scu:", skipCuCount)
+        && parseStatsLineIntValue(cursor, " sc:", scenecut)
+        && parseStatsLineEnd(cursor);
+}
+
+static bool parseStatsLineFields(const char* p, char& picType, double& qpRc, double& qpAq, double& qNoVbv,
+                                 double& qRceq, int& coeffBits, int& mvBits, int& miscBits,
+                                 double& iCuCount, double& pCuCount, double& skipCuCount,
+                                 int& numberOfPictures, int& numberOfNegativePictures,
+                                 int& numberOfPositivePictures, char* deltaPOC, size_t deltaPOCSize,
+                                 char* bUsed, size_t bUsedSize)
+{
+    const char* cursor = p;
+    return parseStatsLineCharValue(cursor, " type:", picType)
+        && parseStatsLineDoubleValue(cursor, " q:", qpRc)
+        && parseStatsLineDoubleValue(cursor, " q-aq:", qpAq)
+        && parseStatsLineDoubleValue(cursor, " q-noVbv:", qNoVbv)
+        && parseStatsLineDoubleValue(cursor, " q-Rceq:", qRceq)
+        && parseStatsLineIntValue(cursor, " tex:", coeffBits)
+        && parseStatsLineIntValue(cursor, " mv:", mvBits)
+        && parseStatsLineIntValue(cursor, " misc:", miscBits)
+        && parseStatsLineDoubleValue(cursor, " icu:", iCuCount)
+        && parseStatsLineDoubleValue(cursor, " pcu:", pCuCount)
+        && parseStatsLineDoubleValue(cursor, " scu:", skipCuCount)
+        && parseStatsLineIntValue(cursor, " nump:", numberOfPictures)
+        && parseStatsLineIntValue(cursor, " numnegp:", numberOfNegativePictures)
+        && parseStatsLineIntValue(cursor, " numposp:", numberOfPositivePictures)
+        && validateStatsRpsCounts(numberOfPictures, numberOfNegativePictures, numberOfPositivePictures)
+        && parseStatsLineTokenValue(cursor, " deltapoc:", deltaPOC, deltaPOCSize)
+        && parseStatsLineTokenValue(cursor, " bused:", bUsed, bUsedSize)
+        && parseStatsLineEnd(cursor);
 }
 
 inline int calcScale(uint64_t x)
@@ -95,6 +436,14 @@ inline int calcLength(uint32_t x)
     return z + lut[x];
 }
 
+inline int calcAmortizedResidualCost(int64_t bits, double fraction, int frames)
+{
+    if (frames <= 0 || !std::isfinite(fraction))
+        return 0;
+
+    return (int)((bits * fraction) / frames);
+}
+
 typedef struct CUTreeSharedDataItem
 {
     uint8_t  *type;
@@ -110,7 +459,7 @@ void static ReadSharedCUTreeData(void *dst, void *src, int32_t size)
     ///< for memory alignment, the type will take 32bit in the shared memory
     int32_t offset = (sizeof(*statsDst->type) + SHARED_DATA_ALIGNMENT - 1) & ~(SHARED_DATA_ALIGNMENT - 1);
     uint16_t *statsSrc = reinterpret_cast<uint16_t *>(typeSrc + offset);
-    memcpy(statsDst->stats, statsSrc, size - offset);
+    std::memcpy(statsDst->stats, statsSrc, size - offset);
 }
 
 void static WriteSharedCUTreeData(void *dst, void *src, int32_t size)
@@ -122,7 +471,7 @@ void static WriteSharedCUTreeData(void *dst, void *src, int32_t size)
     ///< for memory alignment, the type will take 32bit in the shared memory
     int32_t offset = (sizeof(*statsSrc->type) + SHARED_DATA_ALIGNMENT - 1) & ~(SHARED_DATA_ALIGNMENT - 1);
     uint16_t *statsDst = reinterpret_cast<uint16_t *>(typeDst + offset);
-    memcpy(statsDst, statsSrc->stats, size - offset);
+    std::memcpy(statsDst, statsSrc->stats, size - offset);
 }
 
 
@@ -130,8 +479,8 @@ inline double qScale2bits(RateControlEntry *rce, double qScale)
 {
     if (qScale < 0.1)
         qScale = 0.1;
-    return (rce->coeffBits + .1) * pow(rce->qScale / qScale, 1.1)
-           + rce->mvBits * pow(X265_MAX(rce->qScale, 1) / X265_MAX(qScale, 1), 0.5)
+    return (rce->coeffBits + .1) * std::pow(rce->qScale / qScale, 1.1)
+           + rce->mvBits * std::pow(X265_MAX(rce->qScale, 1) / X265_MAX(qScale, 1), 0.5)
            + rce->miscBits;
 }
 
@@ -165,7 +514,7 @@ x265_zone* RateControl::getZone()
         if (m_framesDone + 1 >= z->startFrame && m_framesDone < z->endFrame)
             return z;
     }
-    return NULL;
+    return nullptr;
 }
 
 RateControl::RateControl(x265_param& p, Encoder *top)
@@ -188,7 +537,7 @@ RateControl::RateControl(x265_param& p, Encoder *top)
     m_rateFactorMaxDecrement = 0;
     m_fps = (double)m_param->fpsNum / m_param->fpsDenom;
     m_startEndOrder.set(0);
-    m_bTerminated = false;
+    m_bTerminated.store(false);
     m_finalFrameCount = 0;
     m_numEntries = 0;
     m_isSceneTransition = false;
@@ -205,7 +554,7 @@ RateControl::RateControl(x265_param& p, Encoder *top)
 
         double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
         double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
-        m_rateFactorConstant = pow(baseCplx, 1 - m_qCompress) /
+        m_rateFactorConstant = std::pow(baseCplx, 1 - m_qCompress) /
             x265_qp2qScale(m_param->rc.rfConstant + mbtree_offset);
         if (m_param->rc.rfConstantMax)
         {
@@ -230,15 +579,15 @@ RateControl::RateControl(x265_param& p, Encoder *top)
     m_lastNonBPictType = I_SLICE;
     m_isAbrReset = false;
     m_lastAbrResetPoc = -1;
-    m_statFileOut = NULL;
-    m_cutreeStatFileOut = m_cutreeStatFileIn = NULL;
-    m_cutreeShrMem = NULL;
-    m_rce2Pass = NULL;
-    m_encOrder = NULL;
+    m_statFileOut = nullptr;
+    m_cutreeStatFileOut = m_cutreeStatFileIn = nullptr;
+    m_cutreeShrMem = nullptr;
+    m_rce2Pass = nullptr;
+    m_encOrder = nullptr;
     m_lastBsliceSatdCost = 0;
     m_movingAvgSum = 0.0;
     m_isNextGop = false;
-    m_relativeComplexity = NULL;
+    m_relativeComplexity = nullptr;
 
     // vbv initialization
     m_param->rc.vbvBufferSize = x265_clip3(0, 8000000, m_param->rc.vbvBufferSize);
@@ -346,16 +695,16 @@ RateControl::RateControl(x265_param& p, Encoder *top)
     m_bRcReConfig = false;
 
     /* qpstep - value set as encoder specific */
-    m_lstep = pow(2, m_param->rc.qpStep / 6.0);
+    m_lstep = std::pow(2, m_param->rc.qpStep / 6.0);
 
     for (int i = 0; i < 2; i++)
-        m_cuTreeStats.qpBuffer[i] = NULL;
+        m_cuTreeStats.qpBuffer[i] = nullptr;
 }
 
 bool RateControl::initCUTreeSharedMem()
 {
     if (!m_cutreeShrMem) {
-        m_cutreeShrMem = new RingMem();
+        m_cutreeShrMem = new (std::nothrow) RingMem;
         if (!m_cutreeShrMem)
         {
             return false;
@@ -376,11 +725,17 @@ bool RateControl::initCUTreeSharedMem()
         itemCnt *= GOP_CNT_CU_TREE;
 
         char shrname[MAX_SHR_NAME_LEN] = { 0 };
-        strcpy(shrname, m_param->rc.sharedMemName);
-        strcat(shrname, CUTREE_SHARED_MEM_NAME);
+        int written = std::snprintf(shrname, sizeof(shrname), "%s%s", m_param->rc.sharedMemName, CUTREE_SHARED_MEM_NAME);
+        if (written < 0 || written >= (int)sizeof(shrname))
+        {
+            x265_log(m_param, X265_LOG_ERROR, "shared memory name exceeds supported length\n");
+            return false;
+        }
 
         if (!m_cutreeShrMem->init(itemSize, itemCnt, shrname))
         {
+            delete m_cutreeShrMem;
+            m_cutreeShrMem = nullptr;
             return false;
         }
     }
@@ -432,10 +787,10 @@ bool RateControl::init(const SPS& sps)
     if (m_isVbv && !m_initVbv)
         initVBV(sps);
 
-    if (!m_param->bResetZoneConfig && (m_relativeComplexity == NULL))
+    if (!m_param->bResetZoneConfig && (m_relativeComplexity == nullptr))
     {
         m_relativeComplexity = X265_MALLOC(double, m_param->reconfigWindowSize);
-        if (m_relativeComplexity == NULL)
+        if (m_relativeComplexity == nullptr)
         {
             x265_log(m_param, X265_LOG_ERROR, "Failed to allocate memory for m_relativeComplexity\n");
             return false;
@@ -478,7 +833,7 @@ bool RateControl::init(const SPS& sps)
     double tuneCplxFactor = (m_ncu > 3600 && m_param->rc.cuTree && !m_param->rc.hevcAq) ? 2.5 : m_param->rc.hevcAq ? 1.5 : m_isGrainEnabled ? 1.9 : 1.0;
 
     /* estimated ratio that produces a reasonable QP for the first I-frame */
-    m_cplxrSum = .01 * pow(7.0e5, m_qCompress) * pow(m_ncu, 0.5) * tuneCplxFactor;
+    m_cplxrSum = .01 * std::pow(7.0e5, m_qCompress) * std::pow(m_ncu, 0.5) * tuneCplxFactor;
     m_wantedBitsWindow = m_bitrate * m_frameDuration;
     m_accumPNorm = .01;
     m_accumPQp = (m_param->rc.rateControlMode == X265_RC_CRF ? CRF_INIT_QP : ABR_INIT_QP_MIN) * m_accumPNorm;
@@ -494,7 +849,7 @@ bool RateControl::init(const SPS& sps)
     {
         /* If the user hasn't defined the stat filename, use the default value */
         const char *fileName = m_param->rc.statFileName;
-        if (!strlen(fileName))
+        if (!std::strlen(fileName))
             fileName = s_defaultStatFileName;
         /* Load stat file and init 2pass algo */
         if (m_param->rc.bStatRead)
@@ -519,20 +874,31 @@ bool RateControl::init(const SPS& sps)
                         x265_log_file(m_param, X265_LOG_ERROR, "can't open stats file %s.cutree\n", fileName);
                         return false;
                     }
+                    else if (ferror(m_cutreeStatFileIn))
+                    {
+                        bool closeFailed = ferror(m_cutreeStatFileIn) != 0;
+                        if (fclose(m_cutreeStatFileIn))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log_file(m_param, X265_LOG_WARNING, "failed to close cutree input stats file \"%s.cutree\" after open failure\n", fileName);
+                        m_cutreeStatFileIn = nullptr;
+                        x265_log_file(m_param, X265_LOG_ERROR, "can't open stats file %s.cutree\n", fileName);
+                        return false;
+                    }
                 }
 
                 /* check whether 1st pass options were compatible with current options */
-                if (strncmp(statsBuf, "#options:", 9))
+                if (std::strncmp(statsBuf, "#options:", 9))
                 {
                     x265_log(m_param, X265_LOG_ERROR, "options list in stats file not valid\n");
                     return false;
                 }
                 {
-                    int i, j, m;
+                    int i, m;
                     uint32_t k, l;
                     bool bErr = false;
                     char *opts = statsBuf;
-                    statsIn = strchr(statsBuf, '\n');
+                    statsIn = std::strchr(statsBuf, '\n');
                     if (!statsIn)
                     {
                         x265_log(m_param, X265_LOG_ERROR, "Malformed stats file\n");
@@ -540,17 +906,25 @@ bool RateControl::init(const SPS& sps)
                     }
                     *statsIn = '\0';
                     statsIn++;
-                    if ((p = strstr(opts, " input-res=")) == 0 || sscanf(p, " input-res=%dx%d", &i, &j) != 2)
+                    if ((p = strstr(opts, " input-res=")) == 0 || !parseStatsUintPair(p, " input-res=", 'x', k, l))
                     {
                         x265_log(m_param, X265_LOG_ERROR, "Resolution specified in stats file not valid\n");
                         return false;
                     }
-                    if ((p = strstr(opts, " fps=")) == 0 || sscanf(p, " fps=%u/%u", &k, &l) != 2)
+                    uint32_t currentSourceWidth = (uint32_t)(m_param->sourceWidth - sps.conformanceWindow.rightOffset);
+                    uint32_t currentSourceHeight = (uint32_t)(m_param->sourceHeight - sps.conformanceWindow.bottomOffset);
+                    if (k != currentSourceWidth || l != currentSourceHeight)
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "input-res mismatch with 1st pass (%u x %u vs %u x %u)\n",
+                            currentSourceWidth, currentSourceHeight, k, l);
+                        return false;
+                    }
+                    if ((p = strstr(opts, " fps=")) == 0 || !parseStatsUintPair(p, " fps=", '/', k, l))
                     {
                         x265_log(m_param, X265_LOG_ERROR, "fps specified in stats file not valid\n");
                         return false;
                     }
-                    if (((p = strstr(opts, " vbv-maxrate=")) == 0 || sscanf(p, " vbv-maxrate=%d", &m) != 1) && m_param->rc.rateControlMode == X265_RC_CRF)
+                    if (((p = strstr(opts, " vbv-maxrate=")) == 0 || !parseStatsIntValue(p, " vbv-maxrate=", m) || m <= 0) && m_param->rc.rateControlMode == X265_RC_CRF)
                     {
                         x265_log(m_param, X265_LOG_ERROR, "Constant rate-factor is incompatible with 2pass without vbv-maxrate in the previous pass\n");
                         return false;
@@ -563,9 +937,12 @@ bool RateControl::init(const SPS& sps)
                     }
                     if (m_param->analysisMultiPassRefine)
                     {
-                        p = strstr(opts, "ref=");
-                        sscanf(p, "ref=%d", &i);
-                        if (i > m_param->maxNumReferences)
+                        if (!parseStatsOptionalIntValue(opts, "ref=", i))
+                        {
+                            x265_log(m_param, X265_LOG_ERROR, "maxNumReferences specified in stats file not valid\n");
+                            return false;
+                        }
+                        if (i < 1 || i > m_param->maxNumReferences)
                         {
                             x265_log(m_param, X265_LOG_ERROR, "maxNumReferences cannot be less than 1st pass (%d vs %d)\n",
                                 i, m_param->maxNumReferences);
@@ -574,8 +951,11 @@ bool RateControl::init(const SPS& sps)
                     }
                     if (m_param->analysisMultiPassRefine || m_param->analysisMultiPassDistortion)
                     {
-                        p = strstr(opts, "ctu=");
-                        sscanf(p, "ctu=%u", &k);
+                        if (!parseStatsOptionalUintValue(opts, "ctu=", k))
+                        {
+                            x265_log(m_param, X265_LOG_ERROR, "maxCUSize specified in stats file not valid\n");
+                            return false;
+                        }
                         if (k != m_param->maxCUSize)
                         {
                             x265_log(m_param, X265_LOG_ERROR, "maxCUSize mismatch with 1st pass (%u vs %u)\n",
@@ -599,9 +979,14 @@ bool RateControl::init(const SPS& sps)
                         CMP_OPT_FIRST_PASS("min-keyint", m_param->keyframeMin);
                     }
 
-                    if ((p = strstr(opts, "b-adapt=")) != 0 && sscanf(p, "b-adapt=%d", &i) && i >= X265_B_ADAPT_NONE && i <= X265_B_ADAPT_TRELLIS)
+                    if (parseStatsOptionalIntValue(opts, "b-adapt=", i) && i >= X265_B_ADAPT_NONE && i <= X265_B_ADAPT_TRELLIS)
                     {
                         m_param->bFrameAdaptive = i;
+                    }
+                    else if (std::strstr(opts, "b-adapt="))
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "b-adapt method specified in stats file not valid\n");
+                        return false;
                     }
                     else if (m_param->bframes)
                     {
@@ -609,14 +994,19 @@ bool RateControl::init(const SPS& sps)
                         return false;
                     }
 
-                    if ((p = strstr(opts, "rc-lookahead=")) != 0 && sscanf(p, "rc-lookahead=%d", &i))
+                    if (parseStatsOptionalIntValue(opts, "rc-lookahead=", i) && i >= 0 && i <= X265_LOOKAHEAD_MAX)
                         m_param->lookaheadDepth = i;
+                    else if (std::strstr(opts, "rc-lookahead="))
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "rc-lookahead specified in stats file not valid\n");
+                        return false;
+                    }
                 }
                 /* find number of pics */
                 p = statsIn;
                 int numEntries;
                 for (numEntries = -1; p; numEntries++)
-                    p = strchr(p + 1, ';');
+                    p = std::strchr(p + 1, ';');
                 if (!numEntries)
                 {
                     x265_log(m_param, X265_LOG_ERROR, "empty stats file\n");
@@ -662,19 +1052,28 @@ bool RateControl::init(const SPS& sps)
                 for (int i = 0; i < m_numEntries; i++)
                 {
                     RateControlEntry *rce, *rcePocOrder;
-                    int frameNumber;
-                    int encodeOrder;
+                    int frameNumber = -1;
+                    int encodeOrder = -1;
                     char picType;
-                    int e;
+                    int e = -1;
+                    int consumedPrefix = 0;
                     char *next;
                     double qpRc, qpAq, qNoVbv, qRceq;
                     next = strstr(p, ";");
                     if (next)
                         *next++ = 0;
-                    e = sscanf(p, " in:%d out:%d", &frameNumber, &encodeOrder);
+                    if (!parseStatsPrefix(p, frameNumber, encodeOrder, consumedPrefix))
+                        e = -1;
+                    else
+                        e = 2;
                     if (frameNumber < 0 || frameNumber >= m_numEntries)
                     {
                         x265_log(m_param, X265_LOG_ERROR, "bad frame number (%d) at stats line %d\n", frameNumber, i);
+                        return false;
+                    }
+                    if (encodeOrder < 0 || encodeOrder >= m_numEntries)
+                    {
+                        x265_log(m_param, X265_LOG_ERROR, "bad encode order (%d) at stats line %d\n", encodeOrder, i);
                         return false;
                     }
                     rce = &m_rce2Pass[encodeOrder];
@@ -683,24 +1082,22 @@ bool RateControl::init(const SPS& sps)
                     if (!m_param->bMultiPassOptRPS)
                     {
                         int scenecut = 0;
-                        e += sscanf(p, " in:%*d out:%*d type:%c q:%lf q-aq:%lf q-noVbv:%lf q-Rceq:%lf tex:%d mv:%d misc:%d icu:%lf pcu:%lf scu:%lf sc:%d",
-                            &picType, &qpRc, &qpAq, &qNoVbv, &qRceq, &rce->coeffBits,
-                            &rce->mvBits, &rce->miscBits, &rce->iCuCount, &rce->pCuCount,
-                            &rce->skipCuCount, &scenecut);
+                        e = parseStatsLineFields(p + consumedPrefix, picType, qpRc, qpAq, qNoVbv, qRceq,
+                            rce->coeffBits, rce->mvBits, rce->miscBits, rce->iCuCount,
+                            rce->pCuCount, rce->skipCuCount, scenecut) ? 14 : -1;
                         rcePocOrder->scenecut = scenecut != 0;
                     }
                     else
                     {
-                        char deltaPOC[128];
-                        char bUsed[40];
-                        memset(deltaPOC, 0, sizeof(deltaPOC));
-                        memset(bUsed, 0, sizeof(bUsed));
-                        e += sscanf(p, " in:%*d out:%*d type:%c q:%lf q-aq:%lf q-noVbv:%lf q-Rceq:%lf tex:%d mv:%d misc:%d icu:%lf pcu:%lf scu:%lf nump:%d numnegp:%d numposp:%d deltapoc:%127s bused:%39s",
-                            &picType, &qpRc, &qpAq, &qNoVbv, &qRceq, &rce->coeffBits,
-                            &rce->mvBits, &rce->miscBits, &rce->iCuCount, &rce->pCuCount,
-                            &rce->skipCuCount, &rce->rpsData.numberOfPictures, &rce->rpsData.numberOfNegativePictures, &rce->rpsData.numberOfPositivePictures, deltaPOC, bUsed);
-                        splitdeltaPOC(deltaPOC, rce);
-                        splitbUsed(bUsed, rce);
+                        char deltaPOC[128] = {};
+                        char bUsed[40] = {};
+                        e = parseStatsLineFields(p + consumedPrefix, picType, qpRc, qpAq, qNoVbv, qRceq,
+                            rce->coeffBits, rce->mvBits, rce->miscBits, rce->iCuCount,
+                            rce->pCuCount, rce->skipCuCount, rce->rpsData.numberOfPictures,
+                            rce->rpsData.numberOfNegativePictures, rce->rpsData.numberOfPositivePictures,
+                            deltaPOC, sizeof(deltaPOC), bUsed, sizeof(bUsed))
+                            && splitdeltaPOC(deltaPOC, rce)
+                            && splitbUsed(bUsed, rce) ? 18 : -1;
                         rce->rpsIdx = -1;
                     }
                     rce->keptAsRef = true;
@@ -717,7 +1114,7 @@ bool RateControl::init(const SPS& sps)
                         rce->sliceType = B_SLICE;
                     else
                         e = -1;
-                    if (e < 10)
+                    if ((!m_param->bMultiPassOptRPS && e != 14) || (m_param->bMultiPassOptRPS && e != 18))
                     {
                         x265_log(m_param, X265_LOG_ERROR, "statistics are damaged at line %d, parser out=%d\n", i, e);
                         return false;
@@ -765,6 +1162,17 @@ bool RateControl::init(const SPS& sps)
                 x265_log_file(m_param, X265_LOG_ERROR, "can't open stats file %s.temp\n", fileName);
                 return false;
             }
+            else if (ferror(m_statFileOut))
+            {
+                bool closeFailed = ferror(m_statFileOut) != 0;
+                if (fclose(m_statFileOut))
+                    closeFailed = true;
+                if (closeFailed)
+                    x265_log_file(m_param, X265_LOG_WARNING, "failed to close output stats file \"%s.temp\" after open failure\n", fileName);
+                m_statFileOut = nullptr;
+                x265_log_file(m_param, X265_LOG_ERROR, "can't open stats file %s.temp\n", fileName);
+                return false;
+            }
             p = x265_param2string(m_param, sps.conformanceWindow.rightOffset, sps.conformanceWindow.bottomOffset);
             if (p)
                 fprintf(m_statFileOut, "#options: %s\n", p);
@@ -783,6 +1191,17 @@ bool RateControl::init(const SPS& sps)
                         x265_log_file(m_param, X265_LOG_ERROR, "can't open mbtree stats file %s.cutree.temp\n", fileName);
                         return false;
                     }
+                    else if (ferror(m_cutreeStatFileOut))
+                    {
+                        bool closeFailed = ferror(m_cutreeStatFileOut) != 0;
+                        if (fclose(m_cutreeStatFileOut))
+                            closeFailed = true;
+                        if (closeFailed)
+                            x265_log_file(m_param, X265_LOG_WARNING, "failed to close cutree output stats file \"%s.cutree.temp\" after open failure\n", fileName);
+                        m_cutreeStatFileOut = nullptr;
+                        x265_log_file(m_param, X265_LOG_ERROR, "can't open mbtree stats file %s.cutree.temp\n", fileName);
+                        return false;
+                    }
                 }
                 else // X265_SHARE_MODE_SHAREDMEM == m_param->rc.dataShareMode
                 {
@@ -797,15 +1216,15 @@ bool RateControl::init(const SPS& sps)
         {
             if (m_param->rc.qgSize == 8)
             {
-                m_cuTreeStats.qpBuffer[0] = X265_MALLOC(uint16_t, m_ncu * 4 * sizeof(uint16_t));
+                m_cuTreeStats.qpBuffer[0] = X265_MALLOC(uint16_t, m_ncu * 4);
                 if (m_param->bBPyramid && m_param->rc.bStatRead)
-                    m_cuTreeStats.qpBuffer[1] = X265_MALLOC(uint16_t, m_ncu * 4 * sizeof(uint16_t));
+                    m_cuTreeStats.qpBuffer[1] = X265_MALLOC(uint16_t, m_ncu * 4);
             }
             else
             {
-                m_cuTreeStats.qpBuffer[0] = X265_MALLOC(uint16_t, m_ncu * sizeof(uint16_t));
+                m_cuTreeStats.qpBuffer[0] = X265_MALLOC(uint16_t, m_ncu);
                 if (m_param->bBPyramid && m_param->rc.bStatRead)
-                    m_cuTreeStats.qpBuffer[1] = X265_MALLOC(uint16_t, m_ncu * sizeof(uint16_t));
+                    m_cuTreeStats.qpBuffer[1] = X265_MALLOC(uint16_t, m_ncu);
             }
             m_cuTreeStats.qpBufPos = -1;
         }
@@ -851,7 +1270,7 @@ void RateControl::reconfigureRC()
         m_param->rc.bitrate = 0;
         double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
         double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
-        m_rateFactorConstant = pow(baseCplx, 1 - m_qCompress) /
+        m_rateFactorConstant = std::pow(baseCplx, 1 - m_qCompress) /
             x265_qp2qScale(m_param->rc.rfConstant + mbtree_offset);
         if (m_param->rc.rfConstantMax)
         {
@@ -944,10 +1363,10 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
         {
             int index = i+j;
             RateControlEntry *rcj = &m_rce2Pass[index];
-            weight *= 1 - pow(rcj->iCuCount / m_ncu, 2);
+            weight *= 1 - std::pow(rcj->iCuCount / m_ncu, 2);
             if (weight < 0.0001)
                 break;
-            gaussianWeight = weight * exp(-j * j / 200.0);
+            gaussianWeight = weight * std::exp(-j * j / 200.0);
             weightSum += gaussianWeight;
             cplxSum += gaussianWeight * (qScale2bits(rcj, 1) - rcj->miscBits) / clippedDuration;
         }
@@ -957,10 +1376,10 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
         {
             int index = i-j;
             RateControlEntry *rcj = &m_rce2Pass[index];
-            gaussianWeight = weight * exp(-j * j / 200.0);
+            gaussianWeight = weight * std::exp(-j * j / 200.0);
             weightSum += gaussianWeight;
             cplxSum += gaussianWeight * (qScale2bits(rcj, 1) - rcj->miscBits) / clippedDuration;
-            weight *= 1 - pow(rcj->iCuCount / m_ncu, 2);
+            weight *= 1 - std::pow(rcj->iCuCount / m_ncu, 2);
             if (weight < .0001)
                 break;
         }
@@ -1001,7 +1420,7 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
         m_accumPNorm = 0;
 
         m_lastQScaleFor[0] = m_lastQScaleFor[1] =
-        m_lastQScaleFor[2] = pow(baseCplx, 1 - m_qCompress) / rateFactor;
+        m_lastQScaleFor[2] = std::pow(baseCplx, 1 - m_qCompress) / rateFactor;
 
         /* find qscale */
         for (int i = 0; i < m_numEntries; i++)
@@ -1029,7 +1448,7 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
                 {
                     int idx = i + j - filterSize / 2;
                     double d = idx - i;
-                    double coeff = qBlur == 0 ? 1.0 : exp(-d * d / (qBlur * qBlur));
+                    double coeff = qBlur == 0 ? 1.0 : std::exp(-d * d / (qBlur * qBlur));
                     if (idx < 0 || idx >= m_numEntries)
                         continue;
                     if (m_rce2Pass[i].sliceType != m_rce2Pass[idx].sliceType)
@@ -1045,7 +1464,7 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
         for (int i = 0; i < m_numEntries; i++)
         {
             RateControlEntry *rce = &m_rce2Pass[i];
-            rce->newQScale = clipQscale(NULL, rce, blurredQscale[i]); // check if needed
+            rce->newQScale = clipQscale(nullptr, rce, blurredQscale[i]); // check if needed
             X265_CHECK(rce->newQScale >= 0, "new Qscale is negative\n");
             expectedBits += qScale2bits(rce, rce->newQScale);
         }
@@ -1061,7 +1480,7 @@ bool RateControl::analyseABR2Pass(uint64_t allAvailableBits)
     if (!vbv2Pass(allAvailableBits, m_numEntries - 1, 0))
             return false;
     expectedBits = countExpectedBits(0, m_numEntries - 1);
-    if (fabs(expectedBits / allAvailableBits - 1.0) > 0.01)
+    if (std::fabs(expectedBits / allAvailableBits - 1.0) > 0.01)
     {
         double avgq = 0;
         for (int i = 0; i < m_numEntries; i++)
@@ -1331,7 +1750,7 @@ int RateControl::rateControlStart(Frame* curFrame, RateControlEntry* rce, Encode
     int orderValue = m_startEndOrder.get();
     int startOrdinal = rce->encodeOrder * 2;
 
-    while (orderValue < startOrdinal && !m_bTerminated)
+    while (orderValue < startOrdinal && !m_bTerminated.load())
         orderValue = m_startEndOrder.waitForChange(orderValue);
 
     if (!curFrame)
@@ -1417,7 +1836,7 @@ int RateControl::rateControlStart(Frame* curFrame, RateControlEntry* rce, Encode
         int index = m_encOrder[rce->poc];
         copyRceData(rce, &m_rce2Pass[index]);
     }
-    rce->isActive = true;
+    std::atomic_ref<bool>(rce->isActive).store(true);
     if (!m_param->rc.bStatRead)
         rce->scenecut = false;
     rce->isFadeEnd = curFrame->m_lowres.bIsFadeEnd;
@@ -1637,7 +2056,7 @@ int RateControl::rateControlStart(Frame* curFrame, RateControlEntry* rce, Encode
             rce->qpNoVbv = rce->qpaRc;
             m_lastQScaleFor[m_sliceType] = x265_qp2qScale(rce->qpaRc);
             if (rce->poc == 0)
-                 m_lastQScaleFor[P_SLICE] = m_lastQScaleFor[m_sliceType] * fabs(m_param->rc.ipFactor);
+                 m_lastQScaleFor[P_SLICE] = m_lastQScaleFor[m_sliceType] * std::fabs(m_param->rc.ipFactor);
             rce->frameSizePlanned = predictSize(&m_pred[m_predType], m_qp, (double)m_currentSatd);
         }
     }
@@ -1674,7 +2093,7 @@ double RateControl::getDiffLimitedQScale(RateControlEntry *rce, double q)
     {
         double iq = q;
         double pq = x265_qp2qScale(m_accumPQp / m_accumPNorm);
-        double ipFactor = fabs(m_param->rc.ipFactor);
+        double ipFactor = std::fabs(m_param->rc.ipFactor);
         /* don't apply ipFactor if the following frame is also I */
         if (m_accumPNorm <= 0)
             q = iq;
@@ -1690,7 +2109,7 @@ double RateControl::getDiffLimitedQScale(RateControlEntry *rce, double q)
         if (m_param->rc.pbFactor > 0)
             q = lastNonBqScale;
         if (!rce->keptAsRef)
-            q *= fabs(m_param->rc.pbFactor);
+            q *= std::fabs(m_param->rc.pbFactor);
     }
     else if (rce->sliceType == P_SLICE
              && m_lastNonBPictType == P_SLICE
@@ -1719,7 +2138,7 @@ double RateControl::getDiffLimitedQScale(RateControlEntry *rce, double q)
     }
     if (rce->sliceType == P_SLICE)
     {
-        double mask = 1 - pow(rce->iCuCount / m_ncu, 2);
+        double mask = 1 - std::pow(rce->iCuCount / m_ncu, 2);
         m_accumPQp   = mask * (x265_qScale2qp(q) + m_accumPQp);
         m_accumPNorm = mask * (1 + m_accumPNorm);
     }
@@ -1789,6 +2208,25 @@ bool RateControl::fixUnderflow(int t0, int t1, double adjustment, double qscaleM
 
 bool RateControl::cuTreeReadFor2Pass(Frame* frame)
 {
+    auto failCutreeRead = [this]()
+    {
+        if (m_cutreeStatFileIn)
+        {
+            const char* fileName = m_param->rc.statFileName;
+            if (!std::strlen(fileName))
+                fileName = s_defaultStatFileName;
+
+            char* cutreeFileName = strcatFilename(fileName, ".cutree");
+            bool closeFailed = ferror(m_cutreeStatFileIn) != 0;
+            if (fclose(m_cutreeStatFileIn))
+                closeFailed = true;
+            if (closeFailed)
+                x265_log_file(m_param, X265_LOG_WARNING, "failed to close cutree input stats file \"%s\" after read failure\n", cutreeFileName ? cutreeFileName : fileName);
+            X265_FREE(cutreeFileName);
+            m_cutreeStatFileIn = nullptr;
+        }
+    };
+
     int index = m_encOrder[frame->m_poc];
     uint8_t sliceTypeActual = (uint8_t)m_rce2Pass[index].sliceType;
     int ncu;
@@ -1809,6 +2247,8 @@ bool RateControl::cuTreeReadFor2Pass(Frame* frame)
 
                 if (X265_SHARE_MODE_FILE == m_param->rc.dataShareMode)
                 {
+                    if (!m_cutreeStatFileIn)
+                        goto readError;
                     if (!fread(&type, 1, 1, m_cutreeStatFileIn))
                         goto fail;
                     if (fread(m_cuTreeStats.qpBuffer[m_cuTreeStats.qpBufPos], sizeof(uint16_t), ncu, m_cutreeStatFileIn) != (size_t)ncu)
@@ -1843,7 +2283,15 @@ bool RateControl::cuTreeReadFor2Pass(Frame* frame)
     return true;
 
 fail:
+    if (X265_SHARE_MODE_FILE == m_param->rc.dataShareMode && m_cutreeStatFileIn && ferror(m_cutreeStatFileIn))
+        goto readError;
     x265_log(m_param, X265_LOG_ERROR, "Incomplete CU-tree stats file.\n");
+    failCutreeRead();
+    return false;
+
+readError:
+    x265_log(m_param, X265_LOG_ERROR, "CU-tree stats file read failure.\n");
+    failCutreeRead();
     return false;
 }
 
@@ -1864,7 +2312,7 @@ double RateControl::tuneAbrQScaleFromFeedback(double qScale)
     if (wantedBits > 0 && encodedBits > 0 && (!m_partialResidualFrames || 
         m_param->rc.bStrictCbr || m_isGrainEnabled))
     {
-        abrBuffer *= X265_MAX(1, sqrt(timeDone));
+        abrBuffer *= X265_MAX(1, std::sqrt(timeDone));
         overflow = x265_clip3(.5, 2.0, 1.0 + (encodedBits - wantedBits) / abrBuffer);
         qScale *= overflow;
     }
@@ -1932,7 +2380,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         {
             double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
             double qComp = (m_param->rc.cuTree && !m_param->rc.hevcAq) ? 0.99 : m_param->rc.qCompress;
-            m_rateFactorConstant = pow(m_currentSatd, 1.0 - qComp) /
+            m_rateFactorConstant = std::pow(m_currentSatd, 1.0 - qComp) /
                 x265_qp2qScale(curFrame->m_targetCrf + mbtree_offset);
         }
     }
@@ -1942,7 +2390,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         int addPos = (pos + s_slidingWindowFrames - 1) % s_slidingWindowFrames;
         if (m_sliderPos > s_slidingWindowFrames)
         {
-            const static double base = pow(0.5, s_slidingWindowFrames - 1);
+            const static double base = std::pow(0.5, s_slidingWindowFrames - 1);
             m_movingAvgSum -= m_lastRemovedSatdCost * base;
             m_movingAvgSum *= 0.5;
             m_movingAvgSum += m_satdCostWindow[addPos];
@@ -1973,8 +2421,8 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         double q1 = m_curSlice->m_refFrameList[1][0]->m_encData->m_avgQpRc;
         bool i0 = prevRefSlice->m_sliceType == I_SLICE;
         bool i1 = nextRefSlice->m_sliceType == I_SLICE;
-        int dt0 = abs(m_curSlice->m_poc - prevRefSlice->m_poc);
-        int dt1 = abs(m_curSlice->m_poc - nextRefSlice->m_poc);
+        int dt0 = std::abs(m_curSlice->m_poc - prevRefSlice->m_poc);
+        int dt1 = std::abs(m_curSlice->m_poc - nextRefSlice->m_poc);
 
         // Skip taking a reference frame before the Scenecut if ABR has been reset.
         if (m_lastAbrResetPoc >= 0)
@@ -2136,7 +2584,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
             {
                 uint64_t finalBits = m_rce2Pass[m_numEntries - 1].expectedBits;
                 double videoPos = (double)rce->expectedBits / finalBits;
-                double scaleFactor = sqrt((1 - videoPos) * m_numEntries);
+                double scaleFactor = std::sqrt((1 - videoPos) * m_numEntries);
                 abrBuffer *= 0.5 * X265_MAX(scaleFactor, 0.5);
             }
             diff = m_predictedBits - (int64_t)rce->expectedBits;
@@ -2158,7 +2606,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
                  * achieved and expected bitrate so far */
                 double curTime = (double)rce->encodeOrder / m_numEntries;
                 double w = x265_clip3(0.0, 1.0, curTime);
-                q *= pow((double)m_totalBits / m_expectedBitsSum, w);
+                q *= std::pow((double)m_totalBits / m_expectedBitsSum, w);
             }
             if (m_framesDone == 0 && m_param->rc.rateControlMode == X265_RC_ABR && m_isGrainEnabled)
                 q = X265_MIN(x265_qp2qScale(ABR_INIT_QP_GRAIN_MAX), q);
@@ -2261,7 +2709,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
                     double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
                     double qComp = (m_param->rc.cuTree && !m_param->rc.hevcAq) ? 1.0 : m_param->rc.qCompress;
                     double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
-                    m_rateFactorConstant = pow(baseCplx, 1.0 - qComp) /
+                    m_rateFactorConstant = std::pow(baseCplx, 1.0 - qComp) /
                         x265_qp2qScale(rfConstant + mbtree_offset);
 
                     if (IS_REFERENCED(curFrame))
@@ -2314,7 +2762,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
             {
                 if (!m_param->rc.bStrictCbr)
                     q = x265_qp2qScale(m_accumPQp / m_accumPNorm);
-                q /= fabs(m_param->rc.ipFactor);
+                q /= std::fabs(m_param->rc.ipFactor);
                 m_avgPFrameQp = 0;
             }
             else if (m_framesDone > 0)
@@ -2335,7 +2783,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
             }
             else if (m_qCompress != 1 && m_param->rc.rateControlMode == X265_RC_CRF)
             {
-                q = x265_qp2qScale(CRF_INIT_QP) / fabs(m_param->rc.ipFactor);
+                q = x265_qp2qScale(CRF_INIT_QP) / std::fabs(m_param->rc.ipFactor);
             }
             else if (m_framesDone == 0 && !m_isVbv && m_param->rc.rateControlMode == X265_RC_ABR)
             {
@@ -2395,7 +2843,7 @@ double RateControl::rateEstimateQscale(Frame* curFrame, RateControlEntry *rce)
         }
         m_lastQScaleFor[m_sliceType] = q;
         if ((m_curSlice->m_poc == 0 || m_lastQScaleFor[P_SLICE] < q) && !(m_2pass && !m_isVbv))
-            m_lastQScaleFor[P_SLICE] = q * fabs(m_param->rc.ipFactor);
+            m_lastQScaleFor[P_SLICE] = q * std::fabs(m_param->rc.ipFactor);
 
         if (m_2pass)
             rce->frameSizePlanned = qScale2bits(rce, q);
@@ -2439,7 +2887,7 @@ void RateControl::rateControlUpdateStats(RateControlEntry* rce)
             rce->amortizeFrames = m_amortizeFrames;
             rce->amortizeFraction = m_amortizeFraction;
             m_partialResidualFrames = X265_MIN((int)rce->amortizeFrames, m_param->keyframeMax);
-            m_partialResidualCost = (int)((rce->rowTotalBits * rce->amortizeFraction) / m_partialResidualFrames);
+            m_partialResidualCost = calcAmortizedResidualCost(rce->rowTotalBits, rce->amortizeFraction, m_partialResidualFrames);
             rce->rowTotalBits -= m_partialResidualCost * m_partialResidualFrames;
         }
         else if (m_partialResidualFrames)
@@ -2451,7 +2899,7 @@ void RateControl::rateControlUpdateStats(RateControlEntry* rce)
     if (rce->sliceType != B_SLICE)
         rce->rowCplxrSum = rce->rowTotalBits * x265_qp2qScale(rce->qpaRc) / rce->qRceq;
     else
-        rce->rowCplxrSum = rce->rowTotalBits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * fabs(m_param->rc.pbFactor));
+        rce->rowCplxrSum = rce->rowTotalBits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * std::fabs(m_param->rc.pbFactor));
 
     m_cplxrSum += rce->rowCplxrSum;
     m_totalBits += rce->rowTotalBits;
@@ -2752,12 +3200,12 @@ double RateControl::clipQscale(Frame* curFrame, RateControlEntry* rce, double q)
     }
     if (!curFrame && m_2pass)
     {
-        double min = log(lmin);
-        double max = log(lmax);
-        q = (log(q) - min) / (max - min) - 0.5;
-        q = 1.0 / (1.0 + exp(-4 * q));
+        double min = std::log(lmin);
+        double max = std::log(lmax);
+        q = (std::log(q) - min) / (max - min) - 0.5;
+        q = 1.0 / (1.0 + std::exp(-4 * q));
         q = q*(max - min) + min;
-        return exp(q);
+        return std::exp(q);
     }
     return x265_clip3(lmin, lmax, q);
 }
@@ -2819,7 +3267,7 @@ double RateControl::predictRowsSizeSum(Frame* curFrame, RateControlEntry* rce, d
                     && refRowBits > 0
                     && !m_param->rc.bEnableConstVbv)
                 {
-                    if (abs((int32_t)(refRowSatdCost - satdCostForPendingCus)) < (int32_t)satdCostForPendingCus / 2)
+                    if (std::abs((int32_t)(refRowSatdCost - satdCostForPendingCus)) < (int32_t)satdCostForPendingCus / 2)
                     {
                         double predTotal = refRowBits * satdCostForPendingCus / refRowSatdCost * refQScale / qScale;
                         totalSatdBits += (int32_t)((pred_s + predTotal) * 0.5);
@@ -3005,10 +3453,10 @@ double RateControl::getQScale(RateControlEntry *rce, double rateFactor)
     {
         // Scale and units are obtained from rateNum and rateDenom for videos with fixed frame rates.
         double timescale = (double)m_param->fpsDenom / (2 * m_param->fpsNum);
-        q = pow(BASE_FRAME_DURATION / CLIP_DURATION(2 * timescale), 1 - m_param->rc.qCompress);
+        q = std::pow(BASE_FRAME_DURATION / CLIP_DURATION(2 * timescale), 1 - m_param->rc.qCompress);
     }
     else
-        q = pow(rce->blurredComplexity, 1 - m_param->rc.qCompress);
+        q = std::pow(rce->blurredComplexity, 1 - m_param->rc.qCompress);
 
     // avoid NaN's in the Rceq
     if (rce->coeffBits + rce->mvBits == 0)
@@ -3093,7 +3541,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
 {
     int orderValue = m_startEndOrder.get();
     int endOrdinal = (rce->encodeOrder + m_param->frameNumThreads) * 2 - 1;
-    while (orderValue < endOrdinal && !m_bTerminated)
+    while (orderValue < endOrdinal && !m_bTerminated.load())
     {
         /* no more frames are being encoded, so fake the start event if we would
          * have blocked on it. Note that this does not enforce rateControlEnd()
@@ -3148,18 +3596,18 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
         bool is2passCrfChange = false;
         if (m_2pass && !m_param->rc.bEncFocusedFramesOnly)
         {
-            if (fabs(curEncData.m_avgQpRc - rce->qpPrev) > 0.1)
+            if (std::fabs(curEncData.m_avgQpRc - rce->qpPrev) > 0.1)
             {
                 qpRef = rce->qpPrev;
                 is2passCrfChange = true;
             }
         }
-        if (is2passCrfChange || fabs(qpRef - rce->qpNoVbv) > 0.5)
+        if (is2passCrfChange || std::fabs(qpRef - rce->qpNoVbv) > 0.5)
         {
             double crfFactor = rce->qRceq /x265_qp2qScale(qpRef);
             double baseCplx = m_ncu * (m_param->bframes ? 120 : 80);
             double mbtree_offset = m_param->rc.cuTree ? (1.0 - m_param->rc.qCompress) * 13.5 : 0;
-            crfVal = x265_qScale2qp(pow(baseCplx, 1 - m_qCompress) / crfFactor) - mbtree_offset;
+            crfVal = x265_qScale2qp(std::pow(baseCplx, 1 - m_qCompress) / crfFactor) - mbtree_offset;
         }
         else
         {
@@ -3185,7 +3633,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
                 if (m_residualFrames)
                     bits += m_residualCost * m_residualFrames;
                 m_residualFrames = X265_MIN((int)rce->amortizeFrames, m_param->keyframeMax);
-                m_residualCost = (int)((bits * rce->amortizeFraction) / m_residualFrames);
+                m_residualCost = calcAmortizedResidualCost(bits, rce->amortizeFraction, m_residualFrames);
                 bits -= m_residualCost * m_residualFrames;
             }
             else if (m_residualFrames)
@@ -3204,7 +3652,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
         {
             /* Depends on the fact that B-frame's QP is an offset from the following P-frame's.
                 * Not perfectly accurate with B-refs, but good enough. */
-            m_cplxrSum += (bits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * fabs(m_param->rc.pbFactor))) - (rce->rowCplxrSum);
+            m_cplxrSum += (bits * x265_qp2qScale(rce->qpaRc) / (rce->qRceq * std::fabs(m_param->rc.pbFactor))) - (rce->rowCplxrSum);
         }
         m_wantedBitsWindow += m_frameDuration * (m_bRcReConfig ? (curFrame->m_targetBitrate * 1000) : m_bitrate);
         m_totalBits += bits - rce->rowTotalBits;
@@ -3272,7 +3720,7 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
     {
         m_iBits = actualBits;
     }
-    rce->isActive = false;
+    std::atomic_ref<bool>(rce->isActive).store(false);
     // Allow rateControlStart of next frame only when rateControlEnd of previous frame is over
     m_startEndOrder.incr();
     return 0;
@@ -3281,11 +3729,27 @@ int RateControl::rateControlEnd(Frame* curFrame, int64_t bits, RateControlEntry*
 /* called to write out the rate control frame stats info in multipass encodes */
 int RateControl::writeRateControlFrameStats(Frame* curFrame, RateControlEntry* rce)
 {
+    auto failStatsWrite = [this](FILE*& file, const char* logName)
+    {
+        if (file)
+        {
+            bool closeFailed = ferror(file) != 0;
+            if (fclose(file))
+                closeFailed = true;
+            if (closeFailed)
+                x265_log_file(m_param, X265_LOG_WARNING, "failed to close %s after write failure\n", logName);
+            file = nullptr;
+        }
+    };
+
     FrameData& curEncData = *curFrame->m_encData;    
     int ncu = (m_param->rc.qgSize == 8) ? m_ncu * 4 : m_ncu;
     char cType = rce->sliceType == I_SLICE ? (curFrame->m_lowres.sliceType == X265_TYPE_IDR ? 'I' : 'i')
         : rce->sliceType == P_SLICE ? 'P'
         : IS_REFERENCED(curFrame) ? 'B' : 'b';
+
+    if (!m_statFileOut || (m_param->rc.cuTree && IS_REFERENCED(curFrame) && !m_param->rc.bStatRead && X265_SHARE_MODE_FILE == m_param->rc.dataShareMode && !m_cutreeStatFileOut))
+        goto writeFailure;
     
     if (!curEncData.m_param->bMultiPassOptRPS)
     {
@@ -3307,17 +3771,15 @@ int RateControl::writeRateControlFrameStats(Frame* curFrame, RateControlEntry* r
     {
         RPS* rpsWriter = &curFrame->m_encData->m_slice->m_rps;
         int i, num = rpsWriter->numberOfPictures;
-        char deltaPOC[128];
-        char bUsed[40];
-        memset(deltaPOC, 0, sizeof(deltaPOC));
-        memset(bUsed, 0, sizeof(bUsed));
-        snprintf(deltaPOC, sizeof(deltaPOC), "deltapoc:~");
-        snprintf(bUsed, sizeof(bUsed), "bused:~");
+        char deltaPOC[128] = {};
+        char bUsed[40] = {};
+        std::snprintf(deltaPOC, sizeof(deltaPOC), "deltapoc:~");
+        std::snprintf(bUsed, sizeof(bUsed), "bused:~");
 
         for (i = 0; i < num; i++)
         {
-            snprintf(deltaPOC + strlen(deltaPOC), sizeof(deltaPOC) - strlen(deltaPOC), "%d~", rpsWriter->deltaPOC[i]);
-            snprintf(bUsed + strlen(bUsed), sizeof(bUsed) - strlen(bUsed), "%d~", rpsWriter->bUsed[i]);
+            std::snprintf(deltaPOC + std::strlen(deltaPOC), sizeof(deltaPOC) - std::strlen(deltaPOC), "%d~", rpsWriter->deltaPOC[i]);
+            std::snprintf(bUsed + std::strlen(bUsed), sizeof(bUsed) - std::strlen(bUsed), "%d~", rpsWriter->bUsed[i]);
         }
 
         if (fprintf(m_statFileOut,
@@ -3367,6 +3829,8 @@ int RateControl::writeRateControlFrameStats(Frame* curFrame, RateControlEntry* r
 
     writeFailure:
     x265_log(m_param, X265_LOG_ERROR, "RatecontrolEnd: stats file write failure\n");
+    failStatsWrite(m_statFileOut, "output stats file");
+    failStatsWrite(m_cutreeStatFileOut, "cutree output stats file");
     return 1;
 }
 #if defined(_MSC_VER)
@@ -3387,7 +3851,7 @@ void RateControl::setFinalFrameCount(int count)
  * closed */
 void RateControl::terminate()
 {
-    m_bTerminated = true;
+    m_bTerminated.store(true);
     /* unblock waiting threads */
     m_startEndOrder.poke();
 }
@@ -3395,53 +3859,79 @@ void RateControl::terminate()
 void RateControl::destroy()
 {
     const char *fileName = m_param->rc.statFileName;
-    if (!strlen(fileName))
+    if (!std::strlen(fileName))
         fileName = s_defaultStatFileName;
 
     if (m_statFileOut)
     {
-        fclose(m_statFileOut);
-        char *tmpFileName = strcatFilename(fileName, ".temp");
-        int bError = 1;
-        if (tmpFileName)
+        bool closeFailed = ferror(m_statFileOut) != 0;
+        if (fclose(m_statFileOut))
+            closeFailed = true;
+        if (closeFailed)
         {
-            x265_unlink(fileName);
-            bError = x265_rename(tmpFileName, fileName);
+            x265_log_file(m_param, X265_LOG_ERROR, "failed to finalize output stats file \"%s\"\n", fileName);
         }
-        if (bError)
+        else
         {
-            x265_log_file(m_param, X265_LOG_ERROR, "failed to rename output stats file to \"%s\"\n", fileName);
+            char *tmpFileName = strcatFilename(fileName, ".temp");
+            int bError = 1;
+            if (tmpFileName)
+            {
+                x265_unlink(fileName);
+                bError = x265_rename(tmpFileName, fileName);
+            }
+            if (bError)
+            {
+                x265_log_file(m_param, X265_LOG_ERROR, "failed to rename output stats file to \"%s\"\n", fileName);
+            }
+            X265_FREE(tmpFileName);
         }
-        X265_FREE(tmpFileName);
     }
 
     if (m_cutreeStatFileOut)
     {
-        fclose(m_cutreeStatFileOut);
         char *tmpFileName = strcatFilename(fileName, ".cutree.temp");
         char *newFileName = strcatFilename(fileName, ".cutree");
-        int bError = 1;
-        if (tmpFileName && newFileName)
+        bool closeFailed = ferror(m_cutreeStatFileOut) != 0;
+        if (fclose(m_cutreeStatFileOut))
+            closeFailed = true;
+        if (closeFailed)
         {
-            x265_unlink(newFileName);
-            bError = x265_rename(tmpFileName, newFileName);
+            x265_log_file(m_param, X265_LOG_ERROR, "failed to finalize cutree output stats file \"%s\"\n", newFileName ? newFileName : fileName);
         }
-        if (bError)
+        else
         {
-            x265_log_file(m_param, X265_LOG_ERROR, "failed to rename cutree output stats file to \"%s\"\n", newFileName);
+            int bError = 1;
+            if (tmpFileName && newFileName)
+            {
+                x265_unlink(newFileName);
+                bError = x265_rename(tmpFileName, newFileName);
+            }
+            if (bError)
+            {
+                x265_log_file(m_param, X265_LOG_ERROR, "failed to rename cutree output stats file to \"%s\"\n", newFileName);
+            }
         }
         X265_FREE(tmpFileName);
         X265_FREE(newFileName);
     }
 
     if (m_cutreeStatFileIn)
-        fclose(m_cutreeStatFileIn);
+    {
+        char *cutreeFileName = strcatFilename(fileName, ".cutree");
+        bool closeFailed = ferror(m_cutreeStatFileIn) != 0;
+        if (fclose(m_cutreeStatFileIn))
+            closeFailed = true;
+        if (closeFailed)
+            x265_log_file(m_param, X265_LOG_WARNING, "failed to close cutree input stats file \"%s\"\n", cutreeFileName ? cutreeFileName : fileName);
+        X265_FREE(cutreeFileName);
+    }
 
     if (m_cutreeShrMem)
     {
         m_cutreeShrMem->release();
         delete m_cutreeShrMem;
-        m_cutreeShrMem = NULL;
+        m_cutreeShrMem = nullptr;
     }
 
     X265_FREE(m_rce2Pass);
@@ -3454,50 +3944,100 @@ void RateControl::destroy()
 
 }
 
-void RateControl::splitdeltaPOC(char deltapoc[], RateControlEntry *rce)
+bool RateControl::splitdeltaPOC(const char deltapoc[], RateControlEntry *rce)
 {
+    if (!deltapoc || !rce)
+        return false;
+
     int idx = 0, length = 0;
-    char tmpStr[128];
-    char* src = deltapoc;
-    char* buf = strstr(src, "~");
+    char tmpStr[128] = {};
+    const char* src = deltapoc;
+    const char* buf = std::strstr(src, "~");
     while (buf)
     {
-        memset(tmpStr, 0, sizeof(tmpStr));
         length = (int)(buf - src);
         if (length != 0)
         {
-            strncpy(tmpStr, src, length);
-            rce->rpsData.deltaPOC[idx] = atoi(tmpStr);
+            if (idx >= rce->rpsData.numberOfPictures)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "RPS deltaPOC entries exceed expected picture count\n");
+                return false;
+            }
+            if (length >= (int)sizeof(tmpStr))
+            {
+                x265_log(m_param, X265_LOG_ERROR, "RPS deltaPOC entry exceeds supported length\n");
+                return false;
+            }
+            std::memcpy(tmpStr, src, length);
+            tmpStr[length] = '\0';
+            int deltaPOC = 0;
+            if (!parseRateControlIntToken(tmpStr, deltaPOC))
+            {
+                x265_log(m_param, X265_LOG_ERROR, "Invalid RPS deltaPOC entry\n");
+                return false;
+            }
+            rce->rpsData.deltaPOC[idx] = deltaPOC;
             idx++;
-            if (idx == rce->rpsData.numberOfPictures)
-                break;
         }
         src += (length + 1);
-        buf = strstr(src, "~");
+        buf = std::strstr(src, "~");
     }
+
+    if (idx != rce->rpsData.numberOfPictures)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "RPS deltaPOC entries do not match expected picture count\n");
+        return false;
+    }
+
+    return true;
 }
 
-void RateControl::splitbUsed(char bused[], RateControlEntry *rce)
+bool RateControl::splitbUsed(const char bused[], RateControlEntry *rce)
 {
+    if (!bused || !rce)
+        return false;
+
     int idx = 0, length = 0;
-    char tmpStr[128];
-    char* src = bused;
-    char* buf = strstr(src, "~");
+    char tmpStr[128] = {};
+    const char* src = bused;
+    const char* buf = std::strstr(src, "~");
     while (buf)
     {
-        memset(tmpStr, 0, sizeof(tmpStr));
         length = (int)(buf - src);
         if (length != 0)
         {
-            strncpy(tmpStr, src, length);
-            rce->rpsData.bUsed[idx] = atoi(tmpStr) > 0;
+            if (idx >= rce->rpsData.numberOfPictures)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "RPS bused entries exceed expected picture count\n");
+                return false;
+            }
+            if (length >= (int)sizeof(tmpStr))
+            {
+                x265_log(m_param, X265_LOG_ERROR, "RPS bused entry exceeds supported length\n");
+                return false;
+            }
+            std::memcpy(tmpStr, src, length);
+            tmpStr[length] = '\0';
+            int bUsed = 0;
+            if (!parseRateControlIntToken(tmpStr, bUsed) || bUsed < 0 || bUsed > 1)
+            {
+                x265_log(m_param, X265_LOG_ERROR, "Invalid RPS bused entry\n");
+                return false;
+            }
+            rce->rpsData.bUsed[idx] = bUsed > 0;
             idx++;
-            if (idx == rce->rpsData.numberOfPictures)
-                break;
         }
         src += (length + 1);
-        buf = strstr(src, "~");
+        buf = std::strstr(src, "~");
     }
+
+    if (idx != rce->rpsData.numberOfPictures)
+    {
+        x265_log(m_param, X265_LOG_ERROR, "RPS bused entries do not match expected picture count\n");
+        return false;
+    }
+
+    return true;
 }
 
 double RateControl::forwardMasking(Frame* curFrame, double q)

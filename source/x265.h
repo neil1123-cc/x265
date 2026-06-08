@@ -471,7 +471,9 @@ typedef struct x265_picture
      * These are added on top of the decisions made by rateControl.
      * Adaptive quantization must be enabled to use this feature. These quantizer
      * offsets should be given for each 16x16 block (8x8 block, when qg-size is 8).
-     * Behavior if quant offsets differ between encoding passes is undefined. */
+     * Current public API builds reject non-NULL quantOffsets because no buffer
+     * length is exposed, so the encoder cannot verify caller-provided storage
+     * before copying it. */
     float            *quantOffsets;
 
     /* Frame level statistics */
@@ -816,7 +818,7 @@ typedef struct x265_vmaf_commondata
     int subsample;
 }x265_vmaf_commondata;
 
-static const x265_vmaf_commondata vcd[] = { { NULL, (char *)"/usr/local/share/model/vmaf_v0.6.1.json", NULL, NULL, 0, 0, 0, 0, 0, 0, 0, NULL, 0, 1} };
+static const x265_vmaf_commondata vcd[] = { { 0, (char *)"/usr/local/share/model/vmaf_v0.6.1.json", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1} };
 
 typedef struct x265_temporal_layer {
     int poc_offset;      /* POC offset */
@@ -2534,7 +2536,9 @@ x265_encoder* x265_encoder_open(x265_param *);
  *      by the caller.  useful when the calling application needs to know
  *      how x265_encoder_open has changed the parameters.
  *      note that the data accessible through pointers in the returned param struct
- *      (e.g. filenames) should not be modified by the calling application. */
+ *      (e.g. filenames) should not be modified by the calling application.
+ *      callers that want to reuse an output param across multiple calls should
+ *      allocate it with x265_param_alloc() and release it with x265_param_free(). */
 void x265_encoder_parameters(x265_encoder *, x265_param *);
 
 /* x265_encoder_headers:
@@ -2578,7 +2582,11 @@ int x265_encoder_reconfig(x265_encoder *, x265_param *);
 /* x265_encoder_reconfig_zone:
 *       zone settings are copied to the encoder's param.
 *       Properties of the zone will be used only to re-configure rate-control settings
-*       of the zone mid-encode. Returns 0 on success on successful copy, negative on failure.*/
+*       of the zone mid-encode. Calls must be submitted in contiguous reconfig-window
+*       startFrame order beginning at frame 0. When bResetZoneConfig is disabled, the
+*       current reconfig window must be staged before encoding reaches it or
+*       x265_encoder_encode() will fail. Returns 0 on success on successful copy,
+*       negative on failure.*/
 int x265_encoder_reconfig_zone(x265_encoder *, x265_zone *);
 
 /* x265_encoder_get_stats:
@@ -2630,6 +2638,7 @@ int x265_get_ref_frame_list(x265_encoder *encoder, x265_picyuv**, x265_picyuv**,
 
 /* x265_set_analysis_data:
  *     set the analysis data. The incoming analysis_data structure is assumed to be AVC-sized blocks.
+ *     cuBytes must match the number of 16x16 AVC blocks in the frame.
  *     returns negative on error, 0 access unit were output. */
 int x265_set_analysis_data(x265_encoder *encoder, x265_analysis_data *analysis_data, int poc, uint32_t cuBytes);
 

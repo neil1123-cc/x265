@@ -31,7 +31,7 @@ void PicList::pushFront(Frame& curFrame)
 {
     X265_CHECK(!curFrame.m_next && !curFrame.m_prev, "piclist: picture already in list\n"); // ensure frame is not in a list
     curFrame.m_next = m_start;
-    curFrame.m_prev = NULL;
+    curFrame.m_prev = nullptr;
 
     if (m_count)
     {
@@ -49,7 +49,7 @@ void PicList::pushFrontMCSTF(Frame& curFrame)
 {
     X265_CHECK(!curFrame.m_nextMCSTF && !curFrame.m_nextMCSTF, "piclist: picture already in OPB list\n"); // ensure frame is not in a list
     curFrame.m_nextMCSTF = m_start;
-    curFrame.m_prevMCSTF = NULL;
+    curFrame.m_prevMCSTF = nullptr;
 
     if (m_count)
     {
@@ -67,7 +67,7 @@ void PicList::pushFrontMCSTF(Frame& curFrame)
 void PicList::pushBack(Frame& curFrame)
 {
     X265_CHECK(!curFrame.m_next && !curFrame.m_prev, "piclist: picture already in list\n"); // ensure frame is not in a list
-    curFrame.m_next = NULL;
+    curFrame.m_next = nullptr;
     curFrame.m_prev = m_end;
 
     if (m_count)
@@ -93,23 +93,23 @@ Frame* PicList::popFrontSubDPB()
         if (m_count)
         {
             m_start = m_start->m_nextSubDPB;
-            m_start->m_prevSubDPB = NULL;
+            m_start->m_prevSubDPB = nullptr;
         }
         else
         {
-            m_start = m_end = NULL;
+            m_start = m_end = nullptr;
         }
-        temp->m_next = temp->m_prev = NULL;
+        temp->m_next = temp->m_prev = nullptr;
         return temp;
     }
     else
-        return NULL;
+        return nullptr;
 }
 
 void PicList::pushBackSubDPB(Frame& curFrame)
 {
     X265_CHECK(!curFrame.m_nextSubDPB && !curFrame.m_prevSubDPB, "piclist: picture already in Sub DPB list\n"); // ensure frame is not in a list
-    curFrame.m_nextSubDPB = NULL;
+    curFrame.m_nextSubDPB = nullptr;
     curFrame.m_prevSubDPB = m_end;
 
     if (m_count)
@@ -151,17 +151,17 @@ void PicList::removeSubDPB(Frame& curFrame)
     }
     else
     {
-        m_start = m_end = NULL;
+        m_start = m_end = nullptr;
     }
 
-    curFrame.m_nextSubDPB = curFrame.m_prevSubDPB = NULL;
+    curFrame.m_nextSubDPB = curFrame.m_prevSubDPB = nullptr;
 }
 #endif
 
 void PicList::pushBackMCSTF(Frame& curFrame)
 {
     X265_CHECK(!curFrame.m_nextMCSTF && !curFrame.m_prevMCSTF, "piclist: picture already in OPB list\n"); // ensure frame is not in a list
-    curFrame.m_nextMCSTF = NULL;
+    curFrame.m_nextMCSTF = nullptr;
     curFrame.m_prevMCSTF = m_end;
 
     if (m_count)
@@ -186,17 +186,17 @@ Frame *PicList::popFront()
         if (m_count)
         {
             m_start = m_start->m_next;
-            m_start->m_prev = NULL;
+            m_start->m_prev = nullptr;
         }
         else
         {
-            m_start = m_end = NULL;
+            m_start = m_end = nullptr;
         }
-        temp->m_next = temp->m_prev = NULL;
+        temp->m_next = temp->m_prev = nullptr;
         return temp;
     }
     else
-        return NULL;
+        return nullptr;
 }
 
 Frame* PicList::getPOC(int poc, int sLayerId)
@@ -230,17 +230,17 @@ Frame *PicList::popBack()
         if (m_count)
         {
             m_end = m_end->m_prev;
-            m_end->m_next = NULL;
+            m_end->m_next = nullptr;
         }
         else
         {
-            m_start = m_end = NULL;
+            m_start = m_end = nullptr;
         }
-        temp->m_next = temp->m_prev = NULL;
+        temp->m_next = temp->m_prev = nullptr;
         return temp;
     }
     else
-        return NULL;
+        return nullptr;
 }
 
 Frame *PicList::popBackMCSTF()
@@ -253,27 +253,27 @@ Frame *PicList::popBackMCSTF()
         if (m_count)
         {
             m_end = m_end->m_prevMCSTF;
-            m_end->m_nextMCSTF = NULL;
+            m_end->m_nextMCSTF = nullptr;
         }
         else
         {
-            m_start = m_end = NULL;
+            m_start = m_end = nullptr;
         }
-        temp->m_nextMCSTF = temp->m_prevMCSTF = NULL;
+        temp->m_nextMCSTF = temp->m_prevMCSTF = nullptr;
         return temp;
     }
     else
-        return NULL;
+        return nullptr;
 }
 
 Frame* PicList::getCurFrame(int sLayer)
 {
     Frame *curFrame = m_start;
     int layer = curFrame->m_param->numViews > 1 ? curFrame->m_viewId : (curFrame->m_param->numScalableLayers > 1) ? curFrame->m_sLayerId : 0;
-    if (layer == sLayer && curFrame != NULL)
+    if (layer == sLayer && curFrame != nullptr)
         return curFrame;
     else
-        return NULL;
+        return nullptr;
 }
 
 void PicList::remove(Frame& curFrame)
@@ -303,10 +303,10 @@ void PicList::remove(Frame& curFrame)
     }
     else
     {
-        m_start = m_end = NULL;
+        m_start = m_end = nullptr;
     }
 
-    curFrame.m_next = curFrame.m_prev = NULL;
+    curFrame.m_next = curFrame.m_prev = nullptr;
 }
 
 
@@ -338,10 +338,10 @@ Frame* PicList::removeFrame(Frame& curFrame)
     }
     else
     {
-        m_start = m_end = NULL;
+        m_start = m_end = nullptr;
     }
 
-    curFrame.m_next = curFrame.m_prev = NULL;
+    curFrame.m_next = curFrame.m_prev = nullptr;
     return tmp;
 }
 
@@ -372,8 +372,8 @@ void PicList::removeMCSTF(Frame& curFrame)
     }
     else
     {
-        m_start = m_end = NULL;
+        m_start = m_end = nullptr;
     }
 
-    curFrame.m_nextMCSTF = curFrame.m_prevMCSTF = NULL;
+    curFrame.m_nextMCSTF = curFrame.m_prevMCSTF = nullptr;
 }

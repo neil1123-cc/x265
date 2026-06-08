@@ -25,7 +25,7 @@
 #ifndef METADATAFROMJSON_H
 #define METADATAFROMJSON_H
 
-#include<stdint.h>
+#include<cstdint>
 #include<cstring>
 #include "JsonHelper.h"
 

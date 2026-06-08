@@ -23,11 +23,11 @@
  *****************************************************************************/
 
 #include "mkv.h"
-#include <stdio.h>
+#include <cstdio>
+#include <cstring>
 #include <vector>
 
 using namespace X265_NS;
-using namespace std;
 
 #if defined(_LP64) || defined(_WIN64)
 #define X265_OUTPUT_BITS "64bit"
@@ -56,8 +56,18 @@ void MKVOutput::closeFile(int64_t largest_pts, int64_t second_largest_pts)
 {
     int64_t i_last_delta;
 
+    if (!p_mkv || !p_mkv->w)
+    {
+        b_fail = true;
+        return;
+    }
+
     i_last_delta = p_mkv->i_timebase_den ? (int64_t)(((largest_pts - second_largest_pts) * p_mkv->i_timebase_num / p_mkv->i_timebase_den) + 0.5) : 0;
-    mk_close(p_mkv->w, i_last_delta);
+    mk_writer* writer = p_mkv->w;
+    p_mkv->w = nullptr;
+    p_mkv->b_writing_frame = 0;
+    if (mk_close(writer, i_last_delta) < 0)
+        b_fail = true;
 }
 
 void MKVOutput::setParam(x265_param* p_param)
@@ -105,6 +115,12 @@ void MKVOutput::setPS(x265_encoder* encoder)
 
 int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
 {
+    if (b_fail || !p_mkv || !p_mkv->w)
+    {
+        b_fail = true;
+        return -1;
+    }
+
     if (nalcount < 3)
     {
         ERR("header should contain 3+ nals\n");
@@ -126,7 +142,10 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
 
     if (!p_mkv->width || !p_mkv->height ||
         !p_mkv->d_width || !p_mkv->d_height)
+    {
+        b_fail = true;
         return -1;
+    }
 
     hevcC_len = 23 + 5 + vps_size + 5 + sps_size + 5 + pps_size + (nalcount >= 4 ? 5 + sei_size : 0);
     std::vector<uint8_t> hevcC(hevcC_len);
@@ -209,7 +228,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     *(phc++) = vps_size >> 8;
     *(phc++) = vps_size & 0xff;
     // data
-    memcpy(phc, vps, vps_size);
+    std::memcpy(phc, vps, vps_size);
     phc += vps_size;
 
     // -- SPS --
@@ -222,7 +241,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     *(phc++) = sps_size >> 8;
     *(phc++) = sps_size & 0xff;
     // data
-    memcpy(phc, sps, sps_size);
+    std::memcpy(phc, sps, sps_size);
     phc += sps_size;
 
     // -- PPS --
@@ -235,7 +254,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     *(phc++) = pps_size >> 8;
     *(phc++) = pps_size & 0xff;
     // data
-    memcpy(phc, pps, pps_size);
+    std::memcpy(phc, pps, pps_size);
     phc += pps_size;
 
     if (nalcount >= 4)
@@ -250,12 +269,12 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
         *(phc++) = sei_size >> 8;
         *(phc++) = sei_size & 0xff;
         // data
-        memcpy(phc, sei, sei_size);
+        std::memcpy(phc, sei, sei_size);
         phc += sei_size;
     }
 
     char writingApp[64];
-    snprintf(writingApp, sizeof(writingApp), "x265 %s %s", x265_version_str, X265_OUTPUT_BITS);
+    std::snprintf(writingApp, sizeof(writingApp), "x265 %s %s", x265_version_str, X265_OUTPUT_BITS);
 
     ret = mk_write_header(p_mkv->w, writingApp, "V_MPEGH/ISO/HEVC",
                           hevcC.data(), hevcC_len, p_mkv->frame_duration, 50000,
@@ -264,6 +283,10 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     if (ret < 0)
     {
         ERR("Error from mk_write_header: %d !\n", ret);
+        if (mk_close(p_mkv->w, 0) < 0)
+            ERR("Unable to clean up MKV writer after header failure\n");
+        p_mkv->w = nullptr;
+        b_fail = true;
         return ret;
     }
 
@@ -277,6 +300,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
         if (mk_start_frame(p_mkv->w) < 0)
         {
             ERR("Error from mk_start_frame!\n");
+            b_fail = true;
             return -1;
         }
         p_mkv->b_writing_frame = 1;
@@ -285,6 +309,7 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
     if (mk_add_frame_data(p_mkv->w, p_nal[3].payload, p_nal[3].sizeBytes) < 0)
     {
         ERR("Error from mk_add_frame_data!\n");
+        b_fail = true;
         return -1;
     }
 
@@ -293,6 +318,12 @@ int MKVOutput::writeHeaders(const x265_nal* p_nal, uint32_t nalcount)
 
 int MKVOutput::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_picture& pic)
 {
+    if (b_fail || !p_mkv || !p_mkv->w)
+    {
+        b_fail = true;
+        return -1;
+    }
+
     const bool b_keyframe = pic.sliceType == X265_TYPE_IDR;
     const bool b_bframe = pic.sliceType == X265_TYPE_B;
 
@@ -301,6 +332,7 @@ int MKVOutput::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
         if (mk_start_frame(p_mkv->w) < 0)
         {
             ERR("Error from mk_start_frame!\n");
+            b_fail = true;
             return -1;
         }
         p_mkv->b_writing_frame = 1;
@@ -312,6 +344,7 @@ int MKVOutput::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
         if (mk_add_frame_data(p_mkv->w, p_nalu[i].payload, p_nalu[i].sizeBytes) < 0)
         {
             ERR("Error from mk_add_frame_data!\n");
+            b_fail = true;
             return -1;
         }
         totalBytes += p_nalu[i].sizeBytes;
@@ -324,6 +357,7 @@ int MKVOutput::writeFrame(const x265_nal* p_nalu, uint32_t nalcount, x265_pictur
     if (mk_set_frame_flags(p_mkv->w, i_stamp, b_keyframe, b_bframe) < 0)
     {
         ERR("Error from mk_set_frame_flags!\n");
+        b_fail = true;
         return -1;
     }
 

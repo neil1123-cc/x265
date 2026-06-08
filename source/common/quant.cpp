@@ -31,6 +31,10 @@
 #include "cudata.h"
 #include "contexts.h"
 
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+
 using namespace X265_NS;
 
 #define SIGN(x,y) ((x^(y >> 31))-(y >> 31))
@@ -181,11 +185,11 @@ Quant::rdoQuant_t Quant::rdoQuant_func[NUM_CU_DEPTH] = {&Quant::rdoQuant<2>, &Qu
 
 Quant::Quant()
 {
-    m_resiDctCoeff = NULL;
-    m_fencDctCoeff = NULL;
-    m_fencShortBuf = NULL;
-    m_frameNr      = NULL;
-    m_nr           = NULL;
+    m_resiDctCoeff = nullptr;
+    m_fencDctCoeff = nullptr;
+    m_fencShortBuf = nullptr;
+    m_frameNr      = nullptr;
+    m_nr           = nullptr;
 }
 
 bool Quant::init(double psyScale, const ScalingList& scalingList, Entropy& entropy)
@@ -205,7 +209,7 @@ bool Quant::allocNoiseReduction(const x265_param& param)
 {
     m_frameNr = X265_MALLOC(NoiseReduction, param.frameNumThreads);
     if (m_frameNr)
-        memset(m_frameNr, 0, sizeof(NoiseReduction) * param.frameNumThreads);
+        std::fill_n(m_frameNr, param.frameNumThreads, NoiseReduction());
     else
         return false;
     return true;
@@ -220,7 +224,7 @@ Quant::~Quant()
 
 void Quant::setQPforQuant(const CUData& ctu, int qp)
 {
-    m_nr = m_frameNr ? &m_frameNr[ctu.m_encData->m_frameEncoderID] : NULL;
+    m_nr = m_frameNr ? &m_frameNr[ctu.m_encData->m_frameEncoderID] : nullptr;
     m_qpParam[TEXT_LUMA].setQpParam(qp + QP_BD_OFFSET);
     m_rdoqLevel = ctu.m_encData->m_param->rdoqLevel;
     if (ctu.m_chromaFormat != X265_CSP_I400)
@@ -255,9 +259,9 @@ uint32_t Quant::signBitHidingHDQ(int16_t* coeff, int32_t* deltaU, uint32_t numSi
 
 #if CHECKED_BUILD || _DEBUG
     // clean output buffer, the asm version of scanPosLast Never output anything after latest non-zero coeff group
-    memset(coeffNum, 0, sizeof(coeffNum) * sizeof(uint8_t));
-    memset(coeffSign, 0, sizeof(coeffNum) * sizeof(uint16_t));
-    memset(coeffFlag, 0, sizeof(coeffNum) * sizeof(uint16_t));
+    std::fill_n(coeffNum, MLS_GRP_NUM, uint8_t(0));
+    std::fill_n(coeffSign, MLS_GRP_NUM, uint16_t(0));
+    std::fill_n(coeffFlag, MLS_GRP_NUM, uint16_t(0));
 #endif
     const int lastScanPos = primitives.scanPosLast(codeParams.scan, coeff, coeffSign, coeffFlag, coeffNum, numSig, g_scan4x4[codeParams.scanType], trSize);
     const int cgLastScanPos = (lastScanPos >> LOG2_SCAN_SET_SIZE);
@@ -321,7 +325,7 @@ uint32_t Quant::signBitHidingHDQ(int16_t* coeff, int32_t* deltaU, uint32_t numSi
                 for (n = (cg == cgLastScanPos ? lastNZPosInCG : SCAN_SET_SIZE - 1); n >= 0; --n)
                 {
                     uint32_t blkPos = scan[n + cgStartPos];
-                    X265_CHECK(!!coeff[blkPos] == !!(cgFlags & 1), "non zero coeff check failure\n");
+                    X265_CHECK((coeff[blkPos] != 0) == ((cgFlags & 1) != 0), "non zero coeff check failure\n");
 
                     if (cgFlags & 1)
                     {
@@ -332,7 +336,7 @@ uint32_t Quant::signBitHidingHDQ(int16_t* coeff, int32_t* deltaU, uint32_t numSi
                         }
                         else
                         {
-                            if ((cgFlags == 1) && (abs(coeff[blkPos]) == 1))
+                            if ((cgFlags == 1) && (std::abs(coeff[blkPos]) == 1))
                             {
                                 X265_CHECK(n == firstNZPosInCG, "firstNZPosInCG position check failure\n");
                                 curCost = MAX_INT;
@@ -380,7 +384,7 @@ uint32_t Quant::signBitHidingHDQ(int16_t* coeff, int32_t* deltaU, uint32_t numSi
 
                 if (!coeff[minPos])
                     numSig++;
-                else if (finalChange == -1 && abs(coeff[minPos]) == 1)
+                else if (finalChange == -1 && std::abs(coeff[minPos]) == 1)
                     numSig--;
 
                 {
@@ -676,9 +680,9 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
 #if CHECKED_BUILD || _DEBUG
     // clean output buffer, the asm version of scanPosLast Never output anything after latest non-zero coeff group
-    memset(coeffNum, 0, sizeof(coeffNum) * sizeof(uint8_t));
-    memset(coeffSign, 0, sizeof(coeffNum) * sizeof(uint16_t));
-    memset(coeffFlag, 0, sizeof(coeffNum) * sizeof(uint16_t));
+    std::fill_n(coeffNum, MLS_GRP_NUM, uint8_t(0));
+    std::fill_n(coeffSign, MLS_GRP_NUM, uint16_t(0));
+    std::fill_n(coeffFlag, MLS_GRP_NUM, uint16_t(0));
 #endif
     const int lastScanPos = primitives.scanPosLast(codeParams.scan, dstCoeff, coeffSign, coeffFlag, coeffNum, numSig, g_scan4x4[codeParams.scanType], trSize);
     const int cgLastScanPos = (lastScanPos >> LOG2_SCAN_SET_SIZE);
@@ -694,8 +698,8 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
     /* coefficients after lastNZ have no distortion signal cost */
     const int zeroCG = cgNum - 1 - cgLastScanPos;
-    memset(&costCoeff[(cgLastScanPos + 1) << MLS_CG_SIZE], 0, zeroCG * MLS_CG_BLK_SIZE * sizeof(int64_t));
-    memset(&costSig[(cgLastScanPos + 1) << MLS_CG_SIZE], 0, zeroCG * MLS_CG_BLK_SIZE * sizeof(int64_t));
+    std::fill_n(&costCoeff[(cgLastScanPos + 1) << MLS_CG_SIZE], zeroCG * MLS_CG_BLK_SIZE, int64_t(0));
+    std::fill_n(&costSig[(cgLastScanPos + 1) << MLS_CG_SIZE], zeroCG * MLS_CG_BLK_SIZE, int64_t(0));
 
     /* sum zero coeff (uncodec) cost */
 
@@ -855,8 +859,7 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
             continue;
         }
 
-        coeffGroupRDStats cgRdStats;
-        memset(&cgRdStats, 0, sizeof(coeffGroupRDStats));
+        coeffGroupRDStats cgRdStats = {};
 
         uint32_t subFlagMask = coeffFlag[cgScanPos];
         int    c2            = 0;
@@ -879,7 +882,7 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
             /* cost of not coding this coefficient (all distortion, no signal bits) */
             costUncoded[blkPos] = ((int64_t)signCoef * signCoef) << scaleBits;
-            X265_CHECK((!!scanPos ^ !!blkPos) == 0, "failed on (blkPos=0 && scanPos!=0)\n");
+            X265_CHECK((scanPos != 0) == (blkPos != 0), "failed on (blkPos=0 && scanPos!=0)\n");
             if (usePsyMask & scanPos)
                 /* when no residual coefficient is coded, predicted coef == recon coef */
                 costUncoded[blkPos] -= PSYVALUE(predictedCoef);
@@ -926,8 +929,8 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
                 const uint32_t c1c2idx = ((c1Idx - 8) >> (sizeof(int) * CHAR_BIT - 1)) + (((-(int)c2Idx) >> (sizeof(int) * CHAR_BIT - 1)) + 1) * 2;
                 const uint32_t baseLevel = ((uint32_t)0xD9 >> (c1c2idx * 2)) & 3;  // {1, 2, 1, 3}
 
-                X265_CHECK(!!((int)c1Idx < C1FLAG_NUMBER) == (int)((c1Idx - 8) >> (sizeof(int) * CHAR_BIT - 1)), "scan validation 1\n");
-                X265_CHECK(!!(c2Idx == 0) == ((-(int)c2Idx) >> (sizeof(int) * CHAR_BIT - 1)) + 1, "scan validation 2\n");
+                X265_CHECK(((int)c1Idx < C1FLAG_NUMBER) == (((c1Idx - 8) >> (sizeof(int) * CHAR_BIT - 1)) != 0), "scan validation 1\n");
+                X265_CHECK((c2Idx == 0) == ((((-(int)c2Idx) >> (sizeof(int) * CHAR_BIT - 1)) + 1) != 0), "scan validation 2\n");
                 X265_CHECK((int)baseLevel == ((c1Idx < C1FLAG_NUMBER) ? (2 + (c2Idx == 0)) : 1), "scan validation 3\n");
                 X265_CHECK(c1c2idx <= 3, "c1c2Idx check failure\n");
 
@@ -962,13 +965,13 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
                     int unquantAbsLevel = unQuantLevel >> unquantShift;
                     X265_CHECK(UNQUANT(1) == unquantAbsLevel, "DQuant check failed\n");
-                    int d = abs(signCoef) - unquantAbsLevel;
+                    int d = std::abs(signCoef) - unquantAbsLevel;
                     int64_t curCost = RDCOST(d, sigCoefBits + levelBits);
 
                     /* Psy RDOQ: bias in favor of higher AC coefficients in the reconstructed frame */
                     if (usePsyMask & scanPos)
                     {
-                        int reconCoef = abs(unquantAbsLevel + SIGN(predictedCoef, signCoef));
+                        int reconCoef = std::abs(unquantAbsLevel + SIGN(predictedCoef, signCoef));
                         curCost -= PSYVALUE(reconCoef);
                     }
 
@@ -988,22 +991,22 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
                     const int unquantAbsLevel0 = unQuantLevel >> unquantShift;
                     X265_CHECK(UNQUANT(maxAbsLevel) == (uint32_t)unquantAbsLevel0, "DQuant check failed\n");
-                    int d0 = abs(signCoef) - unquantAbsLevel0;
+                    int d0 = std::abs(signCoef) - unquantAbsLevel0;
                     int64_t curCost0 = RDCOST(d0, sigCoefBits + levelBits0);
 
                     const int unquantAbsLevel1 = (unQuantLevel - preDQuantLevelDiff) >> unquantShift;
                     X265_CHECK(UNQUANT(maxAbsLevel - 1) == (uint32_t)unquantAbsLevel1, "DQuant check failed\n");
-                    int d1 = abs(signCoef) - unquantAbsLevel1;
+                    int d1 = std::abs(signCoef) - unquantAbsLevel1;
                     int64_t curCost1 = RDCOST(d1, sigCoefBits + levelBits1);
 
                     /* Psy RDOQ: bias in favor of higher AC coefficients in the reconstructed frame */
                     if (usePsyMask & scanPos)
                     {
                         int reconCoef;
-                        reconCoef = abs(unquantAbsLevel0 + SIGN(predictedCoef, signCoef));
+                        reconCoef = std::abs(unquantAbsLevel0 + SIGN(predictedCoef, signCoef));
                         curCost0 -= PSYVALUE(reconCoef);
 
-                        reconCoef = abs(unquantAbsLevel1 + SIGN(predictedCoef, signCoef));
+                        reconCoef = std::abs(unquantAbsLevel1 + SIGN(predictedCoef, signCoef));
                         curCost1 -= PSYVALUE(reconCoef);
                     }
                     if (curCost0 < costCoeff[scanPos])
@@ -1146,10 +1149,10 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
 
                 /* reset all coeffs to 0. UNCODE THIS COEFF GROUP! */
                 const uint32_t blkPos = codeParams.scan[cgScanPos * cgSize];
-                memset(&dstCoeff[blkPos + 0 * trSize], 0, 4 * sizeof(*dstCoeff));
-                memset(&dstCoeff[blkPos + 1 * trSize], 0, 4 * sizeof(*dstCoeff));
-                memset(&dstCoeff[blkPos + 2 * trSize], 0, 4 * sizeof(*dstCoeff));
-                memset(&dstCoeff[blkPos + 3 * trSize], 0, 4 * sizeof(*dstCoeff));
+                std::fill_n(&dstCoeff[blkPos + 0 * trSize], 4, coeff_t(0));
+                std::fill_n(&dstCoeff[blkPos + 1 * trSize], 4, coeff_t(0));
+                std::fill_n(&dstCoeff[blkPos + 2 * trSize], 4, coeff_t(0));
+                std::fill_n(&dstCoeff[blkPos + 3 * trSize], 4, coeff_t(0));
             }
         }
         else
@@ -1276,10 +1279,10 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
     for (int pos = (bestLastIdx & ~(SCAN_SET_SIZE - 1)) + SCAN_SET_SIZE; pos <= lastScanPos; pos += SCAN_SET_SIZE)
     {
         const uint32_t blkPos = codeParams.scan[pos];
-        memset(&dstCoeff[blkPos + 0 * trSize], 0, 4 * sizeof(*dstCoeff));
-        memset(&dstCoeff[blkPos + 1 * trSize], 0, 4 * sizeof(*dstCoeff));
-        memset(&dstCoeff[blkPos + 2 * trSize], 0, 4 * sizeof(*dstCoeff));
-        memset(&dstCoeff[blkPos + 3 * trSize], 0, 4 * sizeof(*dstCoeff));
+        std::fill_n(&dstCoeff[blkPos + 0 * trSize], 4, coeff_t(0));
+        std::fill_n(&dstCoeff[blkPos + 1 * trSize], 4, coeff_t(0));
+        std::fill_n(&dstCoeff[blkPos + 2 * trSize], 4, coeff_t(0));
+        std::fill_n(&dstCoeff[blkPos + 3 * trSize], 4, coeff_t(0));
     }
 
     /* rate-distortion based sign-hiding */
@@ -1325,18 +1328,18 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
                     uint32_t minPos = 0;
                     int8_t finalChange = 0;
                     int curChange = 0;
-                    uint32_t lastCoeffAdjust = (lastCG & (abs(dstCoeff[codeParams.scan[lastNZPosInCG + subPos]]) == 1)) * 4 * IEP_RATE;
+                    uint32_t lastCoeffAdjust = (lastCG & (std::abs(dstCoeff[codeParams.scan[lastNZPosInCG + subPos]]) == 1)) * 4 * IEP_RATE;
 
                     for (n = (lastCG ? lastNZPosInCG : SCAN_SET_SIZE - 1); n >= 0; --n)
                     {
                         const uint32_t blkPos = codeParams.scan[n + subPos];
                         const int32_t signCoef = m_resiDctCoeff[blkPos]; /* pre-quantization DCT coeff */
-                        const int absLevel = abs(dstCoeff[blkPos]);
+                        const int absLevel = std::abs(dstCoeff[blkPos]);
                         // TODO: this is constant in non-scaling mode
                         const uint32_t preDQuantLevelDiff = (unquantScale[blkPos] << per);
                         const uint32_t unQuantLevel = (absLevel * (unquantScale[blkPos] << per) + unquantRound);
 
-                        int d = abs(signCoef) - (unQuantLevel >> unquantShift);
+                        int d = std::abs(signCoef) - (unQuantLevel >> unquantShift);
                         X265_CHECK((uint32_t)UNQUANT(absLevel) == (unQuantLevel >> unquantShift), "dquant check failed\n");
 
                         const int64_t origDist = (((int64_t)d * d));
@@ -1346,13 +1349,13 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
                         const uint32_t isOne = (absLevel == 1);
                         if (dstCoeff[blkPos])
                         {
-                            d = abs(signCoef) - ((unQuantLevel + preDQuantLevelDiff) >> unquantShift);
+                            d = std::abs(signCoef) - ((unQuantLevel + preDQuantLevelDiff) >> unquantShift);
                             X265_CHECK((uint32_t)UNQUANT(absLevel + 1) == ((unQuantLevel + preDQuantLevelDiff) >> unquantShift), "dquant check failed\n");
                             int64_t costUp = DELTARDCOST(origDist, d, rateIncUp[blkPos]);
 
                             /* if decrementing would make the coeff 0, we can include the
                              * significant coeff flag cost savings */
-                            d = abs(signCoef) - ((unQuantLevel - preDQuantLevelDiff) >> unquantShift);
+                            d = std::abs(signCoef) - ((unQuantLevel - preDQuantLevelDiff) >> unquantShift);
                             X265_CHECK((uint32_t)UNQUANT(absLevel - 1) == ((unQuantLevel - preDQuantLevelDiff) >> unquantShift), "dquant check failed\n");
                             int downBits = rateIncDown[blkPos] - (isOne ? (IEP_RATE + sigRateDelta[blkPos]) : 0);
                             int64_t costDown = DELTARDCOST(origDist, d, downBits);
@@ -1374,7 +1377,7 @@ uint32_t Quant::rdoQuant(const CUData& cu, int16_t* dstCoeff, TextType ttype, ui
                         else
                         {
                             /* evaluate changing an uncoded coeff 0 to a coded coeff +/-1 */
-                            d = abs(signCoef) - ((preDQuantLevelDiff + unquantRound) >> unquantShift);
+                            d = std::abs(signCoef) - ((preDQuantLevelDiff + unquantRound) >> unquantShift);
                             X265_CHECK((uint32_t)UNQUANT(1) == ((preDQuantLevelDiff + unquantRound) >> unquantShift), "dquant check failed\n");
                             curCost = DELTARDCOST(origDist, d, rateIncUp[blkPos] + IEP_RATE + sigRateDelta[blkPos]);
                             curChange = 1;

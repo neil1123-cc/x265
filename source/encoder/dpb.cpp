@@ -53,7 +53,8 @@ DPB::~DPB()
         FrameData* next = m_frameDataFreeList->m_freeListNext;
         m_frameDataFreeList->destroy();
 
-        for (int i = 0; i < !!m_frameDataFreeList->m_param->bEnableSCC + 1; i++)
+        const int reconPicCount = m_frameDataFreeList->m_param->bEnableSCC ? 2 : 1;
+        for (int i = 0; i < reconPicCount; i++)
         {
             m_frameDataFreeList->m_reconPic[i]->destroy();
             delete m_frameDataFreeList->m_reconPic[i];
@@ -76,7 +77,7 @@ void DPB::recycleUnreferenced()
         bool isMCSTFReferenced = false;
 
         if (curFrame->m_param->bEnableTemporalFilter)
-            isMCSTFReferenced =!!(curFrame->m_refPicCnt[1]);
+            isMCSTFReferenced = curFrame->m_refPicCnt[1] != 0;
 
         if (curFrame->m_valid && !curFrame->m_encData->m_bHasReferences && !curFrame->m_countRefEncoders.load() && !isMCSTFReferenced)
         {
@@ -86,8 +87,8 @@ void DPB::recycleUnreferenced()
                 *curFrame->m_isSubSampled = false;
 
             // Reset column counter
-            X265_CHECK(curFrame->m_reconRowFlag != NULL, "curFrame->m_reconRowFlag check failure");
-            X265_CHECK(curFrame->m_reconColCount != NULL, "curFrame->m_reconColCount check failure");
+            X265_CHECK(curFrame->m_reconRowFlag != nullptr, "curFrame->m_reconRowFlag check failure");
+            X265_CHECK(curFrame->m_reconColCount != nullptr, "curFrame->m_reconColCount check failure");
             X265_CHECK(curFrame->m_numRows > 0, "curFrame->m_numRows check failure");
 
             for(int32_t row = 0; row < curFrame->m_numRows; row++)
@@ -116,34 +117,26 @@ void DPB::recycleUnreferenced()
             m_freeList.pushBack(*curFrame);
             curFrame->m_encData->m_freeListNext = m_frameDataFreeList;
             m_frameDataFreeList = curFrame->m_encData;
-            for (int i = 0; i < INTEGRAL_PLANE_NUM; i++)
-            {
-                if (curFrame->m_encData->m_meBuffer[i] != NULL)
-                {
-                    X265_FREE(curFrame->m_encData->m_meBuffer[i]);
-                    curFrame->m_encData->m_meBuffer[i] = NULL;
-                }
-            }
-            if (curFrame->m_ctuInfo != NULL)
+            curFrame->m_encData->destroySEAIntegralBuffers();
+            if (curFrame->m_ctuInfo != nullptr)
             {
                 uint32_t widthInCU = (curFrame->m_param->sourceWidth + curFrame->m_param->maxCUSize - 1) >> curFrame->m_param->maxLog2CUSize;
                 uint32_t heightInCU = (curFrame->m_param->sourceHeight + curFrame->m_param->maxCUSize - 1) >> curFrame->m_param->maxLog2CUSize;
                 uint32_t numCUsInFrame = widthInCU * heightInCU;
                 for (uint32_t i = 0; i < numCUsInFrame; i++)
                 {
-                    X265_FREE((*curFrame->m_ctuInfo + i)->ctuInfo);
-                    (*curFrame->m_ctuInfo + i)->ctuInfo = NULL;
+                    X265_FREE(curFrame->m_ctuInfo[i].ctuInfo);
+                    curFrame->m_ctuInfo[i].ctuInfo = nullptr;
                 }
-                X265_FREE(*curFrame->m_ctuInfo);
-                *(curFrame->m_ctuInfo) = NULL;
                 X265_FREE(curFrame->m_ctuInfo);
-                curFrame->m_ctuInfo = NULL;
+                curFrame->m_ctuInfo = nullptr;
                 X265_FREE(curFrame->m_prevCtuInfoChange);
-                curFrame->m_prevCtuInfoChange = NULL;
+                curFrame->m_prevCtuInfoChange = nullptr;
             }
-            curFrame->m_encData = NULL;
-            for (int i = 0; i < !!curFrame->m_param->bEnableSCC + 1; i++)
-                curFrame->m_reconPic[i] = NULL;
+            curFrame->m_encData = nullptr;
+            const int reconPicCount = curFrame->m_param->bEnableSCC ? 2 : 1;
+            for (int i = 0; i < reconPicCount; i++)
+                curFrame->m_reconPic[i] = nullptr;
         }
     }
 }
@@ -222,7 +215,7 @@ void DPB::prepareEncode(Frame *newFrame)
 
     uint32_t maxDecBuffer = (slice->m_sps->maxDecPicBuffering[newFrame->m_tempLayer] >= 8 && slice->m_param->bEnableSCC) ? 7 : slice->m_sps->maxDecPicBuffering[newFrame->m_tempLayer];
     computeRPS(pocCurr, newFrame->m_tempLayer, slice->isIRAP(), &slice->m_rps, maxDecBuffer, layer);
-    bool isTSAPic = ((slice->m_nalUnitType == 2) || (slice->m_nalUnitType == 3)) ? true : false;
+    bool isTSAPic = (slice->m_nalUnitType == 2) || (slice->m_nalUnitType == 3);
     // Mark pictures in m_piclist as unreferenced if they are not included in RPS
     applyReferencePictureSet(&slice->m_rps, pocCurr, newFrame->m_tempLayer, isTSAPic, layer);
 
@@ -300,7 +293,7 @@ void DPB::prepareEncode(Frame *newFrame)
     else
         slice->m_numRefIdx[0] = X265_MIN(newFrame->m_param->maxNumReferences, numRef); // Ensuring L0 contains just the -ve POC
 #if ENABLE_MULTIVIEW || ENABLE_SCC_EXT
-    if(slice->m_param->numViews > 1 || !!slice->m_param->bEnableSCC)
+    if (slice->m_param->numViews > 1 || slice->m_param->bEnableSCC != 0)
         slice->m_numRefIdx[1] = X265_MIN(newFrame->m_param->bBPyramid ? 3 : 2, slice->m_rps.numberOfPositivePictures + newFrame->refPicSetInterLayer0.size() + newFrame->refPicSetInterLayer1.size());
     else
 #endif

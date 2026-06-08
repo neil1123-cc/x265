@@ -24,7 +24,7 @@
 #if defined(ENABLE_PPA)
 
 #include "ppa.h"
-#include <stdlib.h>
+#include <cstdlib>
 
 #define PPA_REGISTER_CPU_EVENT2GROUP(x, y) # x, # y,
 #define CPU_EVENT(x) PPA_REGISTER_CPU_EVENT2GROUP(x, NoGroup)
@@ -93,12 +93,12 @@ void initializePPA(void)
         return;
     }
 
-    atexit(_ppaReleaseAtExit);
+    std::atexit(_ppaReleaseAtExit);
 }
 
 #else /* linux & unix & cygwin */
 #include <dlfcn.h>
-#include <stdio.h>
+#include <cstdio>
 
 #if defined(_M_X64) || defined(__x86_64__) || defined(__amd64__)
 # define PPA_LIB_NAME "libppa64.so"
@@ -110,14 +110,14 @@ void initializePPA(void)
 {
     if (ppabase)
     {
-        printf("PPA: already initialized\n");
+        std::printf("PPA: already initialized\n");
         return;
     }
 
     void *_ppaDllHandle = dlopen(PPA_LIB_NAME, RTLD_LAZY);
     if (!_ppaDllHandle)
     {
-        printf("PPA: Unable to load %s\n", PPA_LIB_NAME);
+        std::printf("PPA: Unable to load %s\n", PPA_LIB_NAME);
         return;
     }
 
@@ -126,7 +126,7 @@ void initializePPA(void)
 
     if (!_pfuncPpaInit || !_pfuncPpaRelease)
     {
-        printf("PPA: Function bindings failed\n");
+        std::printf("PPA: Function bindings failed\n");
         dlclose(_ppaDllHandle);
         return;
     }
@@ -134,12 +134,12 @@ void initializePPA(void)
     ppabase = _pfuncPpaInit(PPACpuAndGroup, PPACpuGroupNums);
     if (!ppabase)
     {
-        printf("PPA: Init failed\n");
+        std::printf("PPA: Init failed\n");
         dlclose(_ppaDllHandle);
         return;
     }
 
-    atexit(_ppaReleaseAtExit);
+    std::atexit(_ppaReleaseAtExit);
 }
 
 #endif /* !_WIN32 */

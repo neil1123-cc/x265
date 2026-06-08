@@ -26,30 +26,39 @@
 #include "search.h"
 #include "threadedme.h"
 
+#include <algorithm>
+#include <cstring>
+#include <new>
+
 using namespace X265_NS;
 
-FrameData::FrameData()
-{
-    memset(this, 0, sizeof(*this));
-}
+FrameData::FrameData() = default;
 
 bool FrameData::create(const x265_param& param, const SPS& sps, int csp)
 {
+    bool isallocated = false;
     m_param = &param;
-    m_slice  = new Slice;
+    m_slice  = new (std::nothrow) Slice;
+    if (!m_slice)
+        return false;
+
     if (m_param->bThreadedME)
     {
         uint32_t numCUs = sps.numCuInWidth * sps.numCuInHeight;
         uint32_t totalPUs = numCUs * MAX_NUM_PUS_PER_CTU;
         m_slice->m_ctuMV = X265_MALLOC(MEData, totalPUs);
+        if (!m_slice->m_ctuMV)
+            goto fail;
     }
 
-    m_picCTU = new CUData[sps.numCUsInFrame];
+    m_picCTU = new (std::nothrow) CUData[sps.numCUsInFrame];
+    if (!m_picCTU)
+        goto fail;
     m_picCsp = csp;
     m_spsrpsIdx = -1;
     if (param.rc.bStatWrite)
         m_spsrps = const_cast<RPS*>(sps.spsrps);
-    bool isallocated = m_cuMemPool.create(0, param.internalCsp, sps.numCUsInFrame, param);
+    isallocated = m_cuMemPool.create(0, param.internalCsp, sps.numCUsInFrame, param);
     if (m_param->bDynamicRefine)
     {
         CHECKED_MALLOC_ZERO(m_cuMemPool.dynRefineRdBlock, uint64_t, MAX_NUM_DYN_REFINE * sps.numCUsInFrame);
@@ -70,58 +79,80 @@ bool FrameData::create(const x265_param& param, const SPS& sps, int csp)
         }
     }
     else
-        return false;
+        goto fail;
     CHECKED_MALLOC_ZERO(m_cuStat, RCStatCU, sps.numCUsInFrame + 1);
     CHECKED_MALLOC(m_rowStat, RCStatRow, sps.numCuInHeight);
     reinit(sps);
     
     for (int i = 0; i < INTEGRAL_PLANE_NUM; i++)
     {
-        m_meBuffer[i] = NULL;
-        m_meIntegral[i] = NULL;
+        m_meBuffer[i] = nullptr;
+        m_meIntegral[i] = nullptr;
     }
     return true;
 
 fail:
+    destroy();
     return false;
 }
 
 void FrameData::reinit(const SPS& sps)
 {
-    memset(m_cuStat, 0, sps.numCUsInFrame * sizeof(*m_cuStat));
-    memset(m_rowStat, 0, sps.numCuInHeight * sizeof(*m_rowStat));
+    std::fill_n(m_cuStat, sps.numCUsInFrame, RCStatCU());
+    std::fill_n(m_rowStat, sps.numCuInHeight, RCStatRow());
+    if (m_param->bThreadedME)
+    {
+        uint32_t totalPUs = sps.numCuInWidth * sps.numCuInHeight * MAX_NUM_PUS_PER_CTU;
+        const MV zeroMV(0, 0);
+        const MEData resetMEData = { { zeroMV, zeroMV }, { zeroMV, zeroMV }, { 0, 0 }, { REF_NOT_VALID, REF_NOT_VALID }, 0, 0 };
+        std::fill_n(m_slice->m_ctuMV, totalPUs, resetMEData);
+    }
     if (m_param->bDynamicRefine)
     {
-        memset(m_picCTU->m_collectCURd, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint64_t));
-        memset(m_picCTU->m_collectCUVariance, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint32_t));
-        memset(m_picCTU->m_collectCUCount, 0, MAX_NUM_DYN_REFINE * sps.numCUsInFrame * sizeof(uint32_t));
+        std::fill_n(m_picCTU->m_collectCURd, MAX_NUM_DYN_REFINE * sps.numCUsInFrame, uint64_t(0));
+        std::fill_n(m_picCTU->m_collectCUVariance, MAX_NUM_DYN_REFINE * sps.numCUsInFrame, uint32_t(0));
+        std::fill_n(m_picCTU->m_collectCUCount, MAX_NUM_DYN_REFINE * sps.numCUsInFrame, uint32_t(0));
+    }
+}
+
+void FrameData::destroySEAIntegralBuffers()
+{
+    for (int i = 0; i < INTEGRAL_PLANE_NUM; i++)
+    {
+        if (m_meBuffer[i] != nullptr)
+        {
+            X265_FREE(m_meBuffer[i]);
+            m_meBuffer[i] = nullptr;
+        }
+        m_meIntegral[i] = nullptr;
     }
 }
 
 void FrameData::destroy()
 {
     delete [] m_picCTU;
+    m_picCTU = nullptr;
 
-    X265_FREE(m_slice->m_ctuMV);
-    delete m_slice;
+    if (m_slice)
+    {
+        X265_FREE(m_slice->m_ctuMV);
+        delete m_slice;
+        m_slice = nullptr;
+    }
     delete m_saoParam;
+    m_saoParam = nullptr;
 
     m_cuMemPool.destroy();
 
-    if (m_param->bDynamicRefine)
+    if (m_param && m_param->bDynamicRefine)
     {
         X265_FREE(m_cuMemPool.dynRefineRdBlock);
         X265_FREE(m_cuMemPool.dynRefCntBlock);
         X265_FREE(m_cuMemPool.dynRefVarBlock);
     }
     X265_FREE(m_cuStat);
+    m_cuStat = nullptr;
     X265_FREE(m_rowStat);
-    for (int i = 0; i < INTEGRAL_PLANE_NUM; i++)
-    {
-        if (m_meBuffer[i] != NULL)
-        {
-            X265_FREE(m_meBuffer[i]);
-            m_meBuffer[i] = NULL;
-        }
-    }
+    m_rowStat = nullptr;
+    destroySEAIntegralBuffers();
 }

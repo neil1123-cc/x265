@@ -4,6 +4,7 @@
 #include "input.h"
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <avisynth/avisynth_c.h>
 
 #if _WIN32
@@ -68,8 +69,8 @@ class AVSInput : public InputFile
 protected:
     bool b_fail {false};
     bool b_eof {false};
-    avs_hnd_t handle;
-    avs_hnd_t* h;
+    avs_hnd_t handle {};
+    avs_hnd_t* h {&handle};
     size_t frame_size {0};
     uint8_t* frame_buffer {nullptr};
     char real_filename[BUFFER_SIZE] {0};
@@ -98,14 +99,11 @@ protected:
 public:
     AVSInput(InputFileInfo& info)
     {
-        h = &handle;
-        memset(h, 0, sizeof(handle));
-
-        const char * filename_pos = strstr(info.filename, "]://");
+        const char * filename_pos = std::strstr(info.filename, "]://");
         if(info.filename[0] == '[' && filename_pos) {
             char real_libname[BUFFER_SIZE] {0};
-            strncpy(real_libname, info.filename + 1, BUFFER_SIZE - 1);
-            strncpy(real_filename, filename_pos + 4, BUFFER_SIZE - 1);
+            std::snprintf(real_libname, sizeof(real_libname), "%s", info.filename + 1);
+            std::snprintf(real_filename, sizeof(real_filename), "%s", filename_pos + 4);
             real_libname[filename_pos - info.filename - 1] = 0;
             #if _WIN32
                 if(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, real_libname, -1, libname_buffer, sizeof(libname_buffer)/sizeof(wchar_t))) {
@@ -117,16 +115,16 @@ public:
                     return;
                 }
             #else
-                strncpy(libname_buffer, real_libname, BUFFER_SIZE);
+                std::snprintf(libname_buffer, sizeof(libname_buffer), "%s", real_libname);
                 libname = libname_buffer;
             #endif
             general_log(nullptr, "avs+", X265_LOG_INFO, "Using external AviSynth+ library from %s\n", real_libname);
         }
         else {
-            strncpy(real_filename, info.filename, BUFFER_SIZE - 1);
+            std::snprintf(real_filename, sizeof(real_filename), "%s", info.filename);
         }
         load_avs();
-        if (!h->library)
+        if (!h->library || !h->env)
         {
             b_fail = true;
             return;

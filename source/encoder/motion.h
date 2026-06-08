@@ -74,7 +74,7 @@ public:
 
     static void initScales();
     static int hpelIterationCount(int subme);
-    void init(int csp);
+    bool init(int csp);
 
     /* Methods called at slice setup */
     void setSourcePU(pixel *fencY, intptr_t stride, intptr_t offset, int pwidth, int pheight, const int searchMethod, const int subpelRefine);

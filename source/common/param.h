@@ -38,7 +38,43 @@ void  setParamAspectRatio(x265_param *p, int width, int height);
 void  getParamAspectRatio(x265_param *p, int& width, int& height);
 bool  parseLambdaFile(x265_param *param);
 void x265_copy_params(x265_param* dst, x265_param* src);
+void x265_copy_params_writeonly(x265_param* dst, x265_param* src);
+bool isAllocatedParamInstance(const x265_param* param);
 bool parseMaskingStrength(x265_param* p, const char* value);
+static inline x265_zone* preserveNoResetZonefileZonesShared(x265_param* dst, const x265_param* src, int& zonefileCount)
+{
+    zonefileCount = 0;
+    if (dst && src && dst->rc.zones && dst->rc.zonefileCount && !dst->bResetZoneConfig &&
+        src->rc.zonefileCount == dst->rc.zonefileCount && !src->bResetZoneConfig)
+    {
+        zonefileCount = dst->rc.zonefileCount;
+        return dst->rc.zones;
+    }
+
+    return nullptr;
+}
+static inline void restoreNoResetZonefileZonesShared(x265_param* dst, x265_zone* zones, int zonefileCount)
+{
+    if (!zones)
+        return;
+
+    dst->rc.zones = zones;
+    dst->rc.zoneCount = 0;
+    dst->rc.zonefileCount = zonefileCount;
+}
+static inline void resetZoneParamDetachedState(x265_param* zoneParam)
+{
+    if (!zoneParam)
+        return;
+
+    zoneParam->logfn = nullptr;
+    zoneParam->pgfn = nullptr;
+    zoneParam->rc.zones = nullptr;
+    zoneParam->rc.zoneCount = 0;
+    zoneParam->rc.zonefileCount = 0;
+}
+/* Callers that overwrite zoneParam with src must restore any owned SVT storage before finalizing. */
+void finalizeZoneParamCopy(x265_param* zoneParam, const x265_param* src);
 
 /* this table is kept internal to avoid confusion, since log level indices start at -1 */
 static const char * const logLevelNames[] = { "none", "error", "warning", "info", "debug", "full", 0 };

@@ -25,6 +25,8 @@
 #include "common.h"
 #include "md5.h"
 
+#include <cstring>
+
 namespace X265_NS {
 // private x265 namespace
 
@@ -90,10 +92,10 @@ void MD5Update(MD5Context *ctx, uint8_t *buf, uint32_t len)
         t = 64 - t;
         if (len < t)
         {
-            memcpy(p, buf, len);
+            std::memcpy(p, buf, len);
             return;
         }
-        memcpy(p, buf, t);
+        std::memcpy(p, buf, t);
         byteReverse(ctx->in, 16);
         MD5Transform(ctx->buf, (uint32_t*)ctx->in);
         buf += t;
@@ -103,7 +105,7 @@ void MD5Update(MD5Context *ctx, uint8_t *buf, uint32_t len)
 
     while (len >= 64)
     {
-        memcpy(ctx->in, buf, 64);
+        std::memcpy(ctx->in, buf, 64);
         byteReverse(ctx->in, 16);
         MD5Transform(ctx->buf, (uint32_t*)ctx->in);
         buf += 64;
@@ -112,7 +114,7 @@ void MD5Update(MD5Context *ctx, uint8_t *buf, uint32_t len)
 
     /* Handle any remaining bytes of data. */
 
-    memcpy(ctx->in, buf, len);
+    std::memcpy(ctx->in, buf, len);
 }
 
 /*
@@ -139,17 +141,17 @@ void MD5Final(MD5Context *ctx, uint8_t *digest)
     if (count < 8)
     {
         /* Two lots of padding:  Pad the first block to 64 bytes */
-        memset(p, 0, count);
+        std::fill_n(p, count, uint8_t(0));
         byteReverse(ctx->in, 16);
         MD5Transform(ctx->buf, (uint32_t*)ctx->in);
 
         /* Now fill the next block with 56 bytes */
-        memset(ctx->in, 0, 56);
+        std::fill_n(ctx->in, 56, uint8_t(0));
     }
     else
     {
         /* Pad block to 56 bytes */
-        memset(p, 0, count - 8);
+        std::fill_n(p, count - 8, uint8_t(0));
     }
     byteReverse(ctx->in, 14);
 
@@ -161,9 +163,9 @@ void MD5Final(MD5Context *ctx, uint8_t *digest)
 
     MD5Transform(ctx->buf, (uint32_t*)ctx->in);
     byteReverse((uint8_t*)ctx->buf, 4);
-    memcpy(digest, ctx->buf, 16);
+    std::memcpy(digest, ctx->buf, 16);
 
-    memset(ctx, 0, sizeof(*ctx));        /* In case it's sensitive */
+    std::fill_n(reinterpret_cast<uint8_t*>(ctx), sizeof(*ctx), uint8_t(0)); /* In case it's sensitive */
 }
 
 /* The four core functions - F1 is optimized somewhat */

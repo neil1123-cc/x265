@@ -37,6 +37,8 @@
 #include "entropy.h"
 #include "motion.h"
 
+#include <algorithm>
+
 #if DETAILED_CU_STATS
 #define ProfileCUScopeNamed(name, cu, acc, count) \
     m_stats[cu.m_encData->m_frameEncoderID].count++; \
@@ -71,7 +73,7 @@ struct RQTData
     Entropy  rqtRoot;      /* residual quad-tree start context */
     Entropy  rqtTemp;      /* residual quad-tree temp context */
     Entropy  rqtTest;      /* residual quad-tree test context */
-    coeff_t* coeffRQT[3];  /* coeff storage for entire CTU for each RQT layer */
+    coeff_t* coeffRQT[3] = {};  /* coeff storage for entire CTU for each RQT layer */
     Yuv      reconQtYuv;   /* recon storage for entire CTU for each RQT layer (intra) */
     ShortYuv resiQtYuv;    /* residual storage for entire CTU for each RQT layer (inter) */
     
@@ -79,6 +81,16 @@ struct RQTData
     ShortYuv tmpResiYuv;
     Yuv      tmpPredYuv;
     Yuv      bidirPredYuv[2];
+
+    RQTData()
+    {
+#if CHECKED_BUILD || _DEBUG
+        cur.markInvalid();
+        rqtRoot.markInvalid();
+        rqtTemp.markInvalid();
+        rqtTest.markInvalid();
+#endif
+    }
 };
 
 struct MotionData
@@ -91,10 +103,7 @@ struct MotionData
     uint32_t mvCost;
     uint32_t cost;
 
-    MotionData()
-    {
-        memset(this, 0, sizeof(MotionData));
-    }
+    MotionData() : mv(0), mvp(0), mvpIdx(0), ref(0), bits(0), mvCost(0), cost(0) {}
 };
 
 struct Mode
@@ -204,7 +213,20 @@ struct CUStats
 
     void clear()
     {
-        memset(this, 0, sizeof(*this));
+        std::fill_n(intraRDOElapsedTime, NUM_CU_DEPTH, int64_t(0));
+        std::fill_n(interRDOElapsedTime, NUM_CU_DEPTH, int64_t(0));
+        std::fill_n(skippedMotionReferences, NUM_CU_DEPTH, uint32_t(0));
+        std::fill_n(totalMotionReferences, NUM_CU_DEPTH, uint32_t(0));
+        std::fill_n(skippedIntraCU, NUM_CU_DEPTH, uint32_t(0));
+        std::fill_n(totalIntraCU, NUM_CU_DEPTH, uint32_t(0));
+        std::fill_n(countIntraRDO, NUM_CU_DEPTH, uint64_t(0));
+        std::fill_n(countInterRDO, NUM_CU_DEPTH, uint64_t(0));
+        intraAnalysisElapsedTime = motionEstimationElapsedTime = loopFilterElapsedTime = 0;
+        pmeTime = pmeBlockTime = pmodeTime = pmodeBlockTime = 0;
+        weightAnalyzeTime = totalCTUTime = tmeTime = 0;
+        countIntraAnalysis = countMotionEstimate = countLoopFilter = 0;
+        countPMETasks = countPMEMasters = countPModeTasks = countPModeMasters = 0;
+        countWeightAnalyze = countTmeTasks = countTmeBlockedCTUs = totalCTUs = 0;
     }
 
     void accumulate(CUStats& other, x265_param& param)
@@ -357,10 +379,10 @@ public:
      * and stores results into per-CTU MV slots addressed by finalIdx/puOffset.
      */
     void puMotionEstimation(const Slice* slice, const CUGeom& cuGeom, CUData& ctu, PicYuv* fencPic, int puOffset, PartSize part, int areaIdx, int finalIdx, 
-        bool isMVP ,  const int* neighborIdx = NULL);
+        bool isMVP ,  const int* neighborIdx = nullptr);
  
 #if ENABLE_SCC_EXT
-    void      predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChromaMC, uint32_t masks[2], MV* iMVCandList = NULL);
+    void      predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChromaMC, uint32_t masks[2], MV* iMVCandList = nullptr);
     bool      predIntraBCSearch(Mode& intraBCMode, const CUGeom& cuGeom, bool bChromaMC, PartSize ePartSize, bool testOnlyPred, bool bUse1DSearchFor8x8, IBC& ibc);
     void      intraBlockCopyEstimate(Mode& intraBCMode, const CUGeom& cuGeom, int puIdx, MV* pred, MV& mv, uint32_t& cost, bool testOnlyPred, bool bUse1DSearchFor8x8, IBC& ibc);
     void      setIntraSearchRange(Mode& intraBCMode, MV& pred, int puIdx, int roiWidth, int roiHeight, MV& searchRangeLT, MV& searchRangeRB);
@@ -441,6 +463,23 @@ protected:
         uint32_t bestTransformMode[NUM_SUBPART][MAX_NUM_COMPONENT][2];
         uint8_t cbfFlag[NUM_SUBPART][MAX_NUM_COMPONENT][2];
         Entropy rqtStore[NUM_SUBPART];
+
+        TUInfoCache() { clear(); }
+
+        void clear()
+        {
+            for (int i = 0; i < NUM_SUBPART; i++)
+            {
+                cost[i] = Cost();
+                rqtStore[i] = Entropy();
+#if CHECKED_BUILD || _DEBUG
+                rqtStore[i].markInvalid();
+#endif
+            }
+
+            std::fill_n(&bestTransformMode[0][0][0], NUM_SUBPART * MAX_NUM_COMPONENT * 2, uint32_t(0));
+            std::fill_n(&cbfFlag[0][0][0], NUM_SUBPART * MAX_NUM_COMPONENT * 2, uint8_t(0));
+        }
     } m_cacheTU;
 
     uint64_t estimateNullCbfCost(sse_t dist, uint32_t energy, uint32_t tuDepth, TextType compId);
@@ -463,10 +502,10 @@ protected:
     /* output of mergeEstimation, best merge candidate */
     struct MergeData
     {
-        MVField  mvField[2];
-        uint32_t dir;
-        uint32_t index;
-        uint32_t bits;
+        MVField  mvField[2] = {};
+        uint32_t dir = 0;
+        uint32_t index = 0;
+        uint32_t bits = 0;
     };
 
     /* inter/ME helper functions */

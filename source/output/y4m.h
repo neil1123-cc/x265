@@ -25,7 +25,7 @@
 #define X265_Y4M_H
 
 #include "output.h"
-#include <fstream>
+#include <cstdio>
 
 namespace X265_NS {
 // private x265 namespace
@@ -42,15 +42,19 @@ protected:
 
     int colorSpace;
 
-    uint32_t frameSize;
+    uint64_t frameSize;
 
     int inputDepth;
 
-    std::ofstream ofs;
+    FILE* ofs;
 
-    std::ofstream::pos_type header;
+    uint64_t header;
 
     char *buf;
+
+    bool failed;
+
+    bool finalized;
 
     void writeHeader();
 
@@ -62,7 +66,9 @@ public:
 
     const char *getName() const                   { return "y4m"; }
 
-    bool isFail() const                           { return ofs.fail(); }
+    bool isFail() const                           { return failed; }
+
+    bool finalize();
 
     void release()                                { delete this; }
 

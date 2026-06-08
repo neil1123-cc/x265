@@ -22,6 +22,9 @@
  * For more information, contact us at license @ x265.com.
  *****************************************************************************/
 #include "raw.h"
+
+#include <cstdio>
+#include <cstring>
 #if _WIN32
 #include <io.h>
 #include <fcntl.h>
@@ -31,11 +34,10 @@
 #endif
 
 using namespace X265_NS;
-using namespace std;
 RAWOutput::RAWOutput(const char* fname, InputFileInfo&)
 {
     b_fail = false;
-    if (!strcmp(fname, "-"))
+    if (!std::strcmp(fname, "-"))
     {
         ofs = stdout;
 #if _WIN32
@@ -44,8 +46,18 @@ RAWOutput::RAWOutput(const char* fname, InputFileInfo&)
         return;
     }
     ofs = x265_fopen(fname, "wb");
-    if (!ofs || ferror(ofs))
+    if (!ofs)
         b_fail = true;
+    else if (std::ferror(ofs))
+    {
+        bool closeFailed = std::ferror(ofs) != 0;
+        if (std::fclose(ofs))
+            closeFailed = true;
+        if (closeFailed)
+            x265_log(nullptr, X265_LOG_WARNING, "raw: unable to close output file after open failure\n");
+        ofs = nullptr;
+        b_fail = true;
+    }
 }
 
 void RAWOutput::setParam(x265_param* param)
@@ -55,11 +67,22 @@ void RAWOutput::setParam(x265_param* param)
 
 int RAWOutput::writeHeaders(const x265_nal* nal, uint32_t nalcount)
 {
+    if (b_fail || !ofs)
+    {
+        b_fail = true;
+        return -1;
+    }
+
     uint32_t bytes = 0;
 
     for (uint32_t i = 0; i < nalcount; i++)
     {
-        fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
+        size_t written = std::fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
+        if (written != nal->sizeBytes || std::ferror(ofs))
+        {
+            b_fail = true;
+            return -1;
+        }
         bytes += nal->sizeBytes;
         nal++;
     }
@@ -69,11 +92,22 @@ int RAWOutput::writeHeaders(const x265_nal* nal, uint32_t nalcount)
 
 int RAWOutput::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture&)
 {
+    if (b_fail || !ofs)
+    {
+        b_fail = true;
+        return -1;
+    }
+
     uint32_t bytes = 0;
 
     for (uint32_t i = 0; i < nalcount; i++)
     {
-        fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
+        size_t written = std::fwrite((const void*)nal->payload, 1, nal->sizeBytes, ofs);
+        if (written != nal->sizeBytes || std::ferror(ofs))
+        {
+            b_fail = true;
+            return -1;
+        }
         bytes += nal->sizeBytes;
         nal++;
     }
@@ -83,6 +117,22 @@ int RAWOutput::writeFrame(const x265_nal* nal, uint32_t nalcount, x265_picture&)
 
 void RAWOutput::closeFile(int64_t, int64_t)
 {
-    if (ofs != stdout)
-        fclose(ofs);
+    if (!ofs)
+    {
+        b_fail = true;
+        return;
+    }
+
+    bool closeFailed = false;
+    if (ofs == stdout)
+        closeFailed = std::fflush(ofs) || std::ferror(ofs);
+    else
+    {
+        closeFailed = std::ferror(ofs) != 0;
+        if (std::fclose(ofs))
+            closeFailed = true;
+    }
+    if (closeFailed)
+        b_fail = true;
+    ofs = nullptr;
 }

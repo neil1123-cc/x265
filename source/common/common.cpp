@@ -26,6 +26,11 @@
 #include "threading.h"
 #include "x265.h"
 
+#include <cmath>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+
 #if _WIN32
 #include <sys/types.h>
 #include <sys/timeb.h>
@@ -49,7 +54,7 @@ int64_t x265_mdate(void)
     return ((int64_t)tb.time * 1000 + (int64_t)tb.millitm) * 1000;
 #else
     struct timeval tv_date;
-    gettimeofday(&tv_date, NULL);
+    gettimeofday(&tv_date, nullptr);
     return (int64_t)tv_date.tv_sec * 1000000 + (int64_t)tv_date.tv_usec;
 #endif
 }
@@ -81,12 +86,12 @@ void *x265_malloc(size_t size)
     if (posix_memalign((void**)&ptr, X265_ALIGNBYTES, size) == 0)
         return ptr;
     else
-        return NULL;
+        return nullptr;
 }
 
 void x265_free(void *ptr)
 {
-    if (ptr) free(ptr);
+    if (ptr) std::free(ptr);
 }
 
 #endif // if _WIN32
@@ -133,20 +138,34 @@ void general_log(const x265_param* param, const char* caller, int level, const c
     }
 
     if (caller)
-        p += snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
+        p += std::snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
     va_list arg;
     va_start(arg, fmt);
-    vsnprintf(buffer + p, bufferSize - p, fmt, arg);
+    std::vsnprintf(buffer + p, bufferSize - p, fmt, arg);
     va_end(arg);
     if (!param || level <= param->logLevel)
-        fputs(buffer, stderr);
+        std::fputs(buffer, stderr);
     if (param && param->logfn && level <= param->logfLevel)
     {
         FILE* fp = x265_fopen(param->logfn, "ab");
         if (fp)
         {
-            fputs(buffer, fp);
-            fclose(fp);
+            if (std::ferror(fp))
+            {
+                bool closeFailed = std::ferror(fp) != 0;
+                if (std::fclose(fp))
+                    closeFailed = true;
+                if (closeFailed)
+                    std::fputs("x265 [warning]: unable to close log file after open failure\n", stderr);
+            }
+            else
+            {
+                bool closeFailed = std::fputs(buffer, fp) == EOF || std::ferror(fp);
+                if (std::fclose(fp))
+                    closeFailed = true;
+                if (closeFailed)
+                    std::fputs("x265 [warning]: unable to finalize log file state\n", stderr);
+            }
         }
     }
 }
@@ -185,10 +204,10 @@ void general_log_file(const x265_param* param, const char* caller, int level, co
     }
 
     if (caller)
-        p += snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
+        p += std::snprintf(buffer, sizeof(buffer), "%-4s [%s]: ", caller, log_level);
     va_list arg;
     va_start(arg, fmt);
-    vsnprintf(buffer + p, bufferSize - p, fmt, arg);
+    std::vsnprintf(buffer + p, bufferSize - p, fmt, arg);
     va_end(arg);
 
     if (!(param && level > param->logLevel))
@@ -200,10 +219,10 @@ void general_log_file(const x265_param* param, const char* caller, int level, co
             wchar_t buf_utf16[bufferSize];
             int length_utf16 = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, buf_utf16, sizeof(buf_utf16) / sizeof(wchar_t)) - 1;
             if (length_utf16 > 0)
-                WriteConsoleW(console, buf_utf16, length_utf16, &mode, NULL);
+                WriteConsoleW(console, buf_utf16, length_utf16, &mode, nullptr);
         }
         else
-            fputs(buffer, stderr);
+            std::fputs(buffer, stderr);
     }
 }
 
@@ -216,7 +235,7 @@ FILE* x265_fopen(const char* fileName, const char* mode)
     {
         return _wfopen(buf_utf16, mode_utf16);
     }
-    return NULL;
+    return nullptr;
 }
 
 int x265_unlink(const char* fileName)
@@ -249,7 +268,7 @@ double x265_ssim2dB(double ssim)
     if (inv_ssim <= 0.0000000001) /* Max 100dB */
         return 100;
 
-    return -10.0 * log10(inv_ssim);
+    return -10.0 * std::log10(inv_ssim);
 }
 
 /* The qscale - qp conversion is specified in the standards.
@@ -261,7 +280,7 @@ double x265_qScale2qp(double qScale)
 
 double x265_qp2qScale(double qp)
 {
-    return 0.85 * pow(2.0, (qp - 12.0) / 6.0);
+    return 0.85 * std::pow(2.0, (qp - 12.0) / 6.0);
 }
 
 uint32_t x265_picturePlaneSize(int csp, int width, int height, int plane)
@@ -274,49 +293,76 @@ uint32_t x265_picturePlaneSize(int csp, int width, int height, int plane)
 char* x265_slurp_file(const char *filename)
 {
     if (!filename)
-        return NULL;
+        return nullptr;
 
     int bError = 0;
-    size_t fSize;
-    char *buf = NULL;
+    size_t fSize = 0;
+    long fileSize = 0;
+    char *buf = nullptr;
 
     FILE *fh = x265_fopen(filename, "rb");
     if (!fh)
     {
-        x265_log_file(NULL, X265_LOG_ERROR, "unable to open file %s\n", filename);
-        return NULL;
+        x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\n", filename);
+        return nullptr;
+    }
+    else if (std::ferror(fh))
+    {
+        bool closeFailed = std::ferror(fh) != 0;
+        if (std::fclose(fh))
+            closeFailed = true;
+        if (closeFailed)
+            x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after open failure\n", filename);
+        x265_log_file(nullptr, X265_LOG_ERROR, "unable to open file %s\n", filename);
+        return nullptr;
     }
 
-    bError |= fseek(fh, 0, SEEK_END) < 0;
-    bError |= (fSize = ftell(fh)) <= 0;
-    bError |= fseek(fh, 0, SEEK_SET) < 0;
+    bError |= std::fseek(fh, 0, SEEK_END) < 0;
+    fileSize = std::ftell(fh);
+    bError |= fileSize <= 0;
+    if (!bError)
+    {
+        bError |= (uint64_t)fileSize > (uint64_t)SIZE_MAX - 2;
+        if (!bError)
+            fSize = (size_t)fileSize;
+    }
+    bError |= std::fseek(fh, 0, SEEK_SET) < 0;
     if (bError)
         goto error;
 
     buf = X265_MALLOC(char, fSize + 2);
     if (!buf)
     {
-        x265_log(NULL, X265_LOG_ERROR, "unable to allocate memory\n");
+        x265_log(nullptr, X265_LOG_ERROR, "unable to allocate memory\n");
         goto error;
     }
 
-    bError |= fread(buf, 1, fSize, fh) != fSize;
-    if (buf[fSize - 1] != '\n')
+    size_t readBytes = std::fread(buf, 1, fSize, fh);
+    bError |= readBytes != fSize;
+    if (!bError && buf[fSize - 1] != '\n')
         buf[fSize++] = '\n';
-    buf[fSize] = 0;
-    fclose(fh);
+    if (!bError)
+        buf[fSize] = 0;
+    bool closeFailed = std::ferror(fh) != 0;
+    if (std::fclose(fh))
+        closeFailed = true;
+    bError |= closeFailed;
 
     if (bError)
     {
-        x265_log(NULL, X265_LOG_ERROR, "unable to read the file\n");
+        x265_log(nullptr, X265_LOG_ERROR, "unable to read the file\n");
         X265_FREE(buf);
-        buf = NULL;
+        buf = nullptr;
     }
     return buf;
 
 error:
-    fclose(fh);
-    return NULL;
+    bool closeFailed = std::ferror(fh) != 0;
+    if (std::fclose(fh))
+        closeFailed = true;
+    if (closeFailed)
+        x265_log_file(nullptr, X265_LOG_WARNING, "unable to close file %s after read failure\n", filename);
+    return nullptr;
 }
 
 }

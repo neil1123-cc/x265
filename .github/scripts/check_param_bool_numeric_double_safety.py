@@ -6,6 +6,7 @@ from pathlib import Path
 TARGET = Path('source/common/param.cpp')
 REQUIRED_SNIPPETS = (
     'static bool parseBoolOrNumericDouble(const char* value, double falseValue, double& parsedValue)',
+    'bLocalError = false;\n    double doubleValue = x265_atof(value, bLocalError);',
     'double doubleValue = x265_atof(value, bLocalError);',
     'if (!bLocalError && std::isfinite(doubleValue))',
     'parsedValue = doubleValue;',
@@ -40,6 +41,8 @@ def check_repo(repo_root):
         failures.append((TARGET.as_posix(), 0, 'forbidden param bool-or-numeric-double regression: return !bLocalError;'))
     if 'parsedValue = x265_atof(value, bLocalError);' in function_text:
         failures.append((TARGET.as_posix(), 0, 'forbidden param bool-or-numeric-double regression: helper must not write parsedValue before double parse succeeds'))
+    if 'bLocalError = false;\n    double doubleValue = x265_atof(value, bLocalError);' not in function_text:
+        failures.append((TARGET.as_posix(), 0, 'forbidden param bool-or-numeric-double regression: helper must reset bLocalError before double parse'))
     if 'bError |= !parseBoolOrNumericDouble(value, 0.0, p->psyRd);' in text:
         failures.append((TARGET.as_posix(), 0, 'forbidden param bool-or-numeric-double regression: missing psy-rd true-text rejection'))
     if 'bError |= !parseBoolOrNumericDouble(value, 0.0, p->psyRdoq);' in text:

@@ -32,6 +32,7 @@
 #include "x265cli.h"
 
 #include <atomic>
+#include <queue>
 
 namespace X265_NS {
     // private namespace
@@ -39,6 +40,7 @@ namespace X265_NS {
     class PassEncoder;
     class Scaler;
     class Reader;
+    class ReconPlay;
 
     class AbrEncoder
     {
@@ -46,6 +48,7 @@ namespace X265_NS {
         uint8_t           m_numEncodes;
         int               m_numInputViews; // Number of inputs for multiview-extension
         PassEncoder        **m_passEnc;
+        CLIOptions        *m_clioptArray;
         uint32_t           m_queueSize;
         ThreadSafeInteger  m_numActiveEncodes;
         // Temporary duplicated param for free the analysis info, unnecessary free here
@@ -104,13 +107,24 @@ namespace X265_NS {
         int init(int &result);
         void setReuseLevel();
 
-        void startThreads();
+        bool startThreads();
         void copyInfo(x265_analysis_data *src);
+        bool handleEncodedOutput(uint32_t numEncoded, x265_picture* pic_recon, x265_picture pic_out[],
+                                 ReconPlay* reconPlay, x265_analysis_data* analysisInfo,
+                                 x265_nal* p_nal, uint32_t nal, uint32_t& outFrameCount,
+                                 std::priority_queue<int64_t>* pts_queue, bool isAbrSave);
 
         bool readPicture(x265_picture*, int view);
         void destroy();
 
     private:
+        bool prepareAnalysisCopySlot(int index, x265_analysis_data* srcAnalysis, x265_analysis_data*& dstAnalysis);
+        void commitAnalysisCopy(int index);
+        bool copyIntraAnalysis(x265_analysis_data* dstAnalysis, const x265_analysis_data* srcAnalysis);
+        bool copyInterAnalysis(x265_analysis_data* dstAnalysis, const x265_analysis_data* srcAnalysis);
+        void copyInputPictureState(x265_picture* dstPic, const x265_picture* srcPic);
+        bool loadAnalysisData(int ipread, int& ipwrite, int& readPos, x265_analysis_data*& resultData);
+        int selectAnalysisWriteIndex(uint32_t written);
         void threadMain();
     };
 
@@ -126,6 +140,7 @@ namespace X265_NS {
         ThreadSafeInteger m_scaledWriteCnt;
         VideoDesc* m_srcFormat;
         VideoDesc* m_dstFormat;
+        bool m_initOk;
         std::atomic<bool> m_threadActive;
         ScalerFilterManager* m_filterManager;
 
@@ -138,6 +153,16 @@ namespace X265_NS {
             {
                 delete m_filterManager;
                 m_filterManager = nullptr;
+            }
+            if (m_srcFormat)
+            {
+                delete m_srcFormat;
+                m_srcFormat = nullptr;
+            }
+            if (m_dstFormat)
+            {
+                delete m_dstFormat;
+                m_dstFormat = nullptr;
             }
         }
     };

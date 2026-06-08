@@ -29,6 +29,7 @@
 #include "common.h"
 #include "sei.h"
 #include "ringmem.h"
+#include <atomic>
 
 namespace X265_NS {
 // encoder namespace
@@ -66,61 +67,61 @@ struct HRDTiming
 
 struct RateControlEntry
 {
-    Predictor  rowPreds[3][2];
-    Predictor* rowPred[2];
+    Predictor  rowPreds[3][2] = {};
+    Predictor* rowPred[2] = {};
 
-    int64_t currentSatd;
-    int64_t lastSatd;      /* Contains the picture cost of the previous frame, required for resetAbr and VBV */
-    int64_t leadingNoBSatd;
-    int64_t rowTotalBits;  /* update cplxrsum and totalbits at the end of 2 rows */
-    double  blurredComplexity;
-    double  qpaRc;
-    double  qpAq;
-    double  qRceq;
-    double  qpPrev;
-    double  frameSizePlanned;  /* frame Size decided by RateCotrol before encoding the frame */
-    double  bufferRate;
-    double  movingAvgSum;
-    double  rowCplxrSum;
-    double  qpNoVbv;
-    double  bufferFill;
-    double  bufferFillFinal;
-    double  bufferFillActual;
-    double  targetFill;
-    bool    vbvEndAdj;
-    double  frameDuration;
-    double  clippedDuration;
-    double  frameSizeEstimated; /* hold frameSize, updated from cu level vbv rc */
-    double  frameSizeMaximum;   /* max frame Size according to minCR restrictions and level of the video */
-    int     sliceType;
-    int     bframes;
-    int     poc;
-    int     encodeOrder;
-    bool    bLastMiniGopBFrame;
-    bool    isActive;
-    double  amortizeFrames;
-    double  amortizeFraction;
-    int  remainingVbvEndFrames;
+    int64_t currentSatd = 0;
+    int64_t lastSatd = 0;      /* Contains the picture cost of the previous frame, required for resetAbr and VBV */
+    int64_t leadingNoBSatd = 0;
+    int64_t rowTotalBits = 0;  /* update cplxrsum and totalbits at the end of 2 rows */
+    double  blurredComplexity = 0.0;
+    double  qpaRc = 0.0;
+    double  qpAq = 0.0;
+    double  qRceq = 0.0;
+    double  qpPrev = 0.0;
+    double  frameSizePlanned = 0.0;  /* frame Size decided by RateCotrol before encoding the frame */
+    double  bufferRate = 0.0;
+    double  movingAvgSum = 0.0;
+    double  rowCplxrSum = 0.0;
+    double  qpNoVbv = 0.0;
+    double  bufferFill = 0.0;
+    double  bufferFillFinal = 0.0;
+    double  bufferFillActual = 0.0;
+    double  targetFill = 0.0;
+    bool    vbvEndAdj = false;
+    double  frameDuration = 0.0;
+    double  clippedDuration = 0.0;
+    double  frameSizeEstimated = 0.0; /* hold frameSize, updated from cu level vbv rc */
+    double  frameSizeMaximum = 0.0;   /* max frame Size according to minCR restrictions and level of the video */
+    int     sliceType = 0;
+    int     bframes = 0;
+    int     poc = 0;
+    int     encodeOrder = 0;
+    bool    bLastMiniGopBFrame = false;
+    bool    isActive = false;
+    double  amortizeFrames = 0.0;
+    double  amortizeFraction = 0.0;
+    int     remainingVbvEndFrames = 0;
     /* Required in 2-pass rate control */
-    uint64_t expectedBits; /* total expected bits up to the current frame (current one excluded) */
-    double   iCuCount;
-    double   pCuCount;
-    double   skipCuCount;
-    double   expectedVbv;
-    double   qScale;
-    double   newQScale;
-    double   newQp;
-    int      mvBits;
-    int      miscBits;
-    int      coeffBits;
-    bool     keptAsRef;
-    bool     scenecut;
-    bool     isIdr;
-    SEIPictureTiming *picTimingSEI;
-    HRDTiming        *hrdTiming;
-    int      rpsIdx;
-    RPS      rpsData;
-    bool     isFadeEnd;
+    uint64_t expectedBits = 0; /* total expected bits up to the current frame (current one excluded) */
+    double   iCuCount = 0.0;
+    double   pCuCount = 0.0;
+    double   skipCuCount = 0.0;
+    double   expectedVbv = 0.0;
+    double   qScale = 0.0;
+    double   newQScale = 0.0;
+    double   newQp = 0.0;
+    int      mvBits = 0;
+    int      miscBits = 0;
+    int      coeffBits = 0;
+    bool     keptAsRef = false;
+    bool     scenecut = false;
+    bool     isIdr = false;
+    SEIPictureTiming *picTimingSEI = nullptr;
+    HRDTiming        *hrdTiming = nullptr;
+    int      rpsIdx = 0;
+    RPS      rpsData{};
+    bool     isFadeEnd = false;
 };
 
 class RateControl
@@ -226,7 +227,7 @@ public:
      * rceEnd    11 */
     ThreadSafeInteger m_startEndOrder;
     int     m_finalFrameCount;   /* set when encoder begins flushing */
-    bool    m_bTerminated;       /* set true when encoder is closing */
+    std::atomic<bool> m_bTerminated;       /* set true when encoder is closing */
 
     /* hrd stuff */
     SEIBufferingPeriod m_bufPeriodSEI;
@@ -324,8 +325,8 @@ protected:
     bool   findUnderflow(double *fills, int *t0, int *t1, int over, int framesCount);
     bool   fixUnderflow(int t0, int t1, double adjustment, double qscaleMin, double qscaleMax);
     double tuneQScaleForGrain(double rcOverflow);
-    void   splitdeltaPOC(char deltapoc[], RateControlEntry *rce);
-    void   splitbUsed(char deltapoc[], RateControlEntry *rce);
+    bool   splitdeltaPOC(const char deltapoc[], RateControlEntry *rce);
+    bool   splitbUsed(const char bused[], RateControlEntry *rce);
     void   checkAndResetCRF(RateControlEntry* rce);
 };
 }

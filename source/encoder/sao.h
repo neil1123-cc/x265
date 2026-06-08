@@ -109,9 +109,9 @@ public:
     void createFromRootNode(SAO *root);
     void destroy(int destoryCommon);
 
-    void allocSaoParam(SAOParam* saoParam) const;
+    bool allocSaoParam(SAOParam* saoParam) const;
 
-    void startSlice(Frame* pic, Entropy& initState);
+    bool startSlice(Frame* pic, Entropy& initState);
     void resetStats();
 
     // CTU-based SAO process without slice granularity

@@ -9,10 +9,11 @@
 
 #include "mp4.h"
 
-#include <inttypes.h>
-#include <limits.h>
-#include <stdio.h>
-#include <string.h>
+#include <cinttypes>
+#include <climits>
+#include <cstdio>
+#include <cstring>
+#include <new>
 #include <vector>
 
 using namespace X265_NS;
@@ -453,7 +454,7 @@ void MP4Muxer::resetRuntimeState()
     m_timebaseNum = 0;
     m_timebaseDenom = 0;
     m_maxTemporalId = 0;
-    memset(&m_fileParam, 0, sizeof(m_fileParam));
+    m_fileParam = lsmash_file_parameters_t();
     m_fileOpen = false;
     m_brands.fill(static_cast<lsmash_brand_type>(0));
     m_movieTimescale = 0;
@@ -576,7 +577,8 @@ void MP4Muxer::cleanupHandle()
     {
         if (m_fileOpen)
         {
-            lsmash_close_file(&m_fileParam);
+            if (lsmash_close_file(&m_fileParam) < 0)
+                m_fail = true;
             m_fileOpen = false;
         }
         lsmash_destroy_root(m_root);
@@ -598,8 +600,8 @@ void MP4Muxer::sign()
         return;
 
     char text[128];
-    snprintf(text, sizeof(text), "x265 %s %s using L-SMASH from vimeo/l-smash", x265_version_str, X265_OUTPUT_BITS);
-    int length = (int)strlen(text);
+    std::snprintf(text, sizeof(text), "x265 %s %s using L-SMASH from vimeo/l-smash", x265_version_str, X265_OUTPUT_BITS);
+    int length = (int)std::strlen(text);
     lsmash_box_type_t type = lsmash_form_iso_box_type(LSMASH_4CC('f', 'r', 'e', 'e'));
     lsmash_box_t* freeBox = lsmash_create_box(type, (uint8_t*)text, length, LSMASH_BOX_PRECEDENCE_N);
     if (!freeBox)
@@ -629,7 +631,15 @@ bool MP4Muxer::init(const char* fname, const InputFileInfo& info)
         m_fail = true;
         return false;
     }
-    fclose(fh);
+    bool closeFailed = std::ferror(fh) != 0;
+    if (std::fclose(fh))
+        closeFailed = true;
+    if (closeFailed)
+    {
+        MP4_LOG_ERROR("cannot finalize output file preflight `%s'.\n", fname);
+        m_fail = true;
+        return false;
+    }
 
     m_root = lsmash_create_root();
     if (!m_root)
@@ -966,14 +976,14 @@ bool MP4Muxer::configureParameterSets(const x265_nal* nal, uint32_t nalcount)
             return failSeiAssembly("SEI payload too large for MP4 sample assembly.\n");
 
         newSeiSize = (uint32_t)seiTotalSize;
-        newSeiBuffer = new uint8_t[newSeiSize];
+        newSeiBuffer = new (std::nothrow) uint8_t[newSeiSize];
         if (!newSeiBuffer)
             return failSeiAssembly("failed to allocate sei transition buffer.\n");
 
         uint8_t* dst = newSeiBuffer;
         for (uint32_t i = seiOffset; i < nalcount; i++)
         {
-            memcpy(dst, nal[i].payload, nal[i].sizeBytes);
+            std::memcpy(dst, nal[i].payload, nal[i].sizeBytes);
             dst += nal[i].sizeBytes;
         }
     }
@@ -1202,7 +1212,7 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     uint8_t* out = outSample->data;
     if (m_seiBuffer)
     {
-        memcpy(out, m_seiBuffer, m_seiSize);
+        std::memcpy(out, m_seiBuffer, m_seiSize);
         out += m_seiSize;
         clearBufferedSeiState();
     }
@@ -1210,7 +1220,7 @@ int MP4Muxer::writeSample(const ContainerSample& sample)
     {
         if (shouldOmitNalFromHvc1Sample(sample.nal[i].type))
             continue;
-        memcpy(out, sample.nal[i].payload, sample.nal[i].sizeBytes);
+        std::memcpy(out, sample.nal[i].payload, sample.nal[i].sizeBytes);
         out += sample.nal[i].sizeBytes;
     }
 

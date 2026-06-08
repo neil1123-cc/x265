@@ -36,7 +36,7 @@ static inline bool have_feature(const char *feature)
 {
     int64_t feature_present = 0;
     size_t size = sizeof(feature_present);
-    if (sysctlbyname(feature, &feature_present, &size, NULL, 0) != 0)
+    if (sysctlbyname(feature, &feature_present, &size, nullptr, 0) != 0)
     {
         return false;
     }

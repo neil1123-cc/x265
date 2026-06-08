@@ -38,7 +38,30 @@ namespace X265_NS {
 
 struct ReferencePlanes
 {
-    ReferencePlanes() { memset(this, 0, sizeof(ReferencePlanes)); }
+    ReferencePlanes()
+        : reconPic(nullptr)
+        , isWeighted(false)
+        , isLowres(false)
+        , isHMELowres(false)
+        , lumaStride(0)
+        , chromaStride(0)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            fpelPlane[i] = nullptr;
+            fpelLowerResPlane[i] = nullptr;
+            w[i].weight = 0;
+            w[i].offset = 0;
+            w[i].shift = 0;
+            w[i].round = 0;
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            lowresPlane[i] = nullptr;
+            lowerResPlane[i] = nullptr;
+        }
+    }
 
     pixel*   fpelPlane[3];
     pixel*   lowresPlane[4];
@@ -162,93 +185,93 @@ struct PicQPAdaptationLayer
 /* lowres buffers, sizes and strides */
 struct Lowres : public ReferencePlanes
 {
-    pixel *buffer[4];
-    pixel *lowerResBuffer[4]; // Level-0 buffer
+    pixel *buffer[4] = {};
+    pixel *lowerResBuffer[4] = {}; // Level-0 buffer
 
-    int    frameNum;         // Presentation frame number
-    int    sliceType;        // Slice type decided by lookahead
-    int    sliceTypeReq;     // Slice type required as per the QP file
-    int    width;            // width of lowres frame in pixels
-    int    lines;            // height of lowres frame in pixel lines
-    int    leadingBframes;   // number of leading B frames for P or I
+    int    frameNum = 0;                // Presentation frame number
+    int    sliceType = X265_TYPE_AUTO;  // Slice type decided by lookahead
+    int    sliceTypeReq = X265_TYPE_AUTO; // Slice type required as per the QP file
+    int    width = 0;                   // width of lowres frame in pixels
+    int    lines = 0;                   // height of lowres frame in pixel lines
+    int    leadingBframes = 0;          // number of leading B frames for P or I
 
-    bool   bScenecut;        // Set to false if the frame cannot possibly be part of a real scenecut.
-    bool   bKeyframe;
-    bool   bLastMiniGopBFrame;
-    bool   bIsFadeEnd;
+    bool   bScenecut = false;        // Set to false if the frame cannot possibly be part of a real scenecut.
+    bool   bKeyframe = false;
+    bool   bLastMiniGopBFrame = false;
+    bool   bIsFadeEnd = false;
 
-    double ipCostRatio;
+    double ipCostRatio = 0.0;
 
     /* lookahead output data */
-    int64_t   costEst[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2];
-    int64_t   costEstAq[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2];
-    int32_t*  rowSatds[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2];
-    int       intraMbs[X265_BFRAME_MAX + 2];
-    int32_t*  intraCost;
-    uint8_t*  intraMode;
-    int64_t   satdCost;
-    uint16_t* lowresCostForRc;
-    uint16_t* lowresCosts[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2];
-    int32_t*  lowresMvCosts[2][X265_BFRAME_MAX + 2];
-    MV*       lowresMvs[2][X265_BFRAME_MAX + 2];
-    MV*       lowresMcstfMvs[2][4];
-    uint32_t  maxBlocksInRow;
-    uint32_t  maxBlocksInCol;
-    uint32_t  maxBlocksInRowFullRes;
-    uint32_t  maxBlocksInColFullRes;
+    int64_t   costEst[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2] = {};
+    int64_t   costEstAq[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2] = {};
+    int32_t*  rowSatds[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2] = {};
+    int       intraMbs[X265_BFRAME_MAX + 2] = {};
+    int32_t*  intraCost = nullptr;
+    uint8_t*  intraMode = nullptr;
+    int64_t   satdCost = 0;
+    uint16_t* lowresCostForRc = nullptr;
+    uint16_t* lowresCosts[X265_BFRAME_MAX + 2][X265_BFRAME_MAX + 2] = {};
+    int32_t*  lowresMvCosts[2][X265_BFRAME_MAX + 2] = {};
+    MV*       lowresMvs[2][X265_BFRAME_MAX + 2] = {};
+    MV*       lowresMcstfMvs[2][4] = {};
+    uint32_t  maxBlocksInRow = 0;
+    uint32_t  maxBlocksInCol = 0;
+    uint32_t  maxBlocksInRowFullRes = 0;
+    uint32_t  maxBlocksInColFullRes = 0;
 
     /* Hierarchical Motion Estimation */
-    bool      bEnableHME;
-    int32_t*  lowerResMvCosts[2][X265_BFRAME_MAX + 2];
-    MV*       lowerResMvs[2][X265_BFRAME_MAX + 2];
+    bool      bEnableHME = false;
+    int32_t*  lowerResMvCosts[2][X265_BFRAME_MAX + 2] = {};
+    MV*       lowerResMvs[2][X265_BFRAME_MAX + 2] = {};
 
     /* used for vbvLookahead */
-    int       plannedType[X265_LOOKAHEAD_MAX + 1];
-    int64_t   plannedSatd[X265_LOOKAHEAD_MAX + 1];
-    int       indB;
-    int       bframes;
+    int       plannedType[X265_LOOKAHEAD_MAX + 1] = {};
+    int64_t   plannedSatd[X265_LOOKAHEAD_MAX + 1] = {};
+    int       indB = 0;
+    int       bframes = 0;
 
     /* rate control / adaptive quant data */
-    double*   qpAqOffset;      // AQ QP offset values for each 16x16 CU
-    double*   qpCuTreeOffset;  // cuTree QP offset values for each 16x16 CU
-    double*   qpAqMotionOffset;
-    int*      invQscaleFactor;    // qScale values for qp Aq Offsets
-    int*      invQscaleFactor8x8; // temporary buffer for qg-size 8
-    uint32_t* blockVariance;
-    uint64_t  wp_ssd[3];       // This is different than SSDY, this is sum(pixel^2) - sum(pixel)^2 for entire frame
-    uint64_t  wp_sum[3];
-    double    frameVariance;
-    int*      edgeInclined;
+    double*   qpAqOffset = nullptr;      // AQ QP offset values for each 16x16 CU
+    double*   qpCuTreeOffset = nullptr;  // cuTree QP offset values for each 16x16 CU
+    double*   qpAqMotionOffset = nullptr;
+    int*      invQscaleFactor = nullptr;    // qScale values for qp Aq Offsets
+    int*      invQscaleFactor8x8 = nullptr; // temporary buffer for qg-size 8
+    uint32_t* blockVariance = nullptr;
+    uint64_t  wp_ssd[3] = {};       // This is different than SSDY, this is sum(pixel^2) - sum(pixel)^2 for entire frame
+    uint64_t  wp_sum[3] = {};
+    double    frameVariance = 0.0;
+    int*      edgeInclined = nullptr;
 
 
     /* cutree intermediate data */
-    PicQPAdaptationLayer* pAQLayer;
-    uint32_t maxAQDepth;
-    uint32_t widthFullRes;
-    uint32_t heightFullRes;
-    uint32_t m_maxCUSize;
-    uint32_t m_qgSize;
+    PicQPAdaptationLayer* pAQLayer = nullptr;
+    uint32_t maxAQDepth = 0;
+    uint32_t widthFullRes = 0;
+    uint32_t heightFullRes = 0;
+    uint32_t m_maxCUSize = 0;
+    uint32_t m_qgSize = 0;
 
-    uint16_t* propagateCost;
-    double    weightedCostDelta[X265_BFRAME_MAX + 2];
+    uint16_t* propagateCost = nullptr;
+    double    weightedCostDelta[X265_BFRAME_MAX + 2] = {};
     ReferencePlanes weightedRef[X265_BFRAME_MAX + 2];
 
     /* For hist-based scenecut */
-    int          quarterSampleLowResWidth;     // width of 1/4 lowres frame in pixels
-    int          quarterSampleLowResHeight;    // height of 1/4 lowres frame in pixels
-    int          quarterSampleLowResStrideY;
-    int          quarterSampleLowResOriginX;
-    int          quarterSampleLowResOriginY;
-    pixel       *quarterSampleLowResBuffer;
-    bool         bHistScenecutAnalyzed;
+    int          quarterSampleLowResWidth = 0;     // width of 1/4 lowres frame in pixels
+    int          quarterSampleLowResHeight = 0;    // height of 1/4 lowres frame in pixels
+    int          quarterSampleLowResStrideY = 0;
+    int          quarterSampleLowResOriginX = 0;
+    int          quarterSampleLowResOriginY = 0;
+    pixel       *quarterSampleLowResBuffer = nullptr;
+    bool         bHistScenecutAnalyzed = false;
 
-    uint16_t     picAvgVariance;
-    uint16_t     picAvgVarianceCb;
-    uint16_t     picAvgVarianceCr;
+    uint16_t     picAvgVariance = 0;
+    uint16_t     picAvgVarianceCb = 0;
+    uint16_t     picAvgVarianceCr = 0;
 
-    uint32_t ****picHistogram;
-    uint64_t     averageIntensityPerSegment[NUMBER_OF_SEGMENTS_IN_WIDTH][NUMBER_OF_SEGMENTS_IN_HEIGHT][3];
-    uint8_t      averageIntensity[3];
+    uint32_t ****picHistogram = nullptr;
+    uint64_t     averageIntensityPerSegment[NUMBER_OF_SEGMENTS_IN_WIDTH][NUMBER_OF_SEGMENTS_IN_HEIGHT][3] = {};
+    uint8_t      averageIntensity[3] = {};
 
     bool create(x265_param* param, PicYuv *origPic, uint32_t qgSize);
     void destroy(x265_param* param);

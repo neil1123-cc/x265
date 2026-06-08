@@ -652,9 +652,12 @@ int main() {
     if (CC_HAS_NO_ARRAY_BOUNDS)
         x265_add_definitions(-Wno-array-bounds) # these are unhelpful
     endif()
+    set(FSANITIZE "" CACHE STRING "-fsanitize options for GCC/clang")
     check_cxx_compiler_flag(-ffast-math CC_HAS_FAST_MATH) 
-    if (CC_HAS_FAST_MATH)
+    if (CC_HAS_FAST_MATH AND NOT FSANITIZE)
         x265_add_definitions(-ffast-math)
+    elseif(CC_HAS_FAST_MATH)
+        message(STATUS "Skipping -ffast-math because FSANITIZE is enabled")
     endif()
     if (NOT (ARM64 OR CROSS_COMPILE_ARM64 OR RISCV64 OR CROSS_COMPILE_RISCV64))
         check_cxx_compiler_flag(-mstackrealign CC_HAS_STACK_REALIGN)
@@ -667,7 +670,6 @@ int main() {
     if(CC_HAS_FNO_EXCEPTIONS_FLAG)
         x265_add_definitions(-fno-exceptions)
     endif()
-    set(FSANITIZE "" CACHE STRING "-fsanitize options for GCC/clang")
     if(FSANITIZE)
         x265_add_definitions(-fsanitize=${FSANITIZE})
         # clang and gcc need the sanitize options to be passed at link

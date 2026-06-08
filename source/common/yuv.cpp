@@ -34,9 +34,9 @@ using namespace X265_NS;
 
 Yuv::Yuv()
 {
-    m_buf[0] = NULL;
-    m_buf[1] = NULL;
-    m_buf[2] = NULL;
+    m_buf[0] = nullptr;
+    m_buf[1] = nullptr;
+    m_buf[2] = nullptr;
 }
 
 bool Yuv::create(uint32_t size, int csp)
@@ -51,7 +51,7 @@ bool Yuv::create(uint32_t size, int csp)
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < MAX_NUM_REF; j++)
             for (int k = 0; k < INTEGRAL_PLANE_NUM; k++)
-                m_integral[i][j][k] = NULL;
+                m_integral[i][j][k] = nullptr;
 
     if (csp == X265_CSP_I400)
     {

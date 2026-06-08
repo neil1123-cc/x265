@@ -42,6 +42,8 @@
 #include "nal.h"
 #include "temporalfilter.h"
 #include "threadedme.h"
+
+#include <algorithm>
 #include <atomic>
 #include <queue>
 #include <vector>
@@ -68,7 +70,14 @@ struct StatisticLog
 
     StatisticLog()
     {
-        memset(this, 0, sizeof(StatisticLog));
+        std::fill_n(cntInter, 4, uint64_t(0));
+        std::fill_n(cntIntra, 4, uint64_t(0));
+        std::fill_n(&cuInterDistribution[0][0], 4 * INTER_MODES, uint64_t(0));
+        std::fill_n(&cuIntraDistribution[0][0], 4 * INTRA_MODES, uint64_t(0));
+        std::fill_n(cntSkipCu, 4, uint64_t(0));
+        std::fill_n(cntTotalCu, 4, uint64_t(0));
+        cntIntraNxN = 0;
+        totalCu = 0;
     }
 };
 
@@ -113,7 +122,7 @@ struct CTURow
         avgQPComputed = false;
         sliceId = sid;
         reEncode = 0;
-        memset(&rowStats, 0, sizeof(rowStats));
+        rowStats.clear();
         rowGoOnCoder.load(initContext);
     }
 };
@@ -332,8 +341,8 @@ protected:
     void collectDynDataFrame(int layer);
     void computeAvgTrainingData(int layer);
     void collectDynDataRow(CUData& ctu, FrameStats* rowStats);    
-    void readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgrain);
-    void readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FILE* Aomfilmgrain);
+    bool readModel(FilmGrainCharacteristics* m_filmGrain, FILE* filmgrain);
+    bool readAomModel(AomFilmGrainCharacteristics* m_aomFilmGrain, FILE* Aomfilmgrain);
 };
 }
 

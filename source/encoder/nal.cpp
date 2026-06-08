@@ -26,14 +26,16 @@
 #include "bitstream.h"
 #include "nal.h"
 
+#include <cstring>
+
 using namespace X265_NS;
 
 NALList::NALList()
     : m_numNal(0)
-    , m_buffer(NULL)
+    , m_buffer(nullptr)
     , m_occupancy(0)
     , m_allocSize(0)
-    , m_extraBuffer(NULL)
+    , m_extraBuffer(nullptr)
     , m_extraOccupancy(0)
     , m_extraAllocSize(0)
     , m_annexB(true)
@@ -41,20 +43,34 @@ NALList::NALList()
 
 void NALList::takeContents(NALList& other)
 {
+    const uint32_t otherAllocSize = other.m_allocSize;
+
     /* take other NAL buffer, discard our old one */
     X265_FREE(m_buffer);
     m_buffer = other.m_buffer;
-    m_allocSize = other.m_allocSize;
+    m_allocSize = otherAllocSize;
     m_occupancy = other.m_occupancy;
 
     /* copy packet data */
     m_numNal = other.m_numNal;
-    memcpy(m_nal, other.m_nal, sizeof(x265_nal) * m_numNal);
+    std::memcpy(m_nal, other.m_nal, sizeof(x265_nal) * m_numNal);
 
     /* reset other list, re-allocate their buffer with same size */
     other.m_numNal = 0;
     other.m_occupancy = 0;
-    other.m_buffer = X265_MALLOC(uint8_t, m_allocSize);
+    other.m_buffer = nullptr;
+    other.m_allocSize = 0;
+    if (otherAllocSize)
+    {
+        uint8_t* newBuffer = X265_MALLOC(uint8_t, otherAllocSize);
+        if (newBuffer)
+        {
+            other.m_buffer = newBuffer;
+            other.m_allocSize = otherAllocSize;
+        }
+        else
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to realloc access unit buffer\n");
+    }
 }
 
 void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerId, uint8_t temporalID)
@@ -72,11 +88,14 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
         uint8_t *temp = X265_MALLOC(uint8_t, nextSize);
         if (temp)
         {
-            memcpy(temp, m_buffer, m_occupancy);
+            if (m_occupancy)
+            {
+                std::memcpy(temp, m_buffer, m_occupancy);
 
-            /* fixup existing payload pointers */
-            for (uint32_t i = 0; i < m_numNal; i++)
-                m_nal[i].payload = temp + (m_nal[i].payload - m_buffer);
+                /* fixup existing payload pointers */
+                for (uint32_t i = 0; i < m_numNal; i++)
+                    m_nal[i].payload = temp + (m_nal[i].payload - m_buffer);
+            }
 
             X265_FREE(m_buffer);
             m_buffer = temp;
@@ -84,7 +103,7 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
         }
         else
         {
-            x265_log(NULL, X265_LOG_ERROR, "Unable to realloc access unit buffer\n");
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to realloc access unit buffer\n");
             return;
         }
     }
@@ -99,12 +118,12 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
     }
     else if (!m_numNal || nalUnitType == NAL_UNIT_VPS || nalUnitType == NAL_UNIT_SPS || nalUnitType == NAL_UNIT_PPS || nalUnitType == NAL_UNIT_UNSPECIFIED)
     {
-        memcpy(out, startCodePrefix, 4);
+        std::memcpy(out, startCodePrefix, 4);
         bytes += 4;
     }
     else
     {
-        memcpy(out, startCodePrefix + 1, 3);
+        std::memcpy(out, startCodePrefix + 1, 3);
         bytes += 3;
     }
 
@@ -140,7 +159,7 @@ void NALList::serialize(NalUnitType nalUnitType, const Bitstream& bs, int layerI
     if (m_extraOccupancy)
     {
         /* these bytes were escaped by serializeSubstreams */
-        memcpy(out + bytes, m_extraBuffer, m_extraOccupancy);
+        std::memcpy(out + bytes, m_extraBuffer, m_extraOccupancy);
         bytes += m_extraOccupancy;
         m_extraOccupancy = 0;
     }
@@ -192,7 +211,7 @@ uint32_t NALList::serializeSubstreams(uint32_t* streamSizeBytes, uint32_t stream
         }
         else
         {
-            x265_log(NULL, X265_LOG_ERROR, "Unable to realloc WPP substream concatenation buffer\n");
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to realloc WPP substream concatenation buffer\n");
             return 0;
         }
     }

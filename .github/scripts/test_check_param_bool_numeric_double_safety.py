@@ -12,6 +12,7 @@ NORMALIZED_PROBES = (
     'missing param bool-or-numeric-double guardrail: function definition',
     'forbidden param bool-or-numeric-double regression: return !bLocalError;',
     'forbidden param bool-or-numeric-double regression: helper must not write parsedValue before double parse succeeds',
+    'forbidden param bool-or-numeric-double regression: helper must reset bLocalError before double parse',
     'forbidden param bool-or-numeric-double regression: missing psy-rd true-text rejection',
     'forbidden param bool-or-numeric-double regression: missing psy-rdoq true-text rejection',
     'missing param bool-or-numeric-double guardrail: ',
@@ -54,10 +55,25 @@ def main():
             {
                 'source/common/param.cpp': '\n'.join((
                     'static bool parseBoolOrNumericDouble(const char* value, double falseValue, double& parsedValue)',
-                    'double doubleValue = x265_atof(value, bLocalError);',
-                    'if (!bLocalError && std::isfinite(doubleValue))',
-                    'parsedValue = doubleValue;',
-                    'return false;',
+                    '{',
+                    '    bool bLocalError = false;',
+                    '    int boolValue = x265_atobool(value, bLocalError);',
+                    '    if (!bLocalError && !boolValue)',
+                    '    {',
+                    '        parsedValue = falseValue;',
+                    '        return true;',
+                    '    }',
+                    '',
+                    '    bLocalError = false;',
+                    '    double doubleValue = x265_atof(value, bLocalError);',
+                    '    if (!bLocalError && std::isfinite(doubleValue))',
+                    '    {',
+                    '        parsedValue = doubleValue;',
+                    '        return true;',
+                    '    }',
+                    '',
+                    '    return false;',
+                    '}',
                     'OPT("psy-rd")',
                     '{',
                     '    bool bPsyRdTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));',
@@ -95,6 +111,47 @@ def main():
             },
         )
         expect_fail(run_checker(root), 'forbidden param bool-or-numeric-double regression')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        write_targets(
+            root,
+            {
+                'source/common/param.cpp': '\n'.join((
+                    'static bool parseBoolOrNumericDouble(const char* value, double falseValue, double& parsedValue)',
+                    '{',
+                    '    bool bLocalError = false;',
+                    '    int boolValue = x265_atobool(value, bLocalError);',
+                    '    if (!bLocalError && !boolValue)',
+                    '    {',
+                    '        parsedValue = falseValue;',
+                    '        return true;',
+                    '    }',
+                    '    double doubleValue = x265_atof(value, bLocalError);',
+                    '    if (!bLocalError && std::isfinite(doubleValue))',
+                    '    {',
+                    '        parsedValue = doubleValue;',
+                    '        return true;',
+                    '    }',
+                    '    return false;',
+                    '}',
+                    'OPT("psy-rd")',
+                    '{',
+                    '    bool bPsyRdTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));',
+                    '    bError |= !parseBoolOrNumericDouble(value, 0.0, p->psyRd)',
+                    '           || bPsyRdTextualTrue;',
+                    '}',
+                    'OPT("psy-rdoq")',
+                    '{',
+                    '    bool bPsyRdoqTextualTrue = value && (!strcasecmp(value, "true") || !strcasecmp(value, "yes"));',
+                    '    bError |= !parseBoolOrNumericDouble(value, 0.0, p->psyRdoq)',
+                    '           || bPsyRdoqTextualTrue;',
+                    '}',
+                    'static bool parseMaskingStrengthTriples(const char* value, int expectedTriples, int window[], double refQpDelta[], double nonRefQpDelta[])',
+                )) + '\n',
+            },
+        )
+        expect_fail(run_checker(root), 'helper must reset bLocalError before double parse')
 
     print('Param bool-or-numeric-double safety tests passed')
 

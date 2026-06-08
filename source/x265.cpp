@@ -28,15 +28,21 @@
 #include "x265.h"
 #include "x265cli.h"
 #include "abrEncApp.h"
+#include "param.h"
 
 #if HAVE_VLD
 /* Visual Leak Detector */
 #include <vld.h>
 #endif
 
-#include <signal.h>
-#include <errno.h>
+#include <csignal>
+#include <cerrno>
+#include <utility>
 #include <fcntl.h>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <string>
 #include <ostream>
@@ -67,17 +73,17 @@ static int get_argv_utf8(int *argc_ptr, char ***argv_ptr)
         int size = offset;
 
         for (int i = 0; i < argc; i++)
-            size += WideCharToMultiByte(CP_UTF8, 0, argv_utf16[i], -1, NULL, 0, NULL, NULL);
+            size += WideCharToMultiByte(CP_UTF8, 0, argv_utf16[i], -1, nullptr, 0, nullptr, nullptr);
 
-        char **argv = *argv_ptr = (char**)malloc(size);
+        char **argv = *argv_ptr = (char**)std::malloc(size);
         if (argv)
         {
             for (int i = 0; i < argc; i++)
             {
                 argv[i] = (char*)argv + offset;
-                offset += WideCharToMultiByte(CP_UTF8, 0, argv_utf16[i], -1, argv[i], size - offset, NULL, NULL);
+                offset += WideCharToMultiByte(CP_UTF8, 0, argv_utf16[i], -1, argv[i], size - offset, nullptr, nullptr);
             }
-            argv[argc] = NULL;
+            argv[argc] = nullptr;
             ret = 1;
         }
         LocalFree(argv_utf16);
@@ -113,150 +119,417 @@ static bool checkAbrLadder(int argc, char **argv, FILE **abrConfig)
             {
                 /* getopt_long might have already printed an error message */
                 if (c != 63)
-                    x265_log(NULL, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
+                    x265_log(nullptr, X265_LOG_WARNING, "internal error: short option '%c' has no long option\n", c);
                 return false;
             }
         }
         if (long_options_index < 0)
         {
-            x265_log(NULL, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
+            x265_log(nullptr, X265_LOG_WARNING, "short option '%c' unrecognized\n", c);
             return false;
         }
-        if (!strcmp(long_options[long_options_index].name, "abr-ladder"))
+        if (!std::strcmp(long_options[long_options_index].name, "abr-ladder"))
         {
             *abrConfig = x265_fopen(optarg, "rb");
-            if (!abrConfig)
-                x265_log_file(NULL, X265_LOG_ERROR, "%s abr-ladder config file not found or error in opening zone file\n", optarg);
+            if (!*abrConfig)
+            {
+                x265_log_file(nullptr, X265_LOG_ERROR, "%s abr-ladder config file not found or error in opening config file\n", optarg);
+                return true;
+            }
+            else if (std::ferror(*abrConfig))
+            {
+                bool closeFailed = std::ferror(*abrConfig) != 0;
+                if (std::fclose(*abrConfig))
+                    closeFailed = true;
+                if (closeFailed)
+                    x265_log(nullptr, X265_LOG_WARNING, "Unable to close abr ladder config file after open failure\n");
+                *abrConfig = nullptr;
+                x265_log_file(nullptr, X265_LOG_ERROR, "%s abr-ladder config file not found or error in opening config file\n", optarg);
+                return true;
+            }
             return true;
         }
     }
     return false;
 }
 
-static uint8_t getNumAbrEncodes(FILE* abrConfig)
+static bool getNumAbrEncodes(FILE* abrConfig, uint32_t& numEncodes)
 {
     char line[1024];
-    uint8_t numEncodes = 0;
+    numEncodes = 0;
+    int lineNumber = 0;
 
-    while (fgets(line, sizeof(line), abrConfig))
+    while (std::fgets(line, sizeof(line), abrConfig))
     {
-        if (strcmp(line, "\n") == 0)
+        lineNumber++;
+        if (!validateConfigFileLine(abrConfig, "ABR ladder config", lineNumber, line, sizeof(line)))
+            return false;
+        char* entry = line;
+        while (std::isspace((unsigned char)*entry))
+            entry++;
+        if (*entry == '#' || *entry == '\0' || (std::strcmp(entry, "\r\n") == 0) || (std::strcmp(entry, "\n") == 0))
             continue;
-        else if (!(*line == '#'))
-            numEncodes++;
+        numEncodes++;
     }
-    rewind(abrConfig);
-    return numEncodes;
+    clearerr(abrConfig);
+    if (std::fseek(abrConfig, 0, SEEK_SET))
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "Unable to rewind ABR ladder config\n");
+        return false;
+    }
+    return true;
 }
 
-static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint8_t numEncodes)
+static bool parseAbrHeader(char* header, char** head, int lineNumber)
+{
+    if (!header || header[0] != '[')
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "Missing ABR CLI header at line %d\n", lineNumber);
+        return false;
+    }
+
+    char* headerEnd = std::strchr(header, ']');
+    if (!headerEnd || headerEnd == header + 1 || headerEnd[1] != '\0')
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "Malformed ABR CLI header at line %d\n", lineNumber);
+        return false;
+    }
+
+    *headerEnd = '\0';
+    char* field = header + 1;
+    for (int index = 0; index < X265_HEAD_ENTRIES; index++)
+    {
+        char* separator = (index + 1 < X265_HEAD_ENTRIES) ? std::strchr(field, ':') : nullptr;
+        if (index + 1 < X265_HEAD_ENTRIES)
+        {
+            if (!separator || separator == field)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Incorrect number of arguments in ABR CLI header at line %d\n", lineNumber);
+                return false;
+            }
+            *separator = '\0';
+        }
+        else if (!*field || std::strchr(field, ':'))
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Incorrect number of arguments in ABR CLI header at line %d\n", lineNumber);
+            return false;
+        }
+
+        head[index] = field;
+        field = separator ? separator + 1 : nullptr;
+    }
+
+    return true;
+}
+
+template <typename BeginToken, typename EmitChar, typename EndToken>
+static bool walkAbrConfigArgs(const char* start, int lineNumber, BeginToken&& beginToken, EmitChar&& emitChar, EndToken&& endToken)
+{
+    return walkConfigTokens(start,
+        [&]() -> bool
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Missing ABR CLI arguments at line %d\n", lineNumber);
+            return false;
+        },
+        [&](const char*) -> bool
+        {
+            return beginToken();
+        },
+        [&](const char*, char ch, size_t) -> bool
+        {
+            return emitChar(ch);
+        },
+        [&](const char*, size_t tokenLength) -> bool
+        {
+            return endToken(tokenLength);
+        },
+        [&]() -> bool
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Malformed ABR CLI arguments at line %d\n", lineNumber);
+            return false;
+        },
+        [&]() -> bool
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Malformed ABR CLI arguments at line %d\n", lineNumber);
+            return false;
+        });
+}
+
+static bool measureAbrConfigArgs(const char* start, int& extraArgc, size_t& strPoolSize, int lineNumber)
+{
+    return walkAbrConfigArgs(start, lineNumber,
+        [&]() -> bool
+        {
+            extraArgc++;
+            return true;
+        },
+        [&](char) -> bool
+        {
+            return true;
+        },
+        [&](size_t tokenLength) -> bool
+        {
+            strPoolSize += tokenLength + 1;
+            return true;
+        });
+}
+
+static bool copyAbrConfigArgs(char* start, char** argv, int maxArgs, char* strPool, size_t strPoolSize, int& argc, int lineNumber)
+{
+    if (!start || !argv || !strPool || maxArgs < 2)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "Malformed ABR CLI arguments at line %d\n", lineNumber);
+        return false;
+    }
+
+    char* tokenStart = nullptr;
+    return walkAbrConfigArgs(start, lineNumber,
+        [&]() -> bool
+        {
+            if (argc + 1 >= maxArgs)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "ABR CLI argument count exceeds supported limit at line %d\n", lineNumber);
+                return false;
+            }
+            tokenStart = strPool;
+            return true;
+        },
+        [&](char ch) -> bool
+        {
+            if (!strPoolSize)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "ABR CLI argument buffer exhausted at line %d\n", lineNumber);
+                return false;
+            }
+            *strPool++ = ch;
+            strPoolSize--;
+            return true;
+        },
+        [&](size_t) -> bool
+        {
+            if (tokenStart == strPool || !strPoolSize)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "Malformed ABR CLI arguments at line %d\n", lineNumber);
+                return false;
+            }
+            *strPool++ = '\0';
+            strPoolSize--;
+            argv[argc++] = tokenStart;
+            return true;
+        }) && (argv[argc] = nullptr, true);
+}
+
+static void destroyCliOptionsArray(CLIOptions cliopt[], uint32_t count)
+{
+    if (!cliopt)
+        return;
+
+    for (uint32_t i = 0; i < count; i++)
+        cliopt[i].destroy();
+}
+
+static bool failAbrConfigParse(CLIOptions stagedCliopt[], uint32_t count)
+{
+    destroyCliOptionsArray(stagedCliopt, count);
+    delete[] stagedCliopt;
+    return false;
+}
+
+static bool parseAbrIntValue(const char* token, int& value)
+{
+    bool bError = false;
+    int parsedValue = x265_atoi(token, bError);
+    if (bError || parsedValue < 0)
+        return false;
+
+    value = parsedValue;
+    return true;
+}
+
+struct AbrRefContextState
+{
+    int refId;
+    uint32_t numRefs;
+    uint32_t saveLevel;
+    bool enableScaler;
+};
+
+static bool hasAbrReferenceEncode(const CLIOptions& cliopt)
+{
+    return std::strcmp(cliopt.reuseName, "nil") != 0;
+}
+
+static bool shouldEnableAbrScaler(const CLIOptions& prevCliopt, const CLIOptions& curCliopt)
+{
+    x265_param* prevParam = prevCliopt.param;
+    x265_param* curParam = curCliopt.param;
+    const bool sameInput = prevParam && curParam &&
+        prevCliopt.inputfn[0] && curCliopt.inputfn[0] &&
+        prevCliopt.inputfn[0][0] && curCliopt.inputfn[0][0] &&
+        !std::strcmp(prevCliopt.inputfn[0], curCliopt.inputfn[0]);
+
+    return sameInput &&
+        (prevParam->sourceWidth != curParam->sourceWidth ||
+         prevParam->sourceHeight != curParam->sourceHeight);
+}
+
+static bool parseAbrConfig(FILE* abrConfig, CLIOptions cliopt[], uint32_t numEncodes)
 {
     char line[1024];
     char* argLine;
-
-    char *strPool = (char*)malloc(256 * X265_MAX_STRING_SIZE * sizeof(char));
-    int strPoolSize = 256 * X265_MAX_STRING_SIZE;
-    for (uint32_t i = 0; i < numEncodes; i++)
+    int lineNumber = 0;
+    CLIOptions* stagedCliopt = new CLIOptions[numEncodes];
+    if (!stagedCliopt)
     {
-        char **argv = (char**)malloc(256 * sizeof(char *));
-        cliopt[i].stringPool = (i == 0 ? strPool : NULL);
-        cliopt[i].argString = argv;
-        cliopt[i].orgArgv = NULL;
-        if (fgets(line, sizeof(line), abrConfig) == NULL) {
-            fprintf(stderr, "Error reading line from configuration file.\n");
-            return false;
+        x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate staged ABR config state\n");
+        return false;
+    }
+    for (uint32_t i = 0; i < numEncodes; )
+    {
+        stagedCliopt[i].stringPool = nullptr;
+        stagedCliopt[i].argString = nullptr;
+        stagedCliopt[i].orgArgv = nullptr;
+        if (std::fgets(line, sizeof(line), abrConfig) == nullptr)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Error reading ABR ladder configuration at line %d\n", lineNumber + 1);
+            return failAbrConfigParse(stagedCliopt, i);
         }
-        if (*line == '#' || (strcmp(line, "\r\n") == 0))
+        lineNumber++;
+        if (!validateConfigFileLine(abrConfig, "ABR ladder config", lineNumber, line, sizeof(line)))
+            return failAbrConfigParse(stagedCliopt, i);
+        char* entry = line;
+        while (std::isspace((unsigned char)*entry))
+            entry++;
+        if (*entry == '#' || *entry == '\0' || (std::strcmp(entry, "\r\n") == 0) || (std::strcmp(entry, "\n") == 0))
             continue;
-        int index = (int)strcspn(line, "\r\n");
+        int index = (int)std::strcspn(line, "\r\n");
         line[index] = '\0';
-        argLine = line;
-        char* start = strchr(argLine, ' ');
-        while (isspace((unsigned char)*start)) start++;
-        int argc = 0;
-        // Adding a dummy string to avoid file parsing error
-        argv[argc++] = (char *)"x265";
+        argLine = entry;
+        char* start = argLine;
+        while (*start && !std::isspace((unsigned char)*start))
+            start++;
+        if (!*start)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "Missing ABR CLI arguments at line %d\n", lineNumber);
+            return failAbrConfigParse(stagedCliopt, i + 1);
+        }
+        *start++ = '\0';
 
         /* Parse CLI header to identify the ID of the load encode and the reuse level */
-        char *header = strtok(argLine, "[]");
-        uint32_t idCount = 0;
-        char *id = strtok(header, ":");
         char *head[X265_HEAD_ENTRIES];
-        cliopt[i].encId = i;
-        cliopt[i].isAbrLadderConfig = true;
+        stagedCliopt[i].encId = i;
+        stagedCliopt[i].isAbrLadderConfig = true;
+        if (!parseAbrHeader(argLine, head, lineNumber))
+            return failAbrConfigParse(stagedCliopt, i + 1);
 
-        while (id && (idCount <= X265_HEAD_ENTRIES))
+        bool bError = false;
+        std::snprintf(stagedCliopt[i].encName, X265_MAX_STRING_SIZE, "%s", head[0]);
+        int loadLevel = 0;
+        bError = !parseAbrIntValue(head[1], loadLevel);
+        std::snprintf(stagedCliopt[i].reuseName, X265_MAX_STRING_SIZE, "%s", head[2]);
+        if (bError)
         {
-            head[idCount] = id;
-            id = strtok(NULL, ":");
-            idCount++;
+            x265_log(nullptr, X265_LOG_ERROR, "Invalid ABR CLI load level '%s' at line %d\n", head[1], lineNumber);
+            return failAbrConfigParse(stagedCliopt, i + 1);
         }
-        if (idCount != X265_HEAD_ENTRIES)
+        stagedCliopt[i].loadLevel = loadLevel;
+
+        int extraArgc = 0;
+        size_t strPoolSize = 0;
+        if (!measureAbrConfigArgs(start, extraArgc, strPoolSize, lineNumber))
+            return failAbrConfigParse(stagedCliopt, i + 1);
+
+        const size_t argvCapacity = static_cast<size_t>(extraArgc) + 2;
+        const size_t strPoolCapacity = strPoolSize != 0 ? strPoolSize : 1;
+        char** argv = static_cast<char**>(std::malloc(argvCapacity * sizeof(char*)));
+        char* strPool = static_cast<char*>(std::malloc(strPoolCapacity));
+        if (!argv || !strPool)
         {
-            x265_log(NULL, X265_LOG_ERROR, "Incorrect number of arguments in ABR CLI header at line %d\n", i);
-            return false;
-        }
-        else
-        {
-            snprintf(cliopt[i].encName, X265_MAX_STRING_SIZE, "%s", head[0]);
-            cliopt[i].loadLevel = atoi(head[1]);
-            snprintf(cliopt[i].reuseName, X265_MAX_STRING_SIZE, "%s", head[2]);
+            std::free(argv);
+            std::free(strPool);
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate ABR config argument buffers at line %d\n", lineNumber);
+            return failAbrConfigParse(stagedCliopt, i + 1);
         }
 
-        char* token = strtok(start, " ");
-        while (token)
+        stagedCliopt[i].stringPool = strPool;
+        stagedCliopt[i].argString = argv;
+
+        char programName[] = "x265";
+        int argc = 0;
+        argv[argc++] = programName;
+        if (!copyAbrConfigArgs(start, argv, extraArgc + 2, strPool, strPoolSize, argc, lineNumber))
+            return failAbrConfigParse(stagedCliopt, i + 1);
+        if (rejectCliExitRequest(argc, argv, "ABR CLI arguments", lineNumber))
+            return failAbrConfigParse(stagedCliopt, i + 1);
+        if (stagedCliopt[i].parse(argc++, argv))
+            return failAbrConfigParse(stagedCliopt, i + 1);
+        if (stagedCliopt[i].parseExitCode >= 0)
         {
-            argv[argc] = strPool;
-            strPool += strlen(token) + 1;
-            strPoolSize = strPoolSize - (int)strlen(token) + 1;
-            strcpy(argv[argc], token);
-            token = strtok(NULL, " ");
-            argc++;
+            x265_log(nullptr, X265_LOG_ERROR, "ABR CLI arguments at line %d cannot trigger CLI exit handling\n", lineNumber);
+            return failAbrConfigParse(stagedCliopt, i + 1);
         }
-        argv[argc] = NULL;
-        if (cliopt[i].parse(argc++, argv))
-        {
-            cliopt[i].destroy();
-            if (cliopt[i].api)
-                cliopt[i].api->param_free(cliopt[i].param);
-            exit(1);
-        }
+        i++;
     }
-    X265_CHECK(strPoolSize >= 0, "string pool broken!");
+    for (uint32_t i = 0; i < numEncodes; i++)
+        std::swap(cliopt[i], stagedCliopt[i]);
+    delete[] stagedCliopt;
     return true;
 }
 
 static bool setRefContext(CLIOptions cliopt[], uint32_t numEncodes)
 {
-    bool hasRef = false;
-    bool isRefFound = false;
+    AbrRefContextState* stagedState = new AbrRefContextState[numEncodes];
+    if (!stagedState)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate staged ABR reference state\n");
+        return false;
+    }
+
+    for (uint32_t i = 0; i < numEncodes; i++)
+    {
+        stagedState[i].refId = cliopt[i].refId;
+        stagedState[i].numRefs = cliopt[i].numRefs;
+        stagedState[i].saveLevel = cliopt[i].saveLevel;
+        stagedState[i].enableScaler = false;
+    }
 
     /* Identify reference encode IDs and set save/load reuse levels */
     for (uint32_t curEnc = 0; curEnc < numEncodes; curEnc++)
     {
-        isRefFound = false;
-        hasRef = !strcmp(cliopt[curEnc].reuseName, "nil") ? false : true;
-        if (hasRef)
+        bool isRefFound = false;
+        if (hasAbrReferenceEncode(cliopt[curEnc]))
         {
             for (uint32_t refEnc = 0; refEnc < numEncodes; refEnc++)
             {
-                if (!strcmp(cliopt[curEnc].reuseName, cliopt[refEnc].encName))
+                if (!std::strcmp(cliopt[curEnc].reuseName, cliopt[refEnc].encName))
                 {
-                    cliopt[curEnc].refId = refEnc;
-                    cliopt[refEnc].numRefs++;
-                    cliopt[refEnc].saveLevel = X265_MAX(cliopt[refEnc].saveLevel, cliopt[curEnc].loadLevel);
+                    stagedState[curEnc].refId = refEnc;
+                    stagedState[refEnc].numRefs++;
+                    stagedState[refEnc].saveLevel = X265_MAX(stagedState[refEnc].saveLevel, cliopt[curEnc].loadLevel);
                     isRefFound = true;
                     break;
                 }
             }
             if (!isRefFound)
             {
-                x265_log(NULL, X265_LOG_ERROR, "Reference encode (%s) not found for %s\n", cliopt[curEnc].reuseName,
+                x265_log(nullptr, X265_LOG_ERROR, "Reference encode (%s) not found for %s\n", cliopt[curEnc].reuseName,
                     cliopt[curEnc].encName);
+                delete[] stagedState;
                 return false;
             }
         }
     }
+    for (uint32_t i = 0; i < numEncodes; i++)
+    {
+        if (i)
+            stagedState[i].enableScaler = shouldEnableAbrScaler(cliopt[i - 1], cliopt[i]);
+
+        cliopt[i].refId = stagedState[i].refId;
+        cliopt[i].numRefs = stagedState[i].numRefs;
+        cliopt[i].saveLevel = stagedState[i].saveLevel;
+        cliopt[i].enableScaler = stagedState[i].enableScaler;
+    }
+    delete[] stagedState;
     return true;
 }
 /* CLI return codes:
@@ -269,7 +542,7 @@ static bool setRefContext(CLIOptions cliopt[], uint32_t numEncodes)
 
 int main(int argc, char **argv)
 {
-
+    int ret = 0;
 #if HAVE_VLD
     // This uses Microsoft's proprietary WCHAR type, but this only builds on Windows to start with
     VLDSetReportOptions(VLD_OPT_REPORT_TO_DEBUGGER | VLD_OPT_REPORT_TO_FILE, L"x265_leaks.txt");
@@ -284,67 +557,132 @@ int main(int argc, char **argv)
     get_argv_utf8(&argc, &argv);
 #endif
 
-    uint8_t numEncodes = 1;
-    FILE *abrConfig = NULL;
-    bool isAbrLadder = checkAbrLadder(argc, argv, &abrConfig);
+    uint32_t numEncodes = 1;
+    FILE *abrConfig = nullptr;
+    bool isCliExitRequest = hasCliExitRequest(argc, argv);
+    bool isAbrLadder = !isCliExitRequest && checkAbrLadder(argc, argv, &abrConfig);
+    CLIOptions* cliopt = nullptr;
+    AbrEncoder* abrEnc = nullptr;
+
+    if (isAbrLadder && !abrConfig)
+    {
+        ret = 1;
+        goto cleanup;
+    }
 
     if (isAbrLadder)
-        numEncodes = getNumAbrEncodes(abrConfig);
+    {
+        if (!getNumAbrEncodes(abrConfig, numEncodes))
+        {
+            ret = 1;
+            goto cleanup;
+        }
+        if (!numEncodes)
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "ABR ladder config contains no valid encode entries\n");
+            ret = 1;
+            goto cleanup;
+        }
+    }
 
-    CLIOptions* cliopt = new CLIOptions[numEncodes];
+    cliopt = new CLIOptions[numEncodes];
     cliopt[0].orgArgv = argv;
     cliopt[0].argString = argv;
 
     if (isAbrLadder)
     {
         if (!parseAbrConfig(abrConfig, cliopt, numEncodes))
-            exit(1);
+        {
+            ret = 1;
+            goto cleanup;
+        }
         if (!setRefContext(cliopt, numEncodes))
-            exit(1);
+        {
+            ret = 1;
+            goto cleanup;
+        }
     }
     else if (cliopt[0].parse(argc, argv))
     {
-        cliopt[0].destroy();
-        if (cliopt[0].api)
-            cliopt[0].api->param_free(cliopt[0].param);
-        exit(1);
+        ret = 1;
+        goto cleanup;
     }
-
-    int ret = 0;
+    else if (cliopt[0].parseExitCode >= 0)
+    {
+        ret = cliopt[0].parseExitCode;
+        goto cleanup;
+    }
 
     if (cliopt[0].scenecutAwareQpConfig)
     {
         if (!cliopt[0].parseScenecutAwareQpConfig())
         {
-            x265_log(NULL, X265_LOG_ERROR, "Unable to parse scenecut aware qp config file \n");
-            fclose(cliopt[0].scenecutAwareQpConfig);
-            cliopt[0].scenecutAwareQpConfig = NULL;
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to parse scenecut aware qp config file \n");
+            ret = 1;
+            bool closeFailed = std::ferror(cliopt[0].scenecutAwareQpConfig) != 0;
+            if (std::fclose(cliopt[0].scenecutAwareQpConfig))
+                closeFailed = true;
+            if (closeFailed)
+                x265_log(nullptr, X265_LOG_WARNING, "Unable to close scenecut aware qp config file after parse failure\n");
+            cliopt[0].scenecutAwareQpConfig = nullptr;
         }
     }
 
-    AbrEncoder* abrEnc = new AbrEncoder(cliopt, numEncodes, ret);
-    int threadsActive = abrEnc->m_numActiveEncodes.get();
-    while (threadsActive)
+    if (!ret)
     {
-        threadsActive = abrEnc->m_numActiveEncodes.waitForChange(threadsActive);
-        for (uint8_t idx = 0; idx < numEncodes; idx++)
+        abrEnc = new AbrEncoder(cliopt, numEncodes, ret);
+        int threadsActive = abrEnc->m_numActiveEncodes.get();
+        while (threadsActive)
         {
-            if (abrEnc->m_passEnc[idx]->m_ret)
+            threadsActive = abrEnc->m_numActiveEncodes.waitForChange(threadsActive);
+            for (uint32_t idx = 0; idx < numEncodes; idx++)
             {
-                if (isAbrLadder)
-                    x265_log(NULL, X265_LOG_INFO, "Error generating ABR-ladder \n");
-                ret = abrEnc->m_passEnc[idx]->m_ret;
-                threadsActive = 0;
-                break;
+                if (!abrEnc->m_passEnc[idx])
+                {
+                    if (isAbrLadder)
+                        x265_log(nullptr, X265_LOG_INFO, "Error generating ABR-ladder \n");
+                    ret = 4;
+                    threadsActive = 0;
+                    break;
+                }
+                if (abrEnc->m_passEnc[idx]->m_ret)
+                {
+                    if (isAbrLadder)
+                        x265_log(nullptr, X265_LOG_INFO, "Error generating ABR-ladder \n");
+                    ret = abrEnc->m_passEnc[idx]->m_ret;
+                    threadsActive = 0;
+                    break;
+                }
             }
         }
     }
 
-    abrEnc->destroy();
-    delete abrEnc;
+cleanup:
+    if (abrConfig)
+    {
+        bool closeFailed = std::ferror(abrConfig) != 0;
+        if (std::fclose(abrConfig))
+            closeFailed = true;
+        if (closeFailed)
+            x265_log(nullptr, X265_LOG_WARNING, "Unable to close abr ladder config file during main cleanup\n");
+        abrConfig = nullptr;
+    }
 
-    for (uint8_t idx = 0; idx < numEncodes; idx++)
-        cliopt[idx].destroy();
+    if (abrEnc)
+    {
+        abrEnc->destroy();
+        delete abrEnc;
+    }
+
+    bool destroyFailed = false;
+    if (cliopt)
+    {
+        for (uint32_t idx = 0; idx < numEncodes; idx++)
+            destroyFailed |= cliopt[idx].destroy();
+    }
+
+    if (!ret && destroyFailed)
+        ret = 3;
 
     delete[] cliopt;
 
@@ -354,7 +692,7 @@ int main(int argc, char **argv)
 #if _WIN32
     if (argv != orgArgv)
     {
-        free(argv);
+        std::free(argv);
         argv = orgArgv;
     }
 #endif

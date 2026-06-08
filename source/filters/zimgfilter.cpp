@@ -24,14 +24,189 @@
 #ifdef ENABLE_ZIMG
 #include "zimgfilter.h"
 
+#include <cmath>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+
 using namespace X265_NS;
-using namespace std;
 
 #if _WIN32
 #define strcasecmp _stricmp
 #endif
 
 const char* Resizers[] = {"point", "bilinear", "bicubic", "spline16", "spline36", "lanczos"};
+
+namespace {
+
+bool mulOverflowSizeT(size_t a, size_t b, size_t& out)
+{
+    if (!a || !b)
+    {
+        out = 0;
+        return false;
+    }
+
+    if (a > SIZE_MAX / b)
+        return true;
+
+    out = a * b;
+    return false;
+}
+
+bool copyZimgSegment(char* dst, size_t dstSize, const char* begin, const char* end, const char* context)
+{
+    size_t length = static_cast<size_t>(end - begin);
+    if (length >= dstSize)
+    {
+        general_log(nullptr, "zimg", X265_LOG_ERROR, "%s exceeds supported length\n", context);
+        return false;
+    }
+
+    if (length)
+        std::memcpy(dst, begin, length);
+    dst[length] = 0;
+    return true;
+}
+
+const char* findZimgChar(const char* begin, const char* end, char target)
+{
+    if (!begin || !end || begin > end)
+        return nullptr;
+
+    const void* match = std::memchr(begin, target, static_cast<size_t>(end - begin));
+    return static_cast<const char*>(match);
+}
+
+enum ZimgClauseParseResult
+{
+    ZIMG_CLAUSE_OK,
+    ZIMG_CLAUSE_MISSING_PARAMETER_LIST,
+    ZIMG_CLAUSE_MISSING_CLOSING_PAREN,
+    ZIMG_CLAUSE_COPY_ERROR,
+};
+
+ZimgClauseParseResult parseZimgClause(const char* cursor, const char* end, const char*& next,
+                                      char* name, size_t nameSize, char* value, size_t valueSize)
+{
+    if (!cursor || !end || cursor > end || !name || nameSize < 2 || !value || valueSize < 2)
+        return ZIMG_CLAUSE_COPY_ERROR;
+
+    const char* open = findZimgChar(cursor, end, '(');
+    if (!open)
+    {
+        if (!copyZimgSegment(name, nameSize, cursor, end, "Filter keyword"))
+            return ZIMG_CLAUSE_COPY_ERROR;
+        value[0] = '\0';
+        next = end;
+        return ZIMG_CLAUSE_MISSING_PARAMETER_LIST;
+    }
+
+    if (!copyZimgSegment(name, nameSize, cursor, open, "Filter keyword"))
+        return ZIMG_CLAUSE_COPY_ERROR;
+
+    const char* valueBegin = open + 1;
+    const char* close = findZimgChar(valueBegin, end, ')');
+    const char* valueEnd = close ? close : end;
+    if (!copyZimgSegment(value, valueSize, valueBegin, valueEnd, "Filter parameters"))
+        return ZIMG_CLAUSE_COPY_ERROR;
+
+    if (!close)
+    {
+        next = end;
+        return ZIMG_CLAUSE_MISSING_CLOSING_PAREN;
+    }
+
+    next = close + 1;
+    return ZIMG_CLAUSE_OK;
+}
+
+int splitZimgCommaTokens(const char* value, const char* parts[], size_t lengths[], int maxParts)
+{
+    if (!value || !parts || !lengths || maxParts <= 0)
+        return -1;
+
+    int count = 0;
+    const char* token = value;
+    while (token)
+    {
+        if (count >= maxParts)
+            return -1;
+
+        const char* comma = std::strchr(token, ',');
+        size_t length = comma ? (size_t)(comma - token) : std::strlen(token);
+        if (!length)
+            return -1;
+
+        parts[count] = token;
+        lengths[count] = length;
+        count++;
+
+        token = comma ? comma + 1 : nullptr;
+    }
+
+    return count;
+}
+
+bool parseZimgDoubleToken(const char* token, size_t length, double& value)
+{
+    if (!token || !length)
+        return false;
+
+    char number[64];
+    if (length >= sizeof(number))
+        return false;
+
+    std::memcpy(number, token, length);
+    number[length] = '\0';
+    errno = 0;
+    char* end = nullptr;
+    value = std::strtod(number, &end);
+    return errno != ERANGE && end && *end == '\0' && end != number && std::isfinite(value);
+}
+
+bool parseZimgIntToken(const char* token, size_t length, int& value)
+{
+    if (!token || !length)
+        return false;
+
+    char number[32];
+    if (length >= sizeof(number))
+        return false;
+
+    std::memcpy(number, token, length);
+    number[length] = '\0';
+    errno = 0;
+    char* end = nullptr;
+    long parsed = std::strtol(number, &end, 10);
+    if (errno == ERANGE || !end || *end != '\0' || end == number || parsed < 0 || parsed > INT_MAX)
+        return false;
+
+    value = (int)parsed;
+    return true;
+}
+
+}
+
+void ZimgFilter::release()
+{
+    if (temp)
+    {
+        x265_free(temp);
+        temp = nullptr;
+    }
+
+    if (graph)
+    {
+        zimg_filter_graph_free(graph);
+        graph = nullptr;
+    }
+    if (planes_all)
+    {
+        x265_free(planes_all);
+        planes_all = nullptr;
+    }
+}
 
 uint32_t mod4(uint32_t size)
 {
@@ -62,44 +237,57 @@ ZimgFilter::ZimgFilter(char* paramString)
     cLeft = cRight = cTop = cBottom = 0;
     rWidth = rHeight = 0;
     resizer = -1;
-    param1 = param2 = NAN;
+    param1 = param2 = 0.0;
+    xp = nullptr;
     bFail = false;
     graph = nullptr;
+    planes_all = nullptr;
     planes[0] = nullptr;
     temp = nullptr;
 
-    char* begin = paramString;
-    char* end = paramString + strlen(paramString);
-    char* p = begin;
+    const char* cursor = paramString;
+    const char* end = paramString + std::strlen(paramString);
 
-    while (p < end)
+    while (cursor < end)
     {
         char pName[1024];
         char pValue[1024];
-        int length;
-        // Scan (
-        while (p[0] != '(' && p < end) p++;
-        length = p - begin;
-        pName[length] = 0;
-        strncpy(pName, begin, length);
-        p = begin = p + 1;
-
-        // Scan )
-        while (p[0] != ')' && p < end) p++;
-        length = p - begin;
-        pValue[length] = 0;
-        strncpy(pValue, begin, length);
-        p = begin = p + 1;
+        const char* next = cursor;
+        switch (parseZimgClause(cursor, end, next, pName, sizeof(pName), pValue, sizeof(pValue)))
+        {
+        case ZIMG_CLAUSE_COPY_ERROR:
+            bFail = true;
+            return;
+        case ZIMG_CLAUSE_MISSING_PARAMETER_LIST:
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Filter keyword %s missing parameter list\n", pName);
+            bFail = true;
+            return;
+        case ZIMG_CLAUSE_MISSING_CLOSING_PAREN:
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Filter keyword %s missing closing ')'\n", pName);
+            bFail = true;
+            return;
+        case ZIMG_CLAUSE_OK:
+            break;
+        default:
+            bFail = true;
+            return;
+        }
+        cursor = next;
 
         if (!pName[0])
             continue;
         if (!strcasecmp(pName, "crop"))
         {
             double dLeft, dTop, dRight, dBottom;
-            int count = sscanf(pValue, "%lf,%lf,%lf,%lf", &dLeft, &dTop, &dRight, &dBottom);
-            if (count < 4)
+            const char* parts[4];
+            size_t lengths[4];
+            if (splitZimgCommaTokens(pValue, parts, lengths, 4) != 4 ||
+                !parseZimgDoubleToken(parts[0], lengths[0], dLeft) ||
+                !parseZimgDoubleToken(parts[1], lengths[1], dTop) ||
+                !parseZimgDoubleToken(parts[2], lengths[2], dRight) ||
+                !parseZimgDoubleToken(parts[3], lengths[3], dBottom))
             {
-                general_log(NULL, "zimg", X265_LOG_ERROR, "Crop: invalid parameters: (%s), should be (L,T,W,H) or (L,T,-R,-B)\n", pValue);
+                general_log(nullptr, "zimg", X265_LOG_ERROR, "Crop: invalid parameters: (%s), should be (L,T,W,H) or (L,T,-R,-B)\n", pValue);
                 bFail = true;
                 return;
             }
@@ -118,14 +306,20 @@ ZimgFilter::ZimgFilter(char* paramString)
         if (resizer < 0)
         {
             // Unknown keyword
-            general_log(NULL, "zimg", X265_LOG_ERROR, "Unknown keyword: %s\n", pName);
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Unknown keyword: %s\n", pName);
             bFail = true;
             return;
         }
-        int count = sscanf(pValue, "%d,%d,%lf,%lf", &rWidth, &rHeight, &param1, &param2);
-        if (count < 2)
+        const char* parts[4];
+        size_t lengths[4];
+        int count = splitZimgCommaTokens(pValue, parts, lengths, 4);
+        if (!((count == 2 || count == 4) &&
+              parseZimgIntToken(parts[0], lengths[0], rWidth) &&
+              parseZimgIntToken(parts[1], lengths[1], rHeight) &&
+              (count == 2 || (parseZimgDoubleToken(parts[2], lengths[2], param1) &&
+                              parseZimgDoubleToken(parts[3], lengths[3], param2)))))
         {
-            general_log(NULL, "zimg", X265_LOG_ERROR, "Resize: invalid parameters: (%s), should be (W,H[,P1,P2])\n", pValue);
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Resize: invalid parameters: (%s), should be (W,H[,P1,P2])\n", pValue);
             bFail = true;
             return;
         }
@@ -134,6 +328,7 @@ ZimgFilter::ZimgFilter(char* paramString)
 
 void ZimgFilter::setParam(x265_param* xParam)
 {
+    xp = xParam;
     bool doCrop = cLeft != 0 || cRight != 0 || cTop != 0 || cBottom != 0;
     bool doResize = rWidth != 0 || rHeight != 0;
     byPass = !doCrop && !doResize;
@@ -142,13 +337,12 @@ void ZimgFilter::setParam(x265_param* xParam)
         general_log(xp, "zimg", X265_LOG_INFO, "Nothing to do. Bypassing\n");
         return;
     }
-    xp = xParam;
     sWidth = xp->sourceWidth;
     sHeight = xp->sourceHeight;
     general_log(xp, "zimg", X265_LOG_INFO, "Input: %dx%d\n", sWidth, sHeight);
     if (cLeft < 0 || cTop < 0)
     {
-        general_log(NULL, "zimg", X265_LOG_ERROR, "Crop: Left (%d) and Top (%d) must be non-negative\n", cLeft >> 10, cTop >> 10);
+        general_log(nullptr, "zimg", X265_LOG_ERROR, "Crop: Left (%d) and Top (%d) must be non-negative\n", cLeft >> 10, cTop >> 10);
         bFail = true;
         return;
     }
@@ -161,7 +355,7 @@ void ZimgFilter::setParam(x265_param* xParam)
     }
     if (cRight <= 0 || cBottom <= 0)
     {
-        general_log(NULL, "zimg", X265_LOG_ERROR, "Crop: Size after cropping (%dx%d) must be positive\n", cRight >> 10, cBottom >> 10);
+        general_log(nullptr, "zimg", X265_LOG_ERROR, "Crop: Size after cropping (%dx%d) must be positive\n", cRight >> 10, cBottom >> 10);
         bFail = true;
         return;
     }
@@ -244,6 +438,7 @@ void ZimgFilter::processFrame(x265_picture& picture)
     int OutputDepth = X265_DEPTH;
     if (!graph) // Init
     {
+        release();
         int pixelSize = OutputDepth > 8 ? 2 : 1;
         src_format.depth = picture.bitDepth;
         dst_format.depth = OutputDepth;
@@ -268,25 +463,69 @@ void ZimgFilter::processFrame(x265_picture& picture)
         dst_format.pixel_range = xp->vui.bEnableVideoFullRangeFlag ? ZIMG_RANGE_FULL : ZIMG_RANGE_LIMITED;
 
         framesize = 0;
-        auto stride_all = round_up_64(rWidth * pixelSize);
-        planes_all = x265_malloc(rHeight * stride_all * x265_cli_csps[csp].planes);
+        size_t strideInput = (size_t)rWidth * (size_t)pixelSize;
+        if (rWidth <= 0 || rHeight <= 0 || strideInput > UINT32_MAX)
+        {
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: invalid resize buffer geometry\n");
+            release();
+            bFail = true;
+            return;
+        }
+        auto stride_all = round_up_64((uint32_t)strideInput);
+        size_t planeBytes = 0;
+        size_t totalPlaneBytes = 0;
+        if (rWidth <= 0 || rHeight <= 0 ||
+            mulOverflowSizeT((size_t)rHeight, (size_t)stride_all, planeBytes) ||
+            mulOverflowSizeT(planeBytes, (size_t)x265_cli_csps[csp].planes, totalPlaneBytes))
+        {
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: invalid resize buffer geometry\n");
+            release();
+            bFail = true;
+            return;
+        }
+        planes_all = x265_malloc(totalPlaneBytes);
         char * planes_ptr = reinterpret_cast<char *>(planes_all);
+        if (!planes_all)
+        {
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: error allocating memory for resize buffer\n");
+            release();
+            bFail = true;
+            return;
+        }
         // Create buffer for resize
         for (int i = 0; i < x265_cli_csps[csp].planes; i++)
         {
             int w = rWidth  >> x265_cli_csps[csp].width[i];
             int h = rHeight >> x265_cli_csps[csp].height[i];
-            stride[i] = round_up_64(w * pixelSize);
+            size_t planeStrideInput = (size_t)w * (size_t)pixelSize;
+            size_t planeFrameBytes = 0;
+            if (w < 0 || h < 0 || planeStrideInput > UINT32_MAX)
+            {
+                general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: invalid plane geometry\n");
+                release();
+                bFail = true;
+                return;
+            }
+            stride[i] = round_up_64((uint32_t)planeStrideInput);
+            if (mulOverflowSizeT((size_t)h, (size_t)stride[i], planeFrameBytes) ||
+                SIZE_MAX - framesize < planeFrameBytes)
+            {
+                general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: invalid plane frame size\n");
+                release();
+                bFail = true;
+                return;
+            }
             planes[i] = planes_ptr;
-            planes_ptr += h * stride[i];
-            framesize += h * stride[i];
+            planes_ptr += planeFrameBytes;
+            framesize += planeFrameBytes;
         }
 
         graph = zimg_filter_graph_build(&src_format, &dst_format, &graph_params);
         if (!graph)
         {
             zimg_get_last_error(fail_str, sizeof(fail_str));
-            general_log(NULL, "zimg", X265_LOG_ERROR, "Init: %s\n", fail_str);
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: %s\n", fail_str);
+            release();
             bFail = true;
             return;
         }
@@ -296,21 +535,25 @@ void ZimgFilter::processFrame(x265_picture& picture)
         if (err)
         {
             zimg_get_last_error(fail_str, sizeof(fail_str));
-            general_log(NULL, "zimg", X265_LOG_ERROR, "Init: %s\n", fail_str);
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: %s\n", fail_str);
+            release();
             bFail = true;
             return;
         }
-        temp = x265_malloc(tmp_size);
-        if (!temp)
+        temp = tmp_size ? x265_malloc(tmp_size) : nullptr;
+        if (tmp_size && !temp)
         {
-            general_log(NULL, "zimg", X265_LOG_ERROR, "Init: error allocating memory for temp buffer\n");
+            general_log(nullptr, "zimg", X265_LOG_ERROR, "Init: error allocating memory for temp buffer\n");
+            release();
             bFail = true;
             return;
         }
     }
 
-    zimg_image_buffer_const src_buf = { ZIMG_API_VERSION };
-    zimg_image_buffer dst_buf = { ZIMG_API_VERSION };
+    zimg_image_buffer_const src_buf = {};
+    zimg_image_buffer dst_buf = {};
+    src_buf.version = ZIMG_API_VERSION;
+    dst_buf.version = ZIMG_API_VERSION;
 
     for (int i = 0; i < x265_cli_csps[csp].planes; i++)
     {
@@ -326,37 +569,17 @@ void ZimgFilter::processFrame(x265_picture& picture)
     if (err)
     {
         zimg_get_last_error(fail_str, sizeof(fail_str));
-        general_log(NULL, "zimg", X265_LOG_ERROR, "Resize: %s\n", fail_str);
+        general_log(nullptr, "zimg", X265_LOG_ERROR, "Resize: %s\n", fail_str);
         bFail = true;
         return;
     }
 
-    memcpy(picture.stride, stride, sizeof(stride));
-    memcpy(picture.planes, planes, sizeof(planes));
+    std::memcpy(picture.stride, stride, sizeof(stride));
+    std::memcpy(picture.planes, planes, sizeof(planes));
     picture.bitDepth = OutputDepth;
     picture.width = rWidth;
     picture.height = rHeight;
     picture.framesize = framesize;
-}
-
-void ZimgFilter::release()
-{
-    if (temp)
-    {
-        x265_free(temp);
-        temp = nullptr;
-    }
-
-    if (graph)
-    {
-        zimg_filter_graph_free(graph);
-        graph = nullptr;
-    }
-    if (planes_all)
-    {
-        x265_free(planes_all);
-        planes_all = nullptr;
-    }
 }
 
 #endif

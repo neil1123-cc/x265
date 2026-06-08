@@ -27,6 +27,8 @@
 #include "picyuv.h"
 #include "slice.h"
 
+#include <algorithm>
+
 using namespace X265_NS;
 
 #if ENABLE_MULTIVIEW
@@ -60,13 +62,13 @@ void Slice::setRefPicList(PicList& picList, int sLayerId)
 {
     if (m_sliceType == I_SLICE)
     {
-        memset(m_refFrameList, 0, sizeof(m_refFrameList));
-        memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
-        memset(m_refPOCList, 0, sizeof(m_refPOCList));
+        std::fill_n(&m_refFrameList[0][0], 2 * (MAX_NUM_REF + 1), static_cast<Frame*>(nullptr));
+        std::fill_n(&m_refReconPicList[0][0], 2 * (MAX_NUM_REF + 1), static_cast<PicYuv*>(nullptr));
+        std::fill_n(&m_refPOCList[0][0], 2 * (MAX_NUM_REF + 1), 0);
         m_numRefIdx[1] = m_numRefIdx[0] = 0;
 
 #if ENABLE_SCC_EXT
-        bool checkNumPocTotalCurr = m_param->bEnableSCC ? false : true;
+        bool checkNumPocTotalCurr = !m_param->bEnableSCC;
         if (!checkNumPocTotalCurr)
         {
             if (m_rps.numberOfPictures == 0)
@@ -89,15 +91,15 @@ void Slice::setRefPicList(PicList& picList, int sLayerId)
     /*Reset the number of references for I-slice marked as P-slice*/
     if ((m_param->bEnableSCC || sLayerId) && m_sliceType != m_origSliceType)
     {
-        memset(m_refFrameList, 0, sizeof(m_refFrameList));
-        memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
-        memset(m_refPOCList, 0, sizeof(m_refPOCList));
+        std::fill_n(&m_refFrameList[0][0], 2 * (MAX_NUM_REF + 1), static_cast<Frame*>(nullptr));
+        std::fill_n(&m_refReconPicList[0][0], 2 * (MAX_NUM_REF + 1), static_cast<PicYuv*>(nullptr));
+        std::fill_n(&m_refPOCList[0][0], 2 * (MAX_NUM_REF + 1), 0);
         m_numRefIdx[0] = 1;
     }
 #endif
 
 #if ENABLE_SCC_EXT
-    bool checkNumPocTotalCurr = m_param->bEnableSCC ? false : true;
+    bool checkNumPocTotalCurr = !m_param->bEnableSCC;
     if (!checkNumPocTotalCurr && m_rps.numberOfPictures == 0)
     {
         Frame* prevPic = picList.getPOC(X265_MAX(0, m_poc - 1));
@@ -110,7 +112,7 @@ void Slice::setRefPicList(PicList& picList, int sLayerId)
     }
 #endif
 
-    Frame* refPic = NULL;
+    Frame* refPic = nullptr;
     Frame* refPicSetStCurr0[MAX_NUM_REF];
     Frame* refPicSetStCurr1[MAX_NUM_REF];
     Frame* refPicSetLtCurr[MAX_NUM_REF];
@@ -237,7 +239,7 @@ void Slice::setRefPicList(PicList& picList, int sLayerId)
     if (m_sliceType != B_SLICE)
     {
         m_numRefIdx[1] = 0;
-        memset(m_refFrameList[1], 0, sizeof(m_refFrameList[1]));
+        std::fill_n(m_refFrameList[1], MAX_NUM_REF + 1, static_cast<Frame*>(nullptr));
     }
     else
     {

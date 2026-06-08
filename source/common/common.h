@@ -112,9 +112,9 @@
 #if CHECKED_BUILD || _DEBUG
 namespace X265_NS { extern int g_checkFailures; }
 #define X265_CHECK(expr, ...) if (!(expr)) { \
-    x265_log(NULL, X265_LOG_ERROR, __VA_ARGS__); \
+    x265_log(nullptr, X265_LOG_ERROR, __VA_ARGS__); \
     FILE *fp = fopen("x265_check_failures.txt", "a"); \
-    if (fp) { fprintf(fp, "%s:%d\n", __FILE__, __LINE__); fprintf(fp, __VA_ARGS__); fclose(fp); } \
+    if (fp) { if (ferror(fp)) { bool closeFailed = ferror(fp) != 0; if (fclose(fp)) closeFailed = true; if (closeFailed) fprintf(stderr, "x265 [warning]: unable to close x265_check_failures.txt after open failure\n"); } else { fprintf(fp, "%s:%d\n", __FILE__, __LINE__); fprintf(fp, __VA_ARGS__); bool closeFailed = ferror(fp) != 0; if (fclose(fp)) closeFailed = true; if (closeFailed) fprintf(stderr, "x265 [warning]: unable to finalize x265_check_failures.txt\n"); } } \
     g_checkFailures++; DEBUG_BREAK(); \
 }
 #if _MSC_VER
@@ -144,10 +144,6 @@ typedef int32_t  ssum2_t; // Signed sum
 typedef uint32_t sse_t;
 #else
 typedef uint64_t sse_t;
-#endif
-
-#ifndef NULL
-#define NULL 0
 #endif
 
 #define MAX_UINT        0xFFFFFFFFU // max. value of unsigned 32-bit integer
@@ -225,49 +221,56 @@ typedef int16_t  coeff_t;      // transform coefficient
 #define X265_LOWRES_CU_SIZE   8
 #define X265_LOWRES_CU_BITS   3
 
-#define X265_MALLOC(type, count)    (type*)x265_malloc(sizeof(type) * (count))
-#define X265_FREE(ptr)              x265_free(ptr)
+namespace X265_NS {
+void*    x265_malloc(size_t size);
+void     x265_free(void *ptr);
+}
+
+#define X265_MALLOC(type, count)    (type*)X265_NS::x265_malloc(sizeof(type) * (count))
+#define X265_FREE(ptr)              X265_NS::x265_free(ptr)
 
 static inline char *strcatFilename(const char *input, const char *suffix)
 {
-    char *output = (char*)malloc(strlen(input) + strlen(suffix) + 1);
+    size_t inputLen = std::strlen(input);
+    size_t suffixLen = std::strlen(suffix);
+    char *output = X265_MALLOC(char, inputLen + suffixLen + 1);
     if (!output)
     {
-        fprintf(stderr, "x265: unable to allocate memory for filename\n");
+        std::fprintf(stderr, "x265: unable to allocate memory for filename\n");
         return nullptr;
     }
-    strcpy(output, input);
-    strcat(output, suffix);
+    std::memcpy(output, input, inputLen);
+    std::memcpy(output + inputLen, suffix, suffixLen + 1);
     return output;
 }
-#define X265_FREE_ZERO(ptr)         { x265_free(ptr); (ptr) = nullptr; }
+#define X265_FREE_ZERO(ptr)         { X265_NS::x265_free(ptr); (ptr) = nullptr; }
 #define CHECKED_MALLOC(var, type, count) \
     { \
-        var = (type*)x265_malloc(sizeof(type) * (count)); \
+        var = (type*)X265_NS::x265_malloc(sizeof(type) * (count)); \
         if (!var) \
         { \
-            x265_log(NULL, X265_LOG_ERROR, "malloc of size %llu failed\n", sizeof(type) * (count)); \
+            x265_log(nullptr, X265_LOG_ERROR, "malloc of size %llu failed\n", sizeof(type) * (count)); \
             goto fail; \
         } \
     }
 #define CHECKED_MALLOC_ZERO(var, type, count) \
     { \
-        var = (type*)x265_malloc(sizeof(type) * (count)); \
+        var = (type*)X265_NS::x265_malloc(sizeof(type) * (count)); \
         if (var) \
-            memset((void*)var, 0, sizeof(type) * (count)); \
+            std::fill_n(reinterpret_cast<uint8_t*>(var), sizeof(type) * (count), uint8_t(0)); \
         else \
         { \
-            x265_log(NULL, X265_LOG_ERROR, "malloc of size %llu failed\n", sizeof(type) * (count)); \
+            x265_log(nullptr, X265_LOG_ERROR, "malloc of size %llu failed\n", sizeof(type) * (count)); \
             goto fail; \
         } \
     }
 
 #if defined(_MSC_VER)
-#define X265_LOG2F(x) (logf((float)(x)) * 1.44269504088896405f)
-#define X265_LOG2(x) (log((double)(x)) * 1.4426950408889640513713538072172)
+#define X265_LOG2F(x) (std::logf((float)(x)) * 1.44269504088896405f)
+#define X265_LOG2(x) (std::log((double)(x)) * 1.4426950408889640513713538072172)
 #else
-#define X265_LOG2F(x) log2f(x)
-#define X265_LOG2(x)  log2(x)
+#define X265_LOG2F(x) std::log2f(x)
+#define X265_LOG2(x)  std::log2(x)
 #endif
 
 #define NUM_CU_DEPTH            4                           // maximum number of CU depths
@@ -463,11 +466,11 @@ int      x265_rename(const char* oldName, const char* newName);
 #define  x265_rename(oldName, newName) rename(oldName, newName)
 #endif
 /* Close a file */
-#define  x265_fclose(file) if (file != nullptr) fclose(file); file=nullptr;
+#define  x265_fclose(file) do { if ((file) != nullptr) { bool closeFailed = ferror(file) != 0; if (fclose(file)) closeFailed = true; if (closeFailed) x265_log(nullptr, X265_LOG_WARNING, "unable to finalize file state\n"); } file = nullptr; } while (0)
 #define x265_fread(val, size, readSize, fileOffset,errorMessage)\
     if (fread(val, size, readSize, fileOffset) != readSize)\
     {\
-        x265_log(NULL, X265_LOG_ERROR, errorMessage); \
+        x265_log(nullptr, X265_LOG_ERROR, errorMessage); \
         return; \
     }
 int      x265_exp2fix8(double x);
@@ -477,8 +480,6 @@ double   x265_qScale2qp(double qScale);
 double   x265_qp2qScale(double qp);
 uint32_t x265_picturePlaneSize(int csp, int width, int height, int plane);
 
-void*    x265_malloc(size_t size);
-void     x265_free(void *ptr);
 char*    x265_slurp_file(const char *filename);
 
 /* located in primitives.cpp */

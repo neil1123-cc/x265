@@ -80,7 +80,7 @@ class Frame
 {
 public:
 
-    /* These two items will be NULL until the Frame begins to be encoded, at which point
+    /* These two items will be nullptr until the Frame begins to be encoded, at which point
      * it will be assigned a FrameData instance, which comes with a reconstructed image PicYuv */
     FrameData*             m_encData;
     PicYuv*                m_reconPic[NUM_RECON_VERSION];
@@ -127,7 +127,7 @@ public:
 
     Event                  m_copyMVType;
 
-    x265_ctu_info_t**      m_ctuInfo;
+    x265_ctu_info_t*       m_ctuInfo;
     Event                  m_copied;
     int*                   m_prevCtuInfoChange;
     int64_t                m_encodeStartTime;

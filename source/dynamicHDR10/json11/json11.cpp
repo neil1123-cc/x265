@@ -21,6 +21,7 @@
 
 #include "json11.h"
 #include <cassert>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -342,6 +343,26 @@ static inline bool in_range(long x, long lower, long upper) {
     return (x >= lower && x <= upper);
 }
 
+static inline int decode_hex_digit(char ch) {
+    if (in_range(ch, '0', '9'))
+        return ch - '0';
+    if (in_range(ch, 'a', 'f'))
+        return ch - 'a' + 10;
+    return ch - 'A' + 10;
+}
+
+static inline bool parse_short_json_int(const char* begin, const char* end, int& value) {
+    std::from_chars_result parsed = std::from_chars(begin, end, value);
+    return parsed.ec == std::errc() && parsed.ptr == end;
+}
+
+static inline double parse_token_bounded_json_double(const char* begin, const char* end) {
+    string token(begin, end);
+    char* parse_end = nullptr;
+    double value = std::strtod(token.c_str(), &parse_end);
+    return parse_end == token.c_str() + token.size() ? value : 0.0;
+}
+
 namespace {
 /* JsonParser
  *
@@ -531,7 +552,9 @@ struct JsonParser final {
                         return fail("bad \\u escape: " + esc, "");
                 }
 
-                long codepoint = strtol(esc.data(), nullptr, 16);
+                long codepoint = 0;
+                for (int j = 0; j < 4; j++)
+                    codepoint = (codepoint << 4) | decode_hex_digit(esc[j]);
 
                 // JSON specifies that characters outside the BMP shall be encoded as a pair
                 // of 4-hex-digit \u escapes encoding their surrogate pair components. Check
@@ -580,53 +603,73 @@ struct JsonParser final {
      */
     Json parse_number() {
         size_t start_pos = i;
+        auto current = [this]() -> char {
+            return i < str.size() ? str[i] : '\0';
+        };
+        char ch = current();
 
-        if (str[i] == '-')
+        if (ch == '-') {
             i++;
-
-        // Integer part
-        if (str[i] == '0') {
-            i++;
-            if (in_range(str[i], '0', '9'))
-                return fail("leading 0s not permitted in numbers");
-        } else if (in_range(str[i], '1', '9')) {
-            i++;
-            while (in_range(str[i], '0', '9'))
-                i++;
-        } else {
-            return fail("invalid " + esc(str[i]) + " in number");
+            ch = current();
         }
 
-        if (str[i] != '.' && str[i] != 'e' && str[i] != 'E'
+        // Integer part
+        if (ch == '0') {
+            i++;
+            ch = current();
+            if (in_range(ch, '0', '9'))
+                return fail("leading 0s not permitted in numbers");
+        } else if (in_range(ch, '1', '9')) {
+            i++;
+            ch = current();
+            while (in_range(ch, '0', '9')) {
+                i++;
+                ch = current();
+            }
+        } else {
+            return fail("invalid " + esc(ch) + " in number");
+        }
+
+        if (ch != '.' && ch != 'e' && ch != 'E'
                 && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10)) {
-            return std::atoi(str.c_str() + start_pos);
+            int intValue = 0;
+            if (parse_short_json_int(str.c_str() + start_pos, str.c_str() + i, intValue))
+                return intValue;
         }
 
         // Decimal part
-        if (str[i] == '.') {
+        if (ch == '.') {
             i++;
-            if (!in_range(str[i], '0', '9'))
+            ch = current();
+            if (!in_range(ch, '0', '9'))
                 return fail("at least one digit required in fractional part");
 
-            while (in_range(str[i], '0', '9'))
+            while (in_range(ch, '0', '9')) {
                 i++;
+                ch = current();
+            }
         }
 
         // Exponent part
-        if (str[i] == 'e' || str[i] == 'E') {
+        if (ch == 'e' || ch == 'E') {
             i++;
+            ch = current();
 
-            if (str[i] == '+' || str[i] == '-')
+            if (ch == '+' || ch == '-') {
                 i++;
+                ch = current();
+            }
 
-            if (!in_range(str[i], '0', '9'))
+            if (!in_range(ch, '0', '9'))
                 return fail("at least one digit required in exponent");
 
-            while (in_range(str[i], '0', '9'))
+            while (in_range(ch, '0', '9')) {
                 i++;
+                ch = current();
+            }
         }
 
-        return std::strtod(str.c_str() + start_pos, nullptr);
+        return parse_token_bounded_json_double(str.c_str() + start_pos, str.c_str() + i);
     }
 
     /* expect(str, res)
@@ -792,5 +835,6 @@ bool Json::has_shape(const shape & types, string & err) const {
 //}
 
 } // namespace json11
+
 
 

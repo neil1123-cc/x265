@@ -96,7 +96,7 @@ public:
 
     bool empty() const    { return !m_count;  }
 
-    operator bool() const { return !!m_count; }
+    operator bool() const { return m_count != 0; }
 };
 }
 

@@ -36,20 +36,32 @@
 
 static int parse_proc_cpuinfo(const char *flag) {
     FILE *file = fopen("/proc/cpuinfo", "r");
-    if (file == NULL)
+    if (file == nullptr)
         return 0;
+    else if (ferror(file)) {
+        int closeFailed = ferror(file) != 0;
+        if (fclose(file))
+            closeFailed = 1;
+        if (closeFailed)
+            return 0;
+        return 0;
+    }
 
     char line[1024];
     int found = 0;
 
     while (fgets(line, sizeof(line), file)) {
-        if (strstr(line, flag) != NULL) {
+        if (strstr(line, flag) != nullptr) {
             found = 1;
             break;
         }
     }
 
-    fclose(file);
+    int closeFailed = ferror(file) != 0;
+    if (fclose(file))
+        closeFailed = 1;
+    if (closeFailed)
+        return 0;
     return found;
 }
 

@@ -27,6 +27,11 @@
 #ifdef ENABLE_LAVF
 
 #include "lavf.h"
+#include "param.h"
+
+#include <cstdlib>
+#include <cstring>
+
 #define FAIL_IF_ERROR( cond, ... )\
 if( cond )\
 {\
@@ -57,37 +62,128 @@ static int handle_jpeg(int csp, int *fullrange)
     }
 }
 
+static bool parseLavfIntValue(const char* value, int& parsedValue)
+{
+    if (!value)
+        return false;
+
+    bool bError = false;
+    int valueAsInt = x265_atoi(value, bError);
+    if (bError || valueAsInt < 0)
+        return false;
+
+    parsedValue = valueAsInt;
+    return true;
+}
+
 void LavfInput::fill_buffer(x265_picture& pic, uint8_t** planes, int* stride) {
+    auto addPlaneBytes = [](size_t& total, int height, int stride, size_t& planeBytes) -> bool
+    {
+        if (height <= 0 || stride <= 0)
+            return false;
+        planeBytes = (size_t)height * (size_t)stride;
+        if (planeBytes / (size_t)stride != (size_t)height || total > SIZE_MAX - planeBytes)
+            return false;
+        total += planeBytes;
+        return true;
+    };
+
     auto height = _info.height;
     auto height_uv = _info.height >> height_uv_ss;
 
     pic.width = _info.width;
     pic.height = _info.height;
 
-    if (frame_size == 0 || frame_buffer == nullptr) {
-        frame_size = height * stride[0];
-        if (stride[1])
-            frame_size += height_uv * stride[1] + height_uv * stride[2];
-        frame_buffer = reinterpret_cast<uint8_t*>(x265_malloc(frame_size));
+    if (!planes[0] || stride[0] <= 0 || height <= 0)
+    {
+        b_fail = true;
+        return;
+    }
+
+    if ((stride[1] || stride[2]) && (!planes[1] || !planes[2] || stride[1] <= 0 || stride[2] <= 0 || height_uv <= 0))
+    {
+        b_fail = true;
+        return;
+    }
+
+    size_t requiredFrameSize = 0;
+    size_t planeBytesY = 0;
+    if (!addPlaneBytes(requiredFrameSize, height, stride[0], planeBytesY))
+    {
+        b_fail = true;
+        return;
+    }
+    if (stride[1])
+    {
+        size_t planeBytesU = 0;
+        size_t planeBytesV = 0;
+        if (!addPlaneBytes(requiredFrameSize, height_uv, stride[1], planeBytesU) ||
+            !addPlaneBytes(requiredFrameSize, height_uv, stride[2], planeBytesV))
+        {
+            b_fail = true;
+            return;
+        }
+    }
+
+    if (!requiredFrameSize)
+    {
+        b_fail = true;
+        return;
+    }
+
+    if (requiredFrameSize > frame_size || frame_buffer == nullptr)
+    {
+        uint8_t* newFrameBuffer = reinterpret_cast<uint8_t*>(x265_malloc(requiredFrameSize));
+        if (!newFrameBuffer)
+        {
+            b_fail = true;
+            return;
+        }
+        X265_FREE(frame_buffer);
+        frame_buffer = newFrameBuffer;
+        frame_size = requiredFrameSize;
     }
     pic.framesize = frame_size;
 
     uint8_t* ptr = frame_buffer;
     pic.planes[0] = ptr;
     pic.stride[0] = stride[0];
-    memcpy(pic.planes[0], planes[0], stride[0] * height);
+    std::memcpy(pic.planes[0], planes[0], planeBytesY);
     if (stride[1])
     {
-        ptr += stride[0] * height;
+        size_t planeBytesU = (size_t)stride[1] * (size_t)height_uv;
+        size_t planeBytesV = (size_t)stride[2] * (size_t)height_uv;
+        ptr += planeBytesY;
         pic.planes[1] = ptr;
         pic.stride[1] = stride[1];
-        memcpy(pic.planes[1], planes[1], stride[1] * height_uv);
+        std::memcpy(pic.planes[1], planes[1], planeBytesU);
 
-        ptr += stride[1] * height_uv;
+        ptr += planeBytesU;
         pic.planes[2] = ptr;
         pic.stride[2] = stride[2];
-        memcpy(pic.planes[2], planes[2], stride[2] * height_uv);
+        std::memcpy(pic.planes[2], planes[2], planeBytesV);
     }
+}
+
+void LavfInput::cleanupState()
+{
+    X265_FREE(frame_buffer);
+    frame_buffer = nullptr;
+    frame_size = 0;
+
+    if (h->first_pic)
+    {
+        std::free(h->first_pic);
+        h->first_pic = nullptr;
+    }
+
+    avcodec_free_context(&h->cocon);
+    avformat_close_input(&h->lavf);
+    av_frame_free(&h->frame);
+
+    h->stream_id = 0;
+    h->next_frame = 0;
+    h->vfr_input = 0;
 }
 
 bool LavfInput::readPicture(x265_picture& p_pic)
@@ -101,15 +197,15 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
     {
         /* see if the frame we are requesting is the frame we have already read and stored.
          * if so, retrieve the pts and image data before freeing it. */
-        memcpy(p_pic.stride, h->first_pic->stride, sizeof(p_pic.stride));
-        memcpy(p_pic.planes, h->first_pic->planes, sizeof(p_pic.planes));
+        std::memcpy(p_pic.stride, h->first_pic->stride, sizeof(p_pic.stride));
+        std::memcpy(p_pic.planes, h->first_pic->planes, sizeof(p_pic.planes));
         p_pic.pts = h->first_pic->pts;
         p_pic.colorSpace = h->first_pic->colorSpace;
         p_pic.bitDepth = h->first_pic->bitDepth;
         p_pic.framesize = frame_size;
         p_pic.width = _info.width;
         p_pic.height = _info.height;
-        free(h->first_pic);
+        std::free(h->first_pic);
         h->first_pic = nullptr;
         return true;
     }
@@ -122,13 +218,50 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
     {
         AVStream *stream = h->lavf->streams[h->stream_id];
         const AVCodec *codec = avcodec_find_decoder(stream->codecpar->codec_id);
+        if (!codec)
+        {
+            general_log(nullptr, "lavf", X265_LOG_ERROR, "could not find decoder for video stream\n");
+            b_fail = true;
+            return false;
+        }
         h->cocon = avcodec_alloc_context3(codec);
-        avcodec_parameters_to_context(h->cocon, stream->codecpar);
-        avcodec_open2(h->cocon, codec, nullptr);
+        if (!h->cocon)
+        {
+            general_log(nullptr, "lavf", X265_LOG_ERROR, "could not allocate decoder context\n");
+            b_fail = true;
+            return false;
+        }
+        if (avcodec_parameters_to_context(h->cocon, stream->codecpar) < 0)
+        {
+            general_log(nullptr, "lavf", X265_LOG_ERROR, "could not initialize decoder context\n");
+            avcodec_free_context(&h->cocon);
+            b_fail = true;
+            return false;
+        }
+
+        AVDictionary *avcodec_opts = nullptr;
+        av_dict_set(&avcodec_opts, "strict", "-2", 0);
+        if (avcodec_open2(h->cocon, codec, &avcodec_opts))
+        {
+            if (avcodec_opts)
+                av_dict_free(&avcodec_opts);
+            general_log(nullptr, "lavf", X265_LOG_ERROR, "could not find decoder for video stream\n");
+            avcodec_free_context(&h->cocon);
+            b_fail = true;
+            return false;
+        }
+        if (avcodec_opts)
+            av_dict_free(&avcodec_opts);
     }
 
     AVPacket* pkt;
     pkt = av_packet_alloc();
+    if (!pkt)
+    {
+        general_log(nullptr, "lavf", X265_LOG_ERROR, "could not allocate input packet\n");
+        b_fail = true;
+        return false;
+    }
 
     int finished = 0;
     int ret = 0;
@@ -148,6 +281,13 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
         if(ret < 0)
         {
             av_packet_unref(pkt);
+            if (ret != AVERROR_EOF)
+            {
+                general_log(nullptr, "lavf", X265_LOG_WARNING, "reading input failed on frame %d\n", h->next_frame);
+                b_fail = true;
+                fail = 1;
+                break;
+            }
         }
 
         // We got a new valid packet, or EOF, let's feed it
@@ -164,6 +304,7 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
             if(codec_ret == AVERROR(EINVAL))
             {
                 general_log(nullptr, "lavf", X265_LOG_WARNING, "feeding input to decoder failed on frame %d\n", h->next_frame);
+                b_fail = true;
                 fail = 1;
             }
             else
@@ -176,6 +317,7 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
                 if(codec_ret == AVERROR(EINVAL))
                 {
                     general_log(nullptr, "lavf", X265_LOG_WARNING, "video decoding failed on frame %d\n", h->next_frame);
+                    b_fail = true;
                     fail = 1;
                 }
                 else if(codec_ret == 0)
@@ -266,6 +408,8 @@ bool LavfInput::readPicture(x265_picture& p_pic, InputFileInfo* info)
 
     h->next_frame++;
     fill_buffer(p_pic, h->frame->data, h->frame->linesize);
+    if (b_fail)
+        return false;
 
     return true;
 }
@@ -275,23 +419,43 @@ void LavfInput::openfile(InputFileInfo& info)
 #if ( LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(58,9,100) )
     av_register_all();
 #endif
-    if(!strcmp(info.filename, "-"))
+    cleanupState();
+    if(!std::strcmp(info.filename, "-"))
         info.filename = "pipe:";
+
+    auto failOpen = [&](const char *message)
+    {
+        general_log(nullptr, "lavf", X265_LOG_ERROR, "%s", message);
+        cleanupState();
+        b_fail = true;
+    };
 
     h->frame = av_frame_alloc();
     if(!h->frame)
     {
-        b_fail = true;
+        failOpen("could not allocate frame\n");
         return;
     }
 
-    FAIL_IF_ERROR(avformat_open_input(&h->lavf, info.filename, nullptr, nullptr), "could not open input file\n")
-    FAIL_IF_ERROR(avformat_find_stream_info(h->lavf, nullptr) < 0, "could not find input stream info\n")
+    if (avformat_open_input(&h->lavf, info.filename, nullptr, nullptr))
+    {
+        failOpen("could not open input file\n");
+        return;
+    }
+    if (avformat_find_stream_info(h->lavf, nullptr) < 0)
+    {
+        failOpen("could not find input stream info\n");
+        return;
+    }
 
     unsigned int i = 0;
     while(i < h->lavf->nb_streams && h->lavf->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
         i++;
-    FAIL_IF_ERROR(i == h->lavf->nb_streams, "could not find video stream\n")
+    if (i == h->lavf->nb_streams)
+    {
+        failOpen("could not find video stream\n");
+        return;
+    }
     h->stream_id          = i;
     h->next_frame         = 0;
     AVStream *s           = h->lavf->streams[i];
@@ -310,24 +474,49 @@ void LavfInput::openfile(InputFileInfo& info)
     //    c->thread_count = opt->demuxer_threads;
 
     const AVCodec *codec = avcodec_find_decoder(cp->codec_id);
+    if (!codec)
+    {
+        failOpen("could not find decoder for video stream\n");
+        return;
+    }
+
     h->cocon = avcodec_alloc_context3(codec);
-    avcodec_parameters_to_context(h->cocon, cp);
-    avcodec_open2(h->cocon, codec, nullptr);
+    if (!h->cocon)
+    {
+        failOpen("could not allocate decoder context\n");
+        return;
+    }
+
+    if (avcodec_parameters_to_context(h->cocon, cp) < 0)
+    {
+        failOpen("could not initialize decoder context\n");
+        return;
+    }
 
     AVDictionary *avcodec_opts = nullptr;
     av_dict_set(&avcodec_opts, "strict", "-2", 0);
-    FAIL_IF_ERROR(avcodec_open2(h->cocon, codec, &avcodec_opts),
-                  "could not find decoder for video stream\n")
+    if (avcodec_open2(h->cocon, codec, &avcodec_opts))
+    {
+        if (avcodec_opts)
+            av_dict_free(&avcodec_opts);
+        failOpen("could not find decoder for video stream\n");
+        return;
+    }
     if(avcodec_opts)
         av_dict_free(&avcodec_opts);
 
     /* prefetch the first frame and set/confirm flags */
-    h->first_pic = (x265_picture*) malloc(sizeof(x265_picture));
-    FAIL_IF_ERROR(!h->first_pic, "malloc failed\n")
+    h->first_pic = (x265_picture*) std::malloc(sizeof(x265_picture));
+    if (!h->first_pic)
+    {
+        failOpen("malloc failed\n");
+        return;
+    }
     _info.width  = cp->width;
     _info.height = cp->height;
     if(readPicture(*h->first_pic, &info) == false)
     {
+        cleanupState();
         b_fail = true;
         return;
     }
@@ -342,7 +531,15 @@ void LavfInput::openfile(InputFileInfo& info)
         // Matroska store frame count in metadata
         AVDictionaryEntry *entry = av_dict_get(s->metadata, "NUMBER_OF_FRAMES", nullptr, AV_DICT_MATCH_CASE);
         if (entry) {
-            info.frameCount = atoi(entry->value);
+            int frameCount = 0;
+            const char* metadataValue = entry->value ? entry->value : "<null>";
+            if (!parseLavfIntValue(entry->value, frameCount))
+            {
+                general_log(nullptr, "lavf", X265_LOG_WARNING, "Ignoring invalid NUMBER_OF_FRAMES metadata: %s\n", metadataValue);
+                info.frameCount = 0;
+            }
+            else
+                info.frameCount = frameCount;
         }
     }
 
@@ -351,6 +548,15 @@ void LavfInput::openfile(InputFileInfo& info)
     if(duration < 0.)
         duration = 0.;
     const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get((AVPixelFormat)cp->format);
+    if (!pix_desc)
+    {
+        failOpen("could not describe pixel format\n");
+        return;
+    }
+    const char* formatName = (h->lavf->iformat && h->lavf->iformat->name) ? h->lavf->iformat->name : "unknown";
+    const char* codecName = codec->name ? codec->name : "unknown";
+    const char* codecLongName = codec->long_name ? codec->long_name : codecName;
+    const char* pixDescName = pix_desc->name ? pix_desc->name : "unknown";
     general_log(nullptr, "lavf", X265_LOG_INFO,
                 "\n Format    : %s"
                 "\n Codec     : %s ( %s )"
@@ -358,9 +564,9 @@ void LavfInput::openfile(InputFileInfo& info)
                 "\n Framerate : %d/%d"
                 "\n Timebase  : %d/%d"
                 "\n Duration  : %d:%02d:%02d\n",
-                h->lavf->iformat->name,
-                codec->name, codec->long_name,
-                pix_desc->name,
+                formatName,
+                codecName, codecLongName,
+                pixDescName,
                 s->avg_frame_rate.num, s->avg_frame_rate.den,
                 s->time_base.num, s->time_base.den,
                 (int)duration / 60 / 60, (int)duration / 60 % 60, (int)duration - (int)duration / 60 * 60);
@@ -368,13 +574,7 @@ void LavfInput::openfile(InputFileInfo& info)
 
 void LavfInput::release()
 {
-    // Deprecated since ffmpeg ~3.1
-    // avcodec_close(h->lavf->streams[h->stream_id]->codec);
-    //
-    // Use the following
-    avcodec_free_context(&h->cocon);
-    avformat_close_input(&h->lavf);
-    av_frame_free(&h->frame);
+    cleanupState();
 }
 
 #endif

@@ -26,7 +26,8 @@
 
 #include <fstream>
 #include <iostream>
-#include <math.h>
+#include <cmath>
+#include <new>
 #include "sstream"
 #include "sys/stat.h"
 
@@ -35,6 +36,56 @@
 using namespace SeiMetadataDictionary;
 using json11::Json;
 using json11::JsonParse;
+
+namespace {
+
+const int kMetadataPayloadBytes = 509;
+
+void freeMetadataFrames(uint8_t**& metadata, int count)
+{
+    if (!metadata)
+        return;
+
+    for (int i = 0; i < count; ++i)
+        delete[] metadata[i];
+
+    delete[] metadata;
+    metadata = nullptr;
+}
+
+bool replaceMetadataBuffer(uint8_t*& metadata, int size)
+{
+    uint8_t* newMetadata = new (std::nothrow) uint8_t[size]();
+    if (!newMetadata)
+        return false;
+
+    delete[] metadata;
+    metadata = newMetadata;
+    return true;
+}
+
+bool allocateMetadataFrames(uint8_t**& metadata, int numFrames, int frameSize)
+{
+    uint8_t** stagedMetadata = new (std::nothrow) uint8_t*[numFrames]();
+    if (!stagedMetadata)
+        return false;
+
+    for (int frame = 0; frame < numFrames; ++frame)
+    {
+        stagedMetadata[frame] = new (std::nothrow) uint8_t[frameSize]();
+        if (!stagedMetadata[frame])
+        {
+            freeMetadataFrames(stagedMetadata, numFrames);
+            return false;
+        }
+    }
+
+    metadata = stagedMetadata;
+    return true;
+}
+
+}
+
 class metadataFromJson::DynamicMetaIO
 {
 public:
@@ -274,15 +325,11 @@ bool metadataFromJson::frameMetadataFromJson(const char* filePath,
         return false;
     }
 
-    int mSEIBytesToRead = 509;
-    if(metadata)
-    {
-        delete(metadata);
-    }
-    metadata = new uint8_t[mSEIBytesToRead];
+    int mSEIBytesToRead = kMetadataPayloadBytes;
+    if (!replaceMetadataBuffer(metadata, mSEIBytesToRead))
+        return false;
     mPimpl->mCurrentStreamBit = 8;
     mPimpl->mCurrentStreamByte = 1;
-    memset(metadata, 0, mSEIBytesToRead);
 
     fillMetadataArray(fileData, frame, jsonType, metadata);
     mPimpl->setPayloadSize(metadata, 0, mPimpl->mCurrentStreamByte);
@@ -301,18 +348,20 @@ int metadataFromJson::movieMetadataFromJson(const char* filePath, uint8_t **&met
     }
 
     int numFrames = static_cast<int>(fileData.size());
-    metadata = new uint8_t*[numFrames];
+    uint8_t** stagedMetadata = nullptr;
+    if (!allocateMetadataFrames(stagedMetadata, numFrames, kMetadataPayloadBytes))
+        return -1;
+
     for (int frame = 0; frame < numFrames; ++frame)
     {
-        metadata[frame] = new uint8_t[509];
-        memset(metadata[frame], 0, 509);
         mPimpl->mCurrentStreamBit = 8;
         mPimpl->mCurrentStreamByte = 1;
 
-        fillMetadataArray(fileData, frame, jsonType, metadata[frame]);
-        mPimpl->setPayloadSize(metadata[frame], 0, mPimpl->mCurrentStreamByte);
+        fillMetadataArray(fileData, frame, jsonType, stagedMetadata[frame]);
+        mPimpl->setPayloadSize(stagedMetadata[frame], 0, mPimpl->mCurrentStreamByte);
     }
 
+    metadata = stagedMetadata;
     return numFrames;
 }
 
@@ -334,20 +383,11 @@ bool metadataFromJson::extendedInfoFrameMetadataFromJson(const char* filePath,
         return false;
     }
 
-    int mSEIBytesToRead = 509;
-
-    if (metadata)
-    {
-        delete(metadata);
-    }
-    metadata = new uint8_t[mSEIBytesToRead];
+    int mSEIBytesToRead = kMetadataPayloadBytes;
+    if (!replaceMetadataBuffer(metadata, mSEIBytesToRead))
+        return false;
     mPimpl->mCurrentStreamBit = 8;
     mPimpl->mCurrentStreamByte = 0;
-
-    for (int j = 0; j < mSEIBytesToRead; ++j)
-    {
-        (metadata)[j] = 0;
-    }
 
     const uint16_t extendedInfoframeType = 0x0004;
     mPimpl->appendBits(metadata, extendedInfoframeType, 16);
@@ -373,30 +413,29 @@ int metadataFromJson::movieExtendedInfoFrameMetadataFromJson(const char* filePat
     }
 
     int numFrames = static_cast<int>(fileData.size());
-    metadata = new uint8_t*[numFrames];
+    uint8_t** stagedMetadata = nullptr;
+    if (!allocateMetadataFrames(stagedMetadata, numFrames, kMetadataPayloadBytes))
+        return -1;
+
     for(int frame = 0; frame < numFrames; ++frame)
     {
-        metadata[frame] = new uint8_t[509];
-        for(int i = 0; i < 509; ++i) 
-        {
-            metadata[frame][i] = 0;
-        }
         mPimpl->mCurrentStreamBit = 8;
         mPimpl->mCurrentStreamByte = 0;
 
         const uint16_t extendedInfoframeType = 0x0004;
-        mPimpl->appendBits(metadata[frame], extendedInfoframeType, 16);
+        mPimpl->appendBits(stagedMetadata[frame], extendedInfoframeType, 16);
 
         /* NOTE: We leave TWO BYTES of space for the payload */
         mPimpl->mCurrentStreamByte += 2;
 
-        fillMetadataArray(fileData, frame, LEGACY, metadata[frame]);
+        fillMetadataArray(fileData, frame, LEGACY, stagedMetadata[frame]);
 
         /* Set payload in bytes 2 & 3 as indicated in Extended InfoFrame Type syntax */
-        metadata[frame][2] = (mPimpl->mCurrentStreamByte & 0xFF00) >> 8;
-        metadata[frame][3] = (mPimpl->mCurrentStreamByte & 0x00FF);
+        stagedMetadata[frame][2] = (mPimpl->mCurrentStreamByte & 0xFF00) >> 8;
+        stagedMetadata[frame][3] = (mPimpl->mCurrentStreamByte & 0x00FF);
     }
 
+    metadata = stagedMetadata;
     return numFrames;
 }
 
@@ -605,14 +644,6 @@ void metadataFromJson::clear(uint8_t **&metadata, const int numberOfFrames)
 {
     if (metadata && numberOfFrames > 0)
     {
-        for (int i = 0; i < numberOfFrames; ++i)
-        {
-            if (metadata[i])
-            {
-                delete[] metadata[i];
-            }
-        }
-        delete[] metadata;
-        metadata = nullptr;
+        freeMetadataFrames(metadata, numberOfFrames);
     }
 }

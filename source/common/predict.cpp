@@ -29,6 +29,9 @@
 #include "predict.h"
 #include "primitives.h"
 
+#include <cstdlib>
+#include <cstring>
+
 using namespace X265_NS;
 
 #if _MSC_VER
@@ -142,8 +145,8 @@ void Predict::motionCompensation(const CUData& cu, const PredictionUnit& pu, Yuv
 
         if (cu.m_slice->m_pps->bUseWeightedBiPred)
         {
-            pwp0 = refIdx0 >= 0 ? cu.m_slice->m_weightPredTable[0][refIdx0] : NULL;
-            pwp1 = refIdx1 >= 0 ? cu.m_slice->m_weightPredTable[1][refIdx1] : NULL;
+            pwp0 = refIdx0 >= 0 ? cu.m_slice->m_weightPredTable[0][refIdx0] : nullptr;
+            pwp1 = refIdx1 >= 0 ? cu.m_slice->m_weightPredTable[1][refIdx1] : nullptr;
 
             if (pwp0 && pwp1 && (pwp0->wtPresent || pwp1->wtPresent))
             {
@@ -175,7 +178,7 @@ void Predict::motionCompensation(const CUData& cu, const PredictionUnit& pu, Yuv
             }
         }
         else
-            pwp0 = pwp1 = NULL;
+            pwp0 = pwp1 = nullptr;
 
         if (refIdx0 >= 0 && refIdx1 >= 0)
         {
@@ -616,7 +619,7 @@ void Predict::predIntraLumaAng(uint32_t dirMode, pixel* dst, intptr_t stride, ui
     int sizeIdx = log2TrSize - 2;
     X265_CHECK(sizeIdx >= 0 && sizeIdx < 4, "intra block size is out of range\n");
 
-    int filter = !!(g_intraFilterFlags[dirMode] & tuSize);
+    int filter = (g_intraFilterFlags[dirMode] & tuSize) != 0;
     bool bFilter = log2TrSize <= 4;
     primitives.cu[sizeIdx].intra_pred[dirMode](dst, stride, intraNeighbourBuf[filter], dirMode, bFilter);
 }
@@ -627,7 +630,7 @@ void Predict::predIntraChromaAng(uint32_t dirMode, pixel* dst, intptr_t stride, 
     int sizeIdx = log2TrSizeC - 2;
     X265_CHECK(sizeIdx >= 0 && sizeIdx < 4, "intra block size is out of range\n");
 
-    int filter = !!(m_csp == X265_CSP_I444 && (g_intraFilterFlags[dirMode] & tuSize));
+    int filter = (m_csp == X265_CSP_I444) && ((g_intraFilterFlags[dirMode] & tuSize) != 0);
     primitives.cu[sizeIdx].intra_pred[dirMode](dst, stride, intraNeighbourBuf[filter], dirMode, 0);
 }
 
@@ -657,8 +660,8 @@ void Predict::initAdiPattern(const CUData& cu, const CUGeom& cuGeom, uint32_t pu
 
             pixel topMiddle = refBuf[32], leftMiddle = refBuf[tuSize2 + 32];
 
-            if (abs(topLeft + topLast  - (topMiddle  << 1)) < threshold &&
-                abs(topLeft + leftLast - (leftMiddle << 1)) < threshold)
+            if (std::abs(topLeft + topLast  - (topMiddle  << 1)) < threshold &&
+                std::abs(topLeft + leftLast - (leftMiddle << 1)) < threshold)
             {
                 // "strong" bilinear interpolation
                 const int shift = 5 + 1;
@@ -771,7 +774,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
     {
         // Fill top border with rec. samples
         const pixel* adiTemp = adiOrigin - picStride - 1;
-        memcpy(dst, adiTemp, refSize * sizeof(pixel));
+        std::memcpy(dst, adiTemp, refSize * sizeof(pixel));
 
         // Fill left border with rec. samples
         adiTemp = adiOrigin - 1;
@@ -821,7 +824,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
         adiTemp = adiOrigin - picStride;
         adi = adiLineBuffer + (leftUnits * unitHeight) + unitWidth;
         // NOTE: over copy here, but reduce condition operators
-        memcpy(adi, adiTemp, aboveUnits * unitWidth * sizeof(*adiTemp));
+        std::memcpy(adi, adiTemp, aboveUnits * unitWidth * sizeof(*adiTemp));
 
         // Pad reference samples when necessary
         int curr = 0;
@@ -864,7 +867,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
             if (curr < nextOrTop)
             {
                 const int fillSize = unitHeight * (nextOrTop - curr);
-                memset(adi, refSample, fillSize * sizeof(pixel));
+                std::fill_n(adi, fillSize, refSample);
                 curr = nextOrTop;
                 adi += fillSize;
             }
@@ -872,7 +875,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
             if (curr < next)
             {
                 const int fillSize = unitWidth * (next - curr);
-                memset(adi, refSample, fillSize * sizeof(pixel));
+                std::fill_n(adi, fillSize, refSample);
                 curr = next;
                 adi += fillSize;
             }
@@ -901,7 +904,7 @@ void Predict::fillReferenceSamples(const pixel* adiOrigin, intptr_t picStride, c
 
         // Copy processed samples
         adi = adiLineBuffer + refSize + unitWidth - 2;
-        memcpy(dst, adi, refSize * sizeof(pixel));
+        std::memcpy(dst, adi, refSize * sizeof(pixel));
 
         adi = adiLineBuffer + refSize - 1;
         for (int i = 0; i < (int)refSize - 1; i++)

@@ -26,6 +26,9 @@
 #include "lowres.h"
 #include "mv.h"
 
+#include <algorithm>
+#include <cstring>
+
 using namespace X265_NS;
 
 /*
@@ -77,7 +80,8 @@ bool Lowres::create(x265_param* param, PicYuv *origPic, uint32_t qgSize)
     heightFullRes = origPic->m_picHeight;
     width = origPic->m_picWidth / 2;
     lines = origPic->m_picHeight / 2;
-    bEnableHME = param->bEnableHME ? 1 : 0;
+    const bool enableHME = param->bEnableHME != 0;
+    bEnableHME = enableHME;
     lumaStride = width + 2 * origPic->m_lumaMarginX;
     if (lumaStride & 31)
         lumaStride += 32 - (lumaStride & 31);
@@ -87,7 +91,7 @@ bool Lowres::create(x265_param* param, PicYuv *origPic, uint32_t qgSize)
     maxBlocksInColFullRes = maxBlocksInCol * 2;
     int cuCount = maxBlocksInRow * maxBlocksInCol;
     int cuCountFullRes = (qgSize > 8) ? cuCount : cuCount << 2;
-    isHMELowres = param->bEnableHME ? 1 : 0;
+    isHMELowres = enableHME;
 
     /* rounding the width to multiple of lowres CU size */
     width = maxBlocksInRow * X265_LOWRES_CU_SIZE;
@@ -95,7 +99,7 @@ bool Lowres::create(x265_param* param, PicYuv *origPic, uint32_t qgSize)
 
     size_t planesize = lumaStride * (lines + 2 * origPic->m_lumaMarginY);
     size_t padoffset = lumaStride * origPic->m_lumaMarginY + origPic->m_lumaMarginX;
-    if (!!param->rc.aqMode || !!param->rc.hevcAq || !!param->bAQMotion || !!param->bEnableWeightedPred || !!param->bEnableWeightedBiPred)
+    if (param->rc.aqMode != 0 || param->rc.hevcAq != 0 || param->bAQMotion != 0 || param->bEnableWeightedPred != 0 || param->bEnableWeightedBiPred != 0)
     {
         CHECKED_MALLOC_ZERO(qpAqOffset, double, cuCountFullRes);
         CHECKED_MALLOC_ZERO(invQscaleFactor, int, cuCountFullRes);
@@ -110,15 +114,17 @@ bool Lowres::create(x265_param* param, PicYuv *origPic, uint32_t qgSize)
     if (origPic->m_param->bDynamicRefine || origPic->m_param->bEnableFades)
         CHECKED_MALLOC_ZERO(blockVariance, uint32_t, cuCountFullRes);
 
-    if (!!param->rc.hevcAq)
+    if (param->rc.hevcAq != 0)
     {
         m_maxCUSize = param->maxCUSize;
         m_qgSize = qgSize;
 
         uint32_t partWidth, partHeight, nAQPartInWidth, nAQPartInHeight;
 
-        pAQLayer = new PicQPAdaptationLayer[4];
         maxAQDepth = 0;
+        pAQLayer = new (std::nothrow) PicQPAdaptationLayer[4]();
+        if (!pAQLayer)
+            return false;
         for (uint32_t d = 0; d < 4; d++)
         {
             int ctuSizeIdx = 6 - g_log2Size[param->maxCUSize];
@@ -143,9 +149,10 @@ bool Lowres::create(x265_param* param, PicYuv *origPic, uint32_t qgSize)
                 nAQPartInHeight = (origPic->m_picHeight + partHeight - 1) / partHeight;
             }
 
-            maxAQDepth++;
+            if (!pAQLayer[d].create(origPic->m_picWidth, origPic->m_picHeight, partWidth, partHeight, nAQPartInWidth, nAQPartInHeight))
+                return false;
 
-            pAQLayer[d].create(origPic->m_picWidth, origPic->m_picHeight, partWidth, partHeight, nAQPartInWidth, nAQPartInHeight);
+            maxAQDepth++;
         }
     }
     CHECKED_MALLOC(propagateCost, uint16_t, cuCount);
@@ -230,8 +237,9 @@ bool Lowres::create(x265_param* param, PicYuv *origPic, uint32_t qgSize)
         CHECKED_MALLOC_ZERO(quarterSampleLowResBuffer, pixel, quarterSampleLowResPlanesize);
 
         // Allocate memory for Histograms
-        picHistogram = X265_MALLOC(uint32_t***, NUMBER_OF_SEGMENTS_IN_WIDTH * sizeof(uint32_t***));
-        picHistogram[0] = X265_MALLOC(uint32_t**, NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
+        const uint32_t histogramPlanes = 3;
+        CHECKED_MALLOC_ZERO(picHistogram, uint32_t***, NUMBER_OF_SEGMENTS_IN_WIDTH);
+        CHECKED_MALLOC_ZERO(picHistogram[0], uint32_t**, NUMBER_OF_SEGMENTS_IN_WIDTH * NUMBER_OF_SEGMENTS_IN_HEIGHT);
         for (uint32_t wd = 1; wd < NUMBER_OF_SEGMENTS_IN_WIDTH; wd++) {
             picHistogram[wd] = picHistogram[0] + wd * NUMBER_OF_SEGMENTS_IN_HEIGHT;
         }
@@ -240,9 +248,9 @@ bool Lowres::create(x265_param* param, PicYuv *origPic, uint32_t qgSize)
         {
             for (uint32_t regionInPictureHeightIndex = 0; regionInPictureHeightIndex < NUMBER_OF_SEGMENTS_IN_HEIGHT; regionInPictureHeightIndex++)
             {
-                picHistogram[regionInPictureWidthIndex][regionInPictureHeightIndex] = X265_MALLOC(uint32_t*, NUMBER_OF_SEGMENTS_IN_WIDTH *sizeof(uint32_t*));
-                picHistogram[regionInPictureWidthIndex][regionInPictureHeightIndex][0] = X265_MALLOC(uint32_t, 3 * HISTOGRAM_NUMBER_OF_BINS * sizeof(uint32_t));
-                for (uint32_t wd = 1; wd < 3; wd++) {
+                CHECKED_MALLOC_ZERO(picHistogram[regionInPictureWidthIndex][regionInPictureHeightIndex], uint32_t*, histogramPlanes);
+                CHECKED_MALLOC_ZERO(picHistogram[regionInPictureWidthIndex][regionInPictureHeightIndex][0], uint32_t, histogramPlanes * HISTOGRAM_NUMBER_OF_BINS);
+                for (uint32_t wd = 1; wd < histogramPlanes; wd++) {
                     picHistogram[regionInPictureWidthIndex][regionInPictureHeightIndex][wd] = picHistogram[regionInPictureWidthIndex][regionInPictureHeightIndex][0] + wd * HISTOGRAM_NUMBER_OF_BINS;
                 }
             }
@@ -300,7 +308,7 @@ void Lowres::destroy(x265_param* param)
     X265_FREE(qpAqMotionOffset);
     if (param->bDynamicRefine || param->bEnableFades)
         X265_FREE(blockVariance);
-    if (maxAQDepth > 0)
+    if (pAQLayer)
     {
         for (uint32_t d = 0; d < 4; d++)
         {
@@ -318,6 +326,7 @@ void Lowres::destroy(x265_param* param)
         }
 
         delete[] pAQLayer;
+        pAQLayer = nullptr;
     }
 
     // Histograms
@@ -352,11 +361,11 @@ void Lowres::init(PicYuv *origPic, int poc)
     frameNum = poc;
     leadingBframes = 0;
     indB = 0;
-    memset(costEst, -1, sizeof(costEst));
-    memset(weightedCostDelta, 0, sizeof(weightedCostDelta));
+    std::fill_n(&costEst[0][0], (X265_BFRAME_MAX + 2) * (X265_BFRAME_MAX + 2), int64_t(-1));
+    std::fill_n(weightedCostDelta, X265_BFRAME_MAX + 2, 0.0);
 
     if (qpAqOffset && invQscaleFactor)
-        memset(costEstAq, -1, sizeof(costEstAq));
+        std::fill_n(&costEstAq[0][0], (X265_BFRAME_MAX + 2) * (X265_BFRAME_MAX + 2), int64_t(-1));
 
     for (int y = 0; y < bframes + 2; y++)
         for (int x = 0; x < bframes + 2; x++)
@@ -419,7 +428,7 @@ void Lowres::init(PicYuv *origPic, int poc)
     {
         int cuCount = maxBlocksInRow * maxBlocksInCol;
         int cuCountFullRes = (origPic->m_param->rc.qgSize > 8) ? cuCount : cuCount << 2;
-        memset(qpAqOffset, 0, sizeof(double) * cuCountFullRes);
-        memset(qpAqMotionOffset, 0, sizeof(double) * cuCountFullRes);
+        std::fill_n(qpAqOffset, cuCountFullRes, 0.0);
+        std::fill_n(qpAqMotionOffset, cuCountFullRes, 0.0);
     }
 }

@@ -23,8 +23,16 @@
 
 #include "ringmem.h"
 
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <new>
+
 #ifndef _WIN32
+#include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif ////< _WIN32
 
 #ifdef _WIN32
@@ -40,20 +48,33 @@
 #define RINGMEM_ALLIGNMENT                       64
 
 namespace X265_NS {
+    namespace {
+        bool formatRingMemName(char *buffer, size_t capacity, const char *prefix, const char *name, const char *label)
+        {
+            int written = std::snprintf(buffer, capacity, "%s%s", prefix, name);
+            if (written < 0 || written >= (int)capacity)
+            {
+                x265_log(nullptr, X265_LOG_ERROR, "%s exceeds supported length\n", label);
+                return false;
+            }
+            return true;
+        }
+    }
+
     RingMem::RingMem() 
         : m_initialized(false)
         , m_protectRW(false)
         , m_itemSize(0)
         , m_itemCnt(0)
-        , m_dataPool(NULL)
-        , m_shrMem(NULL)
+        , m_dataPool(nullptr)
+        , m_shrMem(nullptr)
 #ifdef _WIN32
-        , m_handle(NULL)
+        , m_handle(nullptr)
 #else //_WIN32
-        , m_filepath(NULL)
+        , m_filepath(nullptr)
 #endif //_WIN32
-        , m_writeSem(NULL)
-        , m_readSem(NULL)
+        , m_writeSem(nullptr)
+        , m_readSem(nullptr)
     {
     }
 
@@ -114,7 +135,7 @@ namespace X265_NS {
     bool RingMem::init(int32_t itemSize, int32_t itemCnt, const char *name, bool protectRW)
     {
         ///< check parameters
-        if (itemSize <= 0 || itemCnt <= 0 || NULL == name)
+        if (itemSize <= 0 || itemCnt <= 0 || nullptr == name)
         {
             ///< invalid parameters 
             return false;
@@ -126,7 +147,8 @@ namespace X265_NS {
             char nameBuf[MAX_SHR_NAME_LEN] = { 0 };
 
             ///< shared memory name
-            snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SHARED_MEM_NAME, name);
+            if (!formatRingMemName(nameBuf, sizeof(nameBuf), X265_SHARED_MEM_NAME, name, "shared memory object name"))
+                return false;
 
             ///< create or open shared memory
             bool newCreated = false;
@@ -138,7 +160,7 @@ namespace X265_NS {
             HANDLE h = OpenFileMappingA(FILE_MAP_WRITE | FILE_MAP_READ, FALSE, nameBuf);
             if (!h)
             {
-                h = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, shrMemSize, nameBuf);
+                h = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, shrMemSize, nameBuf);
 
                 if (!h)
                 {
@@ -203,11 +225,18 @@ namespace X265_NS {
             }
 
             m_filepath = strdup(nameBuf);
+            if (!m_filepath)
+            {
+                munmap(pool, shrMemSize);
+                if (newCreated)
+                    unlink(nameBuf);
+                return false;
+            }
 #endif ///< _WIN32
 
             if (newCreated)
             {
-                memset(pool, 0, shrMemSize);
+                std::fill_n(reinterpret_cast<uint8_t*>(pool), shrMemSize, uint8_t(0));
             }
             
             m_shrMem = reinterpret_cast<ShrMemCtrl *>(pool);
@@ -219,7 +248,7 @@ namespace X265_NS {
             if (protectRW)
             {
                 m_protectRW = true;
-                m_writeSem = new NamedSemaphore();
+                m_writeSem = new (std::nothrow) NamedSemaphore;
                 if (!m_writeSem)
                 {
                     release();
@@ -227,14 +256,18 @@ namespace X265_NS {
                 }
 
                 ///< shared memory name
-                snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SEMAPHORE_RINGMEM_WRITER_NAME, name);
+                if (!formatRingMemName(nameBuf, sizeof(nameBuf), X265_SEMAPHORE_RINGMEM_WRITER_NAME, name, "ringmem writer semaphore name"))
+                {
+                    release();
+                    return false;
+                }
                 if (!m_writeSem->create(nameBuf, m_itemCnt, m_itemCnt))
                 {
                     release();
                     return false;
                 }
 
-                m_readSem = new NamedSemaphore();
+                m_readSem = new (std::nothrow) NamedSemaphore;
                 if (!m_readSem)
                 {
                     release();
@@ -242,7 +275,11 @@ namespace X265_NS {
                 }
 
                 ///< shared memory name
-                snprintf(nameBuf, sizeof(nameBuf) - 1, "%s%s", X265_SEMAPHORE_RINGMEM_READER_NAME, name);
+                if (!formatRingMemName(nameBuf, sizeof(nameBuf), X265_SEMAPHORE_RINGMEM_READER_NAME, name, "ringmem reader semaphore name"))
+                {
+                    release();
+                    return false;
+                }
                 if (!m_readSem->create(nameBuf, 0, m_itemCnt))
                 {
                     release();
@@ -265,16 +302,19 @@ namespace X265_NS {
 #ifdef _WIN32
                 UnmapViewOfFile(m_shrMem);
                 CloseHandle(m_handle);
-                m_handle = NULL;
+                m_handle = nullptr;
 #else /* POSIX / pthreads */
                 int32_t shrMemSize = (m_itemSize * m_itemCnt + sizeof(ShrMemCtrl) + RINGMEM_ALLIGNMENT - 1) & (~RINGMEM_ALLIGNMENT - 1);
                 munmap(m_shrMem, shrMemSize);
-                unlink(m_filepath);
-                free(m_filepath);
-                m_filepath = NULL;
+                if (m_filepath)
+                {
+                    unlink(m_filepath);
+                    std::free(m_filepath);
+                    m_filepath = nullptr;
+                }
 #endif ///< _WIN32
-                m_shrMem = NULL;
-                m_dataPool = NULL;
+                m_shrMem = nullptr;
+                m_dataPool = nullptr;
                 m_itemSize = 0;
                 m_itemCnt = 0;
             }
@@ -287,7 +327,7 @@ namespace X265_NS {
                     m_writeSem->release();
 
                     delete m_writeSem;
-                    m_writeSem = NULL;
+                    m_writeSem = nullptr;
                 }
 
                 if (m_readSem)
@@ -295,7 +335,7 @@ namespace X265_NS {
                     m_readSem->release();
 
                     delete m_readSem;
-                    m_readSem = NULL;
+                    m_readSem = nullptr;
                 }
             }
 

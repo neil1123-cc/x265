@@ -2854,8 +2854,8 @@ cglobal saoCuStatsE1, 4,13,16       ; Stack: 5 of stats and 5 of count
 ;    int x, y;
 ;    int32_t tmp_stats[SAO::NUM_EDGETYPE];
 ;    int32_t tmp_count[SAO::NUM_EDGETYPE];
-;    memset(tmp_stats, 0, sizeof(tmp_stats));
-;    memset(tmp_count, 0, sizeof(tmp_count));
+;    std::fill_n(reinterpret_cast<uint8_t*>(tmp_stats), sizeof(tmp_stats), uint8_t(0));
+;    std::fill_n(reinterpret_cast<uint8_t*>(tmp_count), sizeof(tmp_count), uint8_t(0));
 ;    for (y = 0; y < endY; y++)
 ;    {
 ;        upBufft[0] = signOf(rec[stride] - rec[-1]);
@@ -3324,8 +3324,8 @@ cglobal saoCuStatsE2, 5,10,16                        ; Stack: 5 of stats and 5 o
 
 ;void saoStatE3(const int16_t *diff, const pixel *rec, intptr_t stride, int8_t *upBuff1, int endX, int endY, int32_t *stats, int32_t *count);
 ;{
-;    memset(tmp_stats, 0, sizeof(tmp_stats));
-;    memset(tmp_count, 0, sizeof(tmp_count));
+;    std::fill_n(reinterpret_cast<uint8_t*>(tmp_stats), sizeof(tmp_stats), uint8_t(0));
+;    std::fill_n(reinterpret_cast<uint8_t*>(tmp_count), sizeof(tmp_count), uint8_t(0));
 ;    for (y = startY; y < endY; y++)
 ;    {
 ;        for (x = startX; x < endX; x++)

@@ -61,7 +61,7 @@ protected:
     void* planes_all;
     void* planes[3];
     void* temp;
-    int framesize;
+    size_t framesize;
 public:
     ZimgFilter(char*);
     ~ZimgFilter() {}

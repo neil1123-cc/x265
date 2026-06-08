@@ -2365,17 +2365,17 @@ void setupPixelPrimitives_neon(EncoderPrimitives &p)
 
 
 
-    p.chroma[X265_CSP_I420].pu[CHROMA_420_2x2].satd   = NULL;
-    p.chroma[X265_CSP_I420].pu[CHROMA_420_2x4].satd   = NULL;
-    p.chroma[X265_CSP_I420].pu[CHROMA_420_2x8].satd   = NULL;
-    p.chroma[X265_CSP_I420].pu[CHROMA_420_4x2].satd   = NULL;
+    p.chroma[X265_CSP_I420].pu[CHROMA_420_2x2].satd   = nullptr;
+    p.chroma[X265_CSP_I420].pu[CHROMA_420_2x4].satd   = nullptr;
+    p.chroma[X265_CSP_I420].pu[CHROMA_420_2x8].satd   = nullptr;
+    p.chroma[X265_CSP_I420].pu[CHROMA_420_4x2].satd   = nullptr;
     p.chroma[X265_CSP_I420].pu[CHROMA_420_4x4].satd   = satd4_neon<4, 4>;
     p.chroma[X265_CSP_I420].pu[CHROMA_420_4x8].satd   = satd4_neon<4, 8>;
     p.chroma[X265_CSP_I420].pu[CHROMA_420_4x16].satd  = satd4_neon<4, 16>;
-    p.chroma[X265_CSP_I420].pu[CHROMA_420_6x8].satd   = NULL;
-    p.chroma[X265_CSP_I420].pu[CHROMA_420_8x2].satd   = NULL;
+    p.chroma[X265_CSP_I420].pu[CHROMA_420_6x8].satd   = nullptr;
+    p.chroma[X265_CSP_I420].pu[CHROMA_420_8x2].satd   = nullptr;
     p.chroma[X265_CSP_I420].pu[CHROMA_420_8x4].satd   = satd8_neon<8, 4>;
-    p.chroma[X265_CSP_I420].pu[CHROMA_420_8x6].satd   = NULL;
+    p.chroma[X265_CSP_I420].pu[CHROMA_420_8x6].satd   = nullptr;
     p.chroma[X265_CSP_I420].pu[CHROMA_420_8x8].satd   = satd8_neon<8, 8>;
     p.chroma[X265_CSP_I420].pu[CHROMA_420_8x16].satd  = satd8_neon<8, 16>;
     p.chroma[X265_CSP_I420].pu[CHROMA_420_8x32].satd  = satd8_neon<8, 32>;
@@ -2454,14 +2454,14 @@ void setupPixelPrimitives_neon(EncoderPrimitives &p)
     CHROMA_PU_422(32, 64);
 
 
-    p.chroma[X265_CSP_I422].pu[CHROMA_422_2x4].satd   = NULL;
-    p.chroma[X265_CSP_I422].pu[CHROMA_422_2x8].satd   = NULL;
-    p.chroma[X265_CSP_I422].pu[CHROMA_422_2x16].satd  = NULL;
+    p.chroma[X265_CSP_I422].pu[CHROMA_422_2x4].satd   = nullptr;
+    p.chroma[X265_CSP_I422].pu[CHROMA_422_2x8].satd   = nullptr;
+    p.chroma[X265_CSP_I422].pu[CHROMA_422_2x16].satd  = nullptr;
     p.chroma[X265_CSP_I422].pu[CHROMA_422_4x4].satd   = satd4_neon<4, 4>;
     p.chroma[X265_CSP_I422].pu[CHROMA_422_4x8].satd   = satd4_neon<4, 8>;
     p.chroma[X265_CSP_I422].pu[CHROMA_422_4x16].satd  = satd4_neon<4, 16>;
     p.chroma[X265_CSP_I422].pu[CHROMA_422_4x32].satd  = satd4_neon<4, 32>;
-    p.chroma[X265_CSP_I422].pu[CHROMA_422_6x16].satd  = NULL;
+    p.chroma[X265_CSP_I422].pu[CHROMA_422_6x16].satd  = nullptr;
     p.chroma[X265_CSP_I422].pu[CHROMA_422_8x4].satd   = satd8_neon<8, 4>;
     p.chroma[X265_CSP_I422].pu[CHROMA_422_8x8].satd   = satd8_neon<8, 8>;
     p.chroma[X265_CSP_I422].pu[CHROMA_422_8x12].satd  = satd8_neon<8, 12>;

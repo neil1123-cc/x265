@@ -47,6 +47,8 @@ public:
 
     virtual bool isFail() const = 0;
 
+    virtual bool finalize() = 0;
+
     virtual void release() = 0;
 
     virtual bool writePicture(const x265_picture& pic) = 0;

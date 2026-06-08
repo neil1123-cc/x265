@@ -25,8 +25,15 @@
 #include "common.h"
 #include "threadpool.h"
 #include "threading.h"
+#include "param.h"
 
+#include <algorithm>
+#include <cerrno>
+#include <cctype>
 #include <new>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7
@@ -49,14 +56,10 @@
 #ifdef __GNUC__
 
 #define SLEEPBITMAP_BSF(id, x)     (id) = ((unsigned long)__builtin_ctzll(x))
-#define SLEEPBITMAP_OR(ptr, mask)  __sync_fetch_and_or(ptr, mask)
-#define SLEEPBITMAP_AND(ptr, mask) __sync_fetch_and_and(ptr, mask)
 
 #elif defined(_MSC_VER)
 
 #define SLEEPBITMAP_BSF(id, x)     _BitScanForward64(&id, x)
-#define SLEEPBITMAP_OR(ptr, mask)  InterlockedOr64((volatile LONG64*)ptr, (LONG)mask)
-#define SLEEPBITMAP_AND(ptr, mask) InterlockedAnd64((volatile LONG64*)ptr, (LONG)mask)
 
 #endif // ifdef __GNUC__
 
@@ -64,9 +67,38 @@
 
 /* use 32-bit primitives defined in threading.h */
 #define SLEEPBITMAP_BSF BSF
-#define SLEEPBITMAP_OR  ATOMIC_OR
-#define SLEEPBITMAP_AND ATOMIC_AND
 
+#endif
+
+#define SLEEPBITMAP_LOAD(ptr)      (ptr)->load(std::memory_order_acquire)
+#define SLEEPBITMAP_OR(ptr, mask)  (ptr)->fetch_or((mask), std::memory_order_acq_rel)
+#define SLEEPBITMAP_AND(ptr, mask) (ptr)->fetch_and((mask), std::memory_order_acq_rel)
+
+static bool parseThreadPoolCountToken(const char* token, int& value)
+{
+    bool bError = false;
+    int parsedValue = X265_NS::x265_atoi(token, bError);
+    if (bError || parsedValue < 0)
+        return false;
+
+    value = parsedValue;
+    return true;
+}
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+static bool parseThreadPoolCpuMhzValue(const char* value, double& mhz)
+{
+    if (!value)
+        return false;
+
+    errno = 0;
+    char* end = nullptr;
+    mhz = std::strtod(value, &end);
+    while (end && *end && std::isspace(static_cast<unsigned char>(*end)))
+        ++end;
+
+    return errno != ERANGE && end != value && end && *end == '\0' && std::isfinite(mhz);
+}
 #endif
 
 /* TODO FIX: Macro __MACH__ ideally should be part of MacOS definition, but adding to Cmake
@@ -193,7 +225,7 @@ void WorkerThread::threadMain()
 
 void JobProvider::tryWakeOne()
 {
-    int id = m_pool->tryAcquireSleepingThread(m_ownerBitmap, ALL_POOL_THREADS);
+    int id = m_pool->tryAcquireSleepingThread(m_ownerBitmap.load(std::memory_order_acquire), ALL_POOL_THREADS);
     if (id < 0)
     {
         m_helpWanted.store(true);
@@ -215,7 +247,7 @@ int ThreadPool::tryAcquireSleepingThread(sleepbitmap_t firstTryBitmap, sleepbitm
 {
     unsigned long id;
 
-    sleepbitmap_t masked = m_sleepBitmap & firstTryBitmap;
+    sleepbitmap_t masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & firstTryBitmap;
     while (masked)
     {
         SLEEPBITMAP_BSF(id, masked);
@@ -224,10 +256,10 @@ int ThreadPool::tryAcquireSleepingThread(sleepbitmap_t firstTryBitmap, sleepbitm
         if (SLEEPBITMAP_AND(&m_sleepBitmap, ~bit) & bit)
             return (int)id;
 
-        masked = m_sleepBitmap & firstTryBitmap;
+        masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & firstTryBitmap;
     }
 
-    masked = m_sleepBitmap & secondTryBitmap;
+    masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & secondTryBitmap;
     while (masked)
     {
         SLEEPBITMAP_BSF(id, masked);
@@ -236,7 +268,7 @@ int ThreadPool::tryAcquireSleepingThread(sleepbitmap_t firstTryBitmap, sleepbitm
         if (SLEEPBITMAP_AND(&m_sleepBitmap, ~bit) & bit)
             return (int)id;
 
-        masked = m_sleepBitmap & secondTryBitmap;
+        masked = SLEEPBITMAP_LOAD(&m_sleepBitmap) & secondTryBitmap;
     }
 
     return -1;
@@ -273,6 +305,10 @@ static void distributeThreadsForTme(
     int& numPools,
     int& threadsFrameEnc)
 {
+#if !(defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7) && !HAVE_LIBNUMA
+    (void)bNumaSupport;
+#endif
+
     if (totalNumThreads < MIN_TME_THREADS)
     {
         x265_log(p, X265_LOG_WARNING, "Low thread count detected, disabling --threaded-me."
@@ -359,8 +395,8 @@ static void distributeThreadsForTme(
         }
 
         // Apply calculated threadpool assignment
-        memset(threadsPerPool, 0, sizeof(int) * (numNumaNodes + 2));
-        memset(nodeMaskPerPool, 0, sizeof(uint64_t) * (numNumaNodes + 2));
+        std::fill_n(threadsPerPool, numNumaNodes + 2, 0);
+        std::fill_n(nodeMaskPerPool, numNumaNodes + 2, uint64_t(0));
 
         numPools = numNumaNodes = static_cast<int>(threads.size());
         for (int pool = 0; pool < numPools; pool++)
@@ -372,8 +408,8 @@ static void distributeThreadsForTme(
     else
 #endif
     {
-        memset(threadsPerPool, 0, sizeof(int) * (numNumaNodes + 2));
-        memset(nodeMaskPerPool, 0, sizeof(uint64_t) * (numNumaNodes + 2));
+        std::fill_n(threadsPerPool, numNumaNodes + 2, 0);
+        std::fill_n(nodeMaskPerPool, numNumaNodes + 2, uint64_t(0));
 
         threadsPerPool[0] = targetTME;
         nodeMaskPerPool[0] = 1;
@@ -387,15 +423,11 @@ static void distributeThreadsForTme(
 
 ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isThreadsReserved)
 {
-    enum { MAX_NODE_NUM = 127 };
-    int cpusPerNode[MAX_NODE_NUM + 1];
-    int threadsPerPool[MAX_NODE_NUM + 2];
-    uint64_t nodeMaskPerPool[MAX_NODE_NUM + 2];
+    enum { MAX_NODE_NUM = 64 };
+    int cpusPerNode[MAX_NODE_NUM + 1] = {};
+    int threadsPerPool[MAX_NODE_NUM + 2] = {};
+    uint64_t nodeMaskPerPool[MAX_NODE_NUM + 2] = {};
     int totalNumThreads = 0;
-
-    memset(cpusPerNode, 0, sizeof(cpusPerNode));
-    memset(threadsPerPool, 0, sizeof(threadsPerPool));
-    memset(nodeMaskPerPool, 0, sizeof(nodeMaskPerPool));
 
     int numNumaNodes = X265_MIN(getNumaNodeCount(), MAX_NODE_NUM);
     bool bNumaSupport = false;
@@ -408,13 +440,14 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
 
 
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7
-    PGROUP_AFFINITY groupAffinityPointer = new GROUP_AFFINITY;
     for (int i = 0; i < numNumaNodes; i++)
     {
-        GetNumaNodeProcessorMaskEx((UCHAR)i, groupAffinityPointer);
-        cpusPerNode[i] = popCount(groupAffinityPointer->Mask);
+        GROUP_AFFINITY groupAffinity = {};
+        if (GetNumaNodeProcessorMaskEx((UCHAR)i, &groupAffinity))
+            cpusPerNode[i] = popCount(groupAffinity.Mask);
+        else
+            x265_log(p, X265_LOG_WARNING, "Failed to query NUMA node %d processor mask\n", i);
     }
-    delete groupAffinityPointer;
 #elif HAVE_LIBNUMA
     if (bNumaSupport)
     {
@@ -440,22 +473,29 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
      * For windows because threads can't be allocated to live across sockets
      * changing the default behavior to be per-socket pools -- FIXME */
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 || HAVE_LIBNUMA
-    if (!strlen(p->numaPools) || (strcmp(p->numaPools, "NULL") == 0 || strcmp(p->numaPools, "*") == 0 || strcmp(p->numaPools, "") == 0))
+    if (!std::strlen(p->numaPools) || (std::strcmp(p->numaPools, "NULL") == 0 || std::strcmp(p->numaPools, "*") == 0 || std::strcmp(p->numaPools, "") == 0))
     {
-         char poolString[50] = "";
+         char poolString[X265_MAX_STRING_SIZE] = "";
+         size_t poolLen = 0;
          for (int i = 0; i < numNumaNodes; i++)
          {
              char nextCount[10] = "";
              if (i)
-                 snprintf(nextCount, sizeof(nextCount), ",%d", cpusPerNode[i]);
+                 std::snprintf(nextCount, sizeof(nextCount), ",%d", cpusPerNode[i]);
              else
-                   snprintf(nextCount, sizeof(nextCount), "%d", cpusPerNode[i]);
-             strcat(poolString, nextCount);
+                   std::snprintf(nextCount, sizeof(nextCount), "%d", cpusPerNode[i]);
+             int written = std::snprintf(poolString + poolLen, sizeof(poolString) - poolLen, "%s", nextCount);
+             if (written < 0 || (size_t)written >= sizeof(poolString) - poolLen)
+             {
+                 x265_log(p, X265_LOG_ERROR, "Auto-generated NUMA pool string exceeds supported length\n");
+                 return nullptr;
+             }
+             poolLen += (size_t)written;
          }
-         x265_param_parse(p, "pools", poolString);
+         PARAM_NS::x265_param_parse(p, "pools", poolString);
      }
 #endif
-    if (strlen(p->numaPools))
+    if (std::strlen(p->numaPools))
     {
         const char *nodeStr = p->numaPools;
         for (int i = 0; i < numNumaNodes; i++)
@@ -483,8 +523,13 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
             }
             else
             {
-                int count = atoi(nodeStr);
-                if (i > 0 || strchr(nodeStr, ','))   // it is comma -> old logic
+                int count = 0;
+                if (!parseThreadPoolCountToken(nodeStr, count))
+                {
+                    x265_log(p, X265_LOG_WARNING, "Ignoring invalid NUMA pool token near '%s'\n", nodeStr);
+                    count = 0;
+                }
+                if (i > 0 || std::strchr(nodeStr, ','))   // it is comma -> old logic
                 {
                     threadsPerPool[i] = X265_MIN(count, cpusPerNode[i]);
                     nodeMaskPerPool[i] = ((uint64_t)1 << i);
@@ -575,7 +620,7 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
     }
     if (isThreadsReserved)
         numPools = 1;
-    ThreadPool *pools = new ThreadPool[numPools];
+    ThreadPool *pools = new (std::nothrow) ThreadPool[numPools];
     if (pools)
     {
         int poolCount = (p->bThreadedME) ? numPools - 1 : numPools;
@@ -613,11 +658,18 @@ ThreadPool* ThreadPool::allocThreadPools(x265_param* p, int& numPools, bool isTh
             }
             if (numNumaNodes > 1)
             {
-                char *nodesstr = new char[64 * strlen(",63") + 1];
+                char *nodesstr = new (std::nothrow) char[64 * std::strlen(",63") + 1];
+                if (!nodesstr)
+                {
+                    x265_log(p, X265_LOG_ERROR, "Unable to allocate thread pool NUMA log buffer\n");
+                    delete[] pools;
+                    numPools = 0;
+                    return nullptr;
+                }
                 int len = 0;
                 for (int j = 0; j < 64; j++)
                     if ((nodeMaskPerPool[node] >> j) & 1)
-                        len += snprintf(nodesstr + len, sizeof(nodesstr) - len, ",%d", j);
+                        len += std::snprintf(nodesstr + len, 64 * std::strlen(",63") + 1 - len, ",%d", j);
                 x265_log(p, X265_LOG_INFO, "Thread pool %d using %d threads on numa nodes %s\n", i, numThreads, nodesstr + 1);
                 delete[] nodesstr;
             }
@@ -650,7 +702,7 @@ bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
     X265_CHECK(numThreads <= MAX_POOL_THREADS, "a single thread pool cannot have more than MAX_POOL_THREADS threads\n");
 
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 
-    memset(&m_groupAffinity, 0, sizeof(GROUP_AFFINITY));
+    m_groupAffinity = GROUP_AFFINITY();
     for (int i = 0; i < getNumaNodeCount(); i++)
     {
         int numaNode = ((nodeMask >> i) & 0x1U) ? i : -1;
@@ -676,19 +728,32 @@ bool ThreadPool::create(int numThreads, int maxProviders, uint64_t nodeMask)
 #endif
 
     m_numWorkers = numThreads;
-
-    m_workers = X265_MALLOC(WorkerThread, numThreads);
+    WorkerThread* stagedWorkers = X265_MALLOC(WorkerThread, numThreads);
     /* placement new initialization */
-    if (m_workers)
+    if (stagedWorkers)
         for (int i = 0; i < numThreads; i++)
-            new (m_workers + i)WorkerThread(*this, i);
+            new (stagedWorkers + i)WorkerThread(*this, i);
 
-    m_jpTable = X265_MALLOC(JobProvider*, maxProviders);
-    if (m_jpTable)
-        memset(m_jpTable, 0, sizeof(JobProvider*) * maxProviders);
+    JobProvider** stagedJpTable = X265_MALLOC(JobProvider*, maxProviders);
+    if (!stagedWorkers || !stagedJpTable)
+    {
+        if (stagedWorkers)
+        {
+            for (int i = 0; i < numThreads; i++)
+                stagedWorkers[i].~WorkerThread();
+            X265_FREE(stagedWorkers);
+        }
+        X265_FREE(stagedJpTable);
+        m_numWorkers = 0;
+        return false;
+    }
+
+    std::fill_n(stagedJpTable, maxProviders, nullptr);
+    m_workers = stagedWorkers;
+    m_jpTable = stagedJpTable;
     m_numProviders = 0;
 
-    return m_workers && m_jpTable;
+    return true;
 }
 
 bool ThreadPool::start()
@@ -699,6 +764,13 @@ bool ThreadPool::start()
         if (!m_workers[i].start())
         {
             m_isActive.store(false);
+            for (int j = 0; j < i; j++)
+            {
+                while (!(SLEEPBITMAP_LOAD(&m_sleepBitmap) & ((sleepbitmap_t)1 << j)))
+                    GIVE_UP_TIME();
+                m_workers[j].awaken();
+                m_workers[j].stop();
+            }
             return false;
         }
     }
@@ -712,7 +784,7 @@ void ThreadPool::stopWorkers()
         m_isActive.store(false);
         for (int i = 0; i < m_numWorkers; i++)
         {
-            while (!(m_sleepBitmap & ((sleepbitmap_t)1 << i)))
+            while (!(SLEEPBITMAP_LOAD(&m_sleepBitmap) & ((sleepbitmap_t)1 << i)))
                 GIVE_UP_TIME();
             m_workers[i].awaken();
             m_workers[i].stop();
@@ -746,8 +818,7 @@ void ThreadPool::setThreadNodeAffinity(void *numaMask)
 {
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7 
     UNREFERENCED_PARAMETER(numaMask);
-    GROUP_AFFINITY groupAffinity;
-    memset(&groupAffinity, 0, sizeof(GROUP_AFFINITY));
+    GROUP_AFFINITY groupAffinity = {};
     groupAffinity.Group = m_groupAffinity.Group;
     groupAffinity.Mask = m_groupAffinity.Mask;
     const PGROUP_AFFINITY affinityPointer = &groupAffinity;
@@ -792,17 +863,21 @@ int ThreadPool::getNumaNodeCount()
 int ThreadPool::getCpuCount()
 {
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= _WIN32_WINNT_WIN7
-    enum { MAX_NODE_NUM = 127 };
+    enum { MAX_NODE_NUM = 64 };
     int cpus = 0;
     int numNumaNodes = X265_MIN(getNumaNodeCount(), MAX_NODE_NUM);
-    GROUP_AFFINITY groupAffinity;
     for (int i = 0; i < numNumaNodes; i++)
     {
-        GetNumaNodeProcessorMaskEx((UCHAR)i, &groupAffinity);
-        cpus += popCount(groupAffinity.Mask);
+        GROUP_AFFINITY groupAffinity = {};
+        if (GetNumaNodeProcessorMaskEx((UCHAR)i, &groupAffinity))
+            cpus += popCount(groupAffinity.Mask);
     }
-    return cpus;
-#elif _WIN32
+
+    if (cpus)
+        return cpus;
+#endif
+
+#if _WIN32
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
     return sysinfo.dwNumberOfProcessors;
@@ -966,7 +1041,7 @@ double getCPUFrequencyMHz()
         char path[64];
         for (int cpu = 0; ; ++cpu)
         {
-            snprintf(path, sizeof(path),
+            std::snprintf(path, sizeof(path),
                      "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
             std::ifstream f(path);
             if (!f.is_open())
@@ -991,8 +1066,9 @@ double getCPUFrequencyMHz()
                 size_t colon = line.find(':');
                 if (colon != std::string::npos)
                 {
-                    double mhz = strtod(line.c_str() + colon + 1, nullptr);
-                    if (mhz > maxMhz)
+                    const char* value = line.c_str() + colon + 1;
+                    double mhz = 0.0;
+                    if (parseThreadPoolCpuMhzValue(value, mhz) && mhz > maxMhz)
                         maxMhz = mhz;
                 }
             }

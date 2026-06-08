@@ -25,9 +25,10 @@
 #include "common.h"
 #include "reconplay.h"
 
-#include <signal.h>
-#include <errno.h>
-#include <string.h>
+#include <csignal>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 
 using namespace X265_NS;
 
@@ -45,31 +46,42 @@ bool ReconPlay::pipeValid;
 static void sigpipe_handler(int)
 {
     if (ReconPlay::pipeValid)
-        general_log(NULL, "exec", X265_LOG_ERROR, "pipe closed\n");
+        general_log(nullptr, "exec", X265_LOG_ERROR, "pipe closed\n");
     ReconPlay::pipeValid = false;
 }
 #endif
 
 ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
+    : outputPipe(nullptr)
+    , frameSize(0)
+    , threadActive(false)
+    , width(param.sourceWidth)
+    , height(param.sourceHeight)
+    , colorSpace(param.internalCsp)
 {
-#ifndef _WIN32
-    if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR)
-        general_log(&param, "exec", X265_LOG_ERROR, "Unable to register SIGPIPE handler: %s\n", strerror(errno));
-#endif
-
-    width = param.sourceWidth;
-    height = param.sourceHeight;
-    colorSpace = param.internalCsp;
-
-    frameSize = 0;
-    for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)
-        frameSize += (uint32_t)((width >> x265_cli_csps[colorSpace].width[i]) * (height >> x265_cli_csps[colorSpace].height[i]));
-
     for (int i = 0; i < RECON_BUF_SIZE; i++)
     {
         poc[i] = -1;
-        CHECKED_MALLOC(frameData[i], pixel, frameSize);
+        frameData[i] = nullptr;
     }
+
+#ifndef _WIN32
+    if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR)
+        general_log(&param, "exec", X265_LOG_ERROR, "Unable to register SIGPIPE handler: %s\n", std::strerror(errno));
+#endif
+
+    for (int i = 0; i < x265_cli_csps[colorSpace].planes; i++)
+    {
+        uint64_t planeWidth = (uint64_t)(width >> x265_cli_csps[colorSpace].width[i]);
+        uint64_t planeHeight = (uint64_t)(height >> x265_cli_csps[colorSpace].height[i]);
+        uint64_t planeSize = planeWidth * planeHeight;
+        if ((planeWidth && planeSize / planeWidth != planeHeight) || planeSize > UINT32_MAX || frameSize > UINT32_MAX - (uint32_t)planeSize)
+            goto fail;
+        frameSize += (uint32_t)planeSize;
+    }
+
+    for (int i = 0; i < RECON_BUF_SIZE; i++)
+        CHECKED_MALLOC(frameData[i], pixel, frameSize);
 
     outputPipe = popen(commandLine, pipemode);
     if (outputPipe)
@@ -77,31 +89,60 @@ ReconPlay::ReconPlay(const char* commandLine, x265_param& param)
         const char* csp = (colorSpace >= X265_CSP_I444) ? "444" : (colorSpace >= X265_CSP_I422) ? "422" : "420";
         const char* depth = (param.internalBitDepth == 10) ? "p10" : (param.internalBitDepth == 12) ? "p12" : "";
 
-        fprintf(outputPipe, "YUV4MPEG2 W%d H%d F%d:%d Ip C%s%s\n", width, height, param.fpsNum, param.fpsDenom, csp, depth);
+        if (std::fprintf(outputPipe, "YUV4MPEG2 W%d H%d F%d:%d Ip C%s%s\n", width, height, param.fpsNum, param.fpsDenom, csp, depth) < 0
+            || std::fflush(outputPipe) || std::ferror(outputPipe))
+        {
+            bool closeFailed = std::ferror(outputPipe) != 0;
+            if (pclose(outputPipe))
+                closeFailed = true;
+            if (closeFailed)
+                general_log(&param, "exec", X265_LOG_WARNING, "Unable to close recon playback pipe after header failure\n");
+            outputPipe = nullptr;
+            goto fail;
+        }
 
         pipeValid = true;
-        threadActive = true;
-        start();
-        return;
+        threadActive.store(true);
+        if (start())
+            return;
+
+        general_log(&param, "exec", X265_LOG_ERROR, "Unable to start recon playback thread\n");
+        threadActive.store(false);
+        pipeValid = false;
+        bool closeFailed = std::ferror(outputPipe) != 0;
+        if (pclose(outputPipe))
+            closeFailed = true;
+        if (closeFailed)
+            general_log(&param, "exec", X265_LOG_WARNING, "Unable to close recon playback pipe after thread start failure\n");
+        outputPipe = nullptr;
+        goto fail;
     }
     else
         general_log(&param, "exec", X265_LOG_ERROR, "popen(%s) failed\n", commandLine);
 
 fail:
-    threadActive = false;
+    threadActive.store(false);
 }
 
 ReconPlay::~ReconPlay()
 {
-    if (threadActive)
+    if (threadActive.load())
     {
-        threadActive = false;
+        threadActive.store(false);
         writeCount.poke();
         stop();
     }
 
-    if (outputPipe) 
-        pclose(outputPipe);
+    pipeValid = false;
+    if (outputPipe)
+    {
+        bool closeFailed = std::ferror(outputPipe) != 0;
+        if (pclose(outputPipe))
+            closeFailed = true;
+        if (closeFailed)
+            general_log(nullptr, "exec", X265_LOG_WARNING, "Unable to finalize recon playback pipe state\n");
+    }
+    outputPipe = nullptr;
 
     for (int i = 0; i < RECON_BUF_SIZE; i++)
         X265_FREE(frameData[i]);
@@ -109,7 +150,7 @@ ReconPlay::~ReconPlay()
 
 bool ReconPlay::writePicture(const x265_picture& pic)
 {
-    if (!threadActive || !pipeValid)
+    if (!threadActive.load() || !pipeValid)
         return false;
 
     int written = writeCount.get();
@@ -121,7 +162,7 @@ bool ReconPlay::writePicture(const x265_picture& pic)
     while (written - read > RECON_BUF_SIZE - 2 || poc[currentCursor] != -1)
     {
         read = readCount.waitForChange(read);
-        if (!threadActive)
+        if (!threadActive.load())
             return false;
     }
 
@@ -136,7 +177,7 @@ bool ReconPlay::writePicture(const x265_picture& pic)
 
         for (int h = 0; h < height >> x265_cli_csps[colorSpace].height[i]; h++)
         {
-            memcpy(buf, src, pwidth * sizeof(pixel));
+            std::memcpy(buf, src, pwidth * sizeof(pixel));
             src += pic.stride[i];
             buf += pwidth;
         }
@@ -158,9 +199,9 @@ void ReconPlay::threadMain()
         if (!outputFrame())
             break;
     }
-    while (threadActive);
+    while (threadActive.load());
 
-    threadActive = false;
+    threadActive.store(false);
     readCount.poke();
 }
 
@@ -173,21 +214,28 @@ bool ReconPlay::outputFrame()
     while (poc[currentCursor] != read)
     {
         written = writeCount.waitForChange(written);
-        if (!threadActive)
+        if (!threadActive.load())
             return false;
     }
 
     char* buf = (char*)frameData[currentCursor];
     intptr_t remainSize = frameSize * sizeof(pixel);
 
-    fprintf(outputPipe, "FRAME\n");
+    if (std::fprintf(outputPipe, "FRAME\n") < 0 || std::fflush(outputPipe) || std::ferror(outputPipe))
+    {
+        pipeValid = false;
+        return false;
+    }
     while (remainSize > 0)
     {
-        intptr_t retCount = (intptr_t)fwrite(buf, sizeof(char), remainSize, outputPipe);
+        intptr_t retCount = (intptr_t)std::fwrite(buf, sizeof(char), remainSize, outputPipe);
 
-        if (retCount < 0 || !pipeValid)
+        if (retCount <= 0 || std::ferror(outputPipe) || !pipeValid)
+        {
+            pipeValid = false;
             /* pipe failure, stop writing and start dropping recon pictures */
             return false;
+        }
     
         buf += retCount;
         remainSize -= retCount;

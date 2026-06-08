@@ -33,6 +33,8 @@
 #include "bitstream.h"
 #include "threading.h"
 
+#include <cstdlib>
+
 using namespace X265_NS;
 namespace {
 struct Cache
@@ -225,9 +227,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
     PicYuv *fencPic = frame.m_fencPic;
     Lowres& fenc    = frame.m_lowres;
 
-    Cache cache;
-
-    memset(&cache, 0, sizeof(cache));
+    Cache cache = {};
     cache.intraCost = fenc.intraCost;
     cache.numPredDir = slice.isInterP() ? 1 : 2;
     cache.lowresWidthInCU = fenc.width >> 3;
@@ -262,7 +262,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
         WeightParam *weights = wp[list][0];
         Frame *refFrame = slice.m_refFrameList[list][0];
         Lowres& refLowres = refFrame->m_lowres;
-        int diffPoc = abs(curPoc - refFrame->m_poc);
+        int diffPoc = std::abs(curPoc - refFrame->m_poc);
 
         /* prepare estimates */
         float guessScale[3], fencMean[3], refMean[3];
@@ -271,7 +271,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
             SET_WEIGHT(weights[plane], false, 1, 0, 0);
             uint64_t fencVar = fenc.wp_ssd[plane] + !refLowres.wp_ssd[plane];
             uint64_t refVar  = refLowres.wp_ssd[plane] + !refLowres.wp_ssd[plane];
-            guessScale[plane] = sqrt((float)fencVar / refVar);
+            guessScale[plane] = std::sqrt((float)fencVar / refVar);
             fencMean[plane] = (float)fenc.wp_sum[plane] / (numpixels[plane]) / (1 << (X265_DEPTH - 8));
             refMean[plane]  = (float)refLowres.wp_sum[plane] / (numpixels[plane]) / (1 << (X265_DEPTH - 8));
         }
@@ -288,7 +288,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
         SET_WEIGHT(weights[1], false, 1 << chromaDenom, chromaDenom, 0);
         SET_WEIGHT(weights[2], false, 1 << chromaDenom, chromaDenom, 0);
 
-        MV *mvs = NULL;
+        MV *mvs = nullptr;
 
         for (int plane = 0; plane < (param.internalCsp != X265_CSP_I400 ? 3 : 1); plane++)
         {
@@ -402,7 +402,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
                 return;
             }
 
-            uint32_t origscore = weightCost(orig, fref, weightTemp, stride, cache, width, height, NULL, !plane);
+            uint32_t origscore = weightCost(orig, fref, weightTemp, stride, cache, width, height, nullptr, !plane);
             if (!origscore)
             {
                 SET_WEIGHT(weights[plane], 0, 1 << denom, denom, 0);
@@ -444,7 +444,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
                     WeightParam wsp;
                     SET_WEIGHT(wsp, true, curScale, mindenom, off);
                     uint32_t s = weightCost(orig, fref, weightTemp, stride, cache, width, height, &wsp, !plane) +
-                                 sliceHeaderCost(&wsp, lambda, !!plane);
+                                 sliceHeaderCost(&wsp, lambda, plane != 0);
                     COPY4_IF_LT(minscore, s, minscale, curScale, minoff, off, bFound, true);
 
                     /* Don't check any more offsets if the previous one had a lower cost than the current one */
@@ -508,7 +508,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
 
     X265_FREE(mcbuf);
 
-    memcpy(slice.m_weightPredTable, wp, sizeof(WeightParam) * 2 * MAX_NUM_REF * 3);
+    std::memcpy(slice.m_weightPredTable, wp, sizeof(WeightParam) * 2 * MAX_NUM_REF * 3);
 
     if (param.logLevel >= X265_LOG_FULL)
     {
@@ -516,7 +516,7 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
         int p = 0;
         bool bWeighted = false;
 
-        p = snprintf(buf, sizeof(buf), "poc: %d weights:", slice.m_poc);
+        p = std::snprintf(buf, sizeof(buf), "poc: %d weights:", slice.m_poc);
         int numPredDir = slice.isInterP() ? 1 : 2;
         for (int list = 0; list < numPredDir; list++)
         {
@@ -524,21 +524,21 @@ void weightAnalyse(Slice& slice, Frame& frame, x265_param& param)
             if (w[0].wtPresent || w[1].wtPresent || w[2].wtPresent)
             {
                 bWeighted = true;
-                p += snprintf(buf + p, sizeof(buf) - p, " [L%d:R0 ", list);
+                p += std::snprintf(buf + p, sizeof(buf) - p, " [L%d:R0 ", list);
                 if (w[0].wtPresent)
-                    p += snprintf(buf + p, sizeof(buf) - p, "Y{%d/%d%+d}", w[0].inputWeight, 1 << w[0].log2WeightDenom, w[0].inputOffset);
+                    p += std::snprintf(buf + p, sizeof(buf) - p, "Y{%d/%d%+d}", w[0].inputWeight, 1 << w[0].log2WeightDenom, w[0].inputOffset);
                 if (w[1].wtPresent)
-                    p += snprintf(buf + p, sizeof(buf) - p, "U{%d/%d%+d}", w[1].inputWeight, 1 << w[1].log2WeightDenom, w[1].inputOffset);
+                    p += std::snprintf(buf + p, sizeof(buf) - p, "U{%d/%d%+d}", w[1].inputWeight, 1 << w[1].log2WeightDenom, w[1].inputOffset);
                 if (w[2].wtPresent)
-                    p += snprintf(buf + p, sizeof(buf) - p, "V{%d/%d%+d}", w[2].inputWeight, 1 << w[2].log2WeightDenom, w[2].inputOffset);
-                p += snprintf(buf + p, sizeof(buf) - p, "]");
+                    p += std::snprintf(buf + p, sizeof(buf) - p, "V{%d/%d%+d}", w[2].inputWeight, 1 << w[2].log2WeightDenom, w[2].inputOffset);
+                p += std::snprintf(buf + p, sizeof(buf) - p, "]");
             }
         }
 
         if (bWeighted)
         {
             if (p < 80) // pad with spaces to ensure progress line overwritten
-                snprintf(buf + p, sizeof(buf) - p, "%*s", 80 - p, " ");
+                std::snprintf(buf + p, sizeof(buf) - p, "%*s", 80 - p, " ");
             x265_log(&param, X265_LOG_FULL, "%s\n", buf);
         }
     }

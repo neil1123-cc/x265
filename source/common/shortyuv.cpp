@@ -28,13 +28,15 @@
 
 #include "x265.h"
 
+#include <algorithm>
+
 using namespace X265_NS;
 
 ShortYuv::ShortYuv()
 {
-    m_buf[0] = NULL;
-    m_buf[1] = NULL;
-    m_buf[2] = NULL;
+    m_buf[0] = nullptr;
+    m_buf[1] = nullptr;
+    m_buf[2] = nullptr;
 }
 
 bool ShortYuv::create(uint32_t size, int csp)
@@ -58,7 +60,7 @@ bool ShortYuv::create(uint32_t size, int csp)
     else
     {
         CHECKED_MALLOC(m_buf[0], int16_t, sizeL);
-        m_buf[1] = m_buf[2] = NULL;
+        m_buf[1] = m_buf[2] = nullptr;
     }
     return true;
 
@@ -73,9 +75,15 @@ void ShortYuv::destroy()
 
 void ShortYuv::clear()
 {
-    memset(m_buf[0], 0, (m_size  * m_size) *  sizeof(int16_t));
-    memset(m_buf[1], 0, (m_csize * m_csize) * sizeof(int16_t));
-    memset(m_buf[2], 0, (m_csize * m_csize) * sizeof(int16_t));
+    const size_t lumaCount = size_t(m_size) * m_size;
+    std::fill_n(m_buf[0], lumaCount, int16_t(0));
+
+    if (m_buf[1] && m_buf[2])
+    {
+        const size_t chromaCount = size_t(m_csize) * m_csize;
+        std::fill_n(m_buf[1], chromaCount, int16_t(0));
+        std::fill_n(m_buf[2], chromaCount, int16_t(0));
+    }
 }
 
 void ShortYuv::subtract(const Yuv& srcYuv0, const Yuv& srcYuv1, uint32_t log2Size, int picCsp)

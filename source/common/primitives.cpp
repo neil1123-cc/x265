@@ -24,6 +24,8 @@
 #include "common.h"
 #include "primitives.h"
 
+#include <cstring>
+
 namespace X265_NS {
 // x265 private namespace
 
@@ -111,7 +113,7 @@ void setupAliasPrimitives(EncoderPrimitives &p)
 
     /* alias chroma 4:4:4 from luma primitives (all but chroma filters) */
 
-    p.chroma[X265_CSP_I444].cu[BLOCK_4x4].sa8d = NULL;
+    p.chroma[X265_CSP_I444].cu[BLOCK_4x4].sa8d = nullptr;
 
     for (int i = 0; i < NUM_PU_SIZES; i++)
     {
@@ -183,13 +185,13 @@ void setupAliasPrimitives(EncoderPrimitives &p)
     p.chroma[X265_CSP_I422].pu[CHROMA_422_32x16].satd = p.pu[LUMA_32x16].satd;
     //p.chroma[X265_CSP_I422].satd[CHROMA_422_8x64]  = satd8<8, 64>;
 
-    p.chroma[X265_CSP_I420].cu[BLOCK_420_2x2].sa8d = NULL;
+    p.chroma[X265_CSP_I420].cu[BLOCK_420_2x2].sa8d = nullptr;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_4x4].sa8d = p.pu[LUMA_4x4].satd;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_8x8].sa8d = p.cu[BLOCK_8x8].sa8d;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_16x16].sa8d = p.cu[BLOCK_16x16].sa8d;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_32x32].sa8d = p.cu[BLOCK_32x32].sa8d;
 
-    p.chroma[X265_CSP_I422].cu[BLOCK_422_2x4].sa8d = NULL;
+    p.chroma[X265_CSP_I422].cu[BLOCK_422_2x4].sa8d = nullptr;
     p.chroma[X265_CSP_I422].cu[BLOCK_422_4x8].sa8d = p.pu[LUMA_4x8].satd;
 
     /* alias CU copy_pp from square PU copy_pp */
@@ -201,13 +203,13 @@ void setupAliasPrimitives(EncoderPrimitives &p)
             p.chroma[c].cu[i].copy_pp = p.chroma[c].pu[i].copy_pp;
     }
 
-    p.chroma[X265_CSP_I420].cu[BLOCK_420_2x2].sse_pp = NULL;
+    p.chroma[X265_CSP_I420].cu[BLOCK_420_2x2].sse_pp = nullptr;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_4x4].sse_pp = p.cu[BLOCK_4x4].sse_pp;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_8x8].sse_pp = p.cu[BLOCK_8x8].sse_pp;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_16x16].sse_pp = p.cu[BLOCK_16x16].sse_pp;
     p.chroma[X265_CSP_I420].cu[BLOCK_420_32x32].sse_pp = p.cu[BLOCK_32x32].sse_pp;
 
-    p.chroma[X265_CSP_I422].cu[BLOCK_422_2x4].sse_pp = NULL;
+    p.chroma[X265_CSP_I422].cu[BLOCK_422_2x4].sse_pp = nullptr;
 }
 
 void x265_report_simd(x265_param* param)
@@ -217,32 +219,32 @@ void x265_report_simd(x265_param* param)
         int cpuid = param->cpuid;
 
         char buf[1000];
-        char *p = buf + snprintf(buf, sizeof(buf), "using cpu capabilities:");
+        char *p = buf + std::snprintf(buf, sizeof(buf), "using cpu capabilities:");
         char *none = p;
         for (int i = 0; X265_NS::cpu_names[i].flags; i++)
         {
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE")
                 && (cpuid & X265_CPU_SSE2))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE2")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE2")
                 && (cpuid & (X265_CPU_SSE2_IS_FAST | X265_CPU_SSE2_IS_SLOW)))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE3")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE3")
                 && (cpuid & X265_CPU_SSSE3 || !(cpuid & X265_CPU_CACHELINE_64)))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "SSE4.1")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "SSE4.1")
                 && (cpuid & X265_CPU_SSE42))
                 continue;
-            if (!strcmp(X265_NS::cpu_names[i].name, "BMI1")
+            if (!std::strcmp(X265_NS::cpu_names[i].name, "BMI1")
                 && (cpuid & X265_CPU_BMI2))
                 continue;
             if ((cpuid & X265_NS::cpu_names[i].flags) == X265_NS::cpu_names[i].flags
                 && (!i || X265_NS::cpu_names[i].flags != X265_NS::cpu_names[i - 1].flags))
-                p += snprintf(p, sizeof(buf) - (p - buf), " %s", X265_NS::cpu_names[i].name);
+                p += std::snprintf(p, sizeof(buf) - (p - buf), " %s", X265_NS::cpu_names[i].name);
         }
 
         if (p == none)
-            snprintf(p, sizeof(buf) - (p - buf), " none!");
+            std::snprintf(p, sizeof(buf) - (p - buf), " none!");
         x265_log(param, X265_LOG_INFO, "%s\n", buf);
     }
 }
@@ -255,9 +257,9 @@ void x265_setup_primitives(x265_param *param)
 
         /* We do not want the encoder to use the un-optimized intra all-angles
          * C references. It is better to call the individual angle functions
-         * instead. We must check for NULL before using this primitive */
+         * instead. We must check for nullptr before using this primitive */
         for (int i = 0; i < NUM_TR_SIZE; i++)
-            primitives.cu[i].intra_pred_allangs = NULL;
+            primitives.cu[i].intra_pred_allangs = nullptr;
 
 #if ENABLE_ASSEMBLY
 #if defined(X265_ARCH_X86) || defined(X265_ARCH_ARM64) || defined(X265_ARCH_RISCV64)

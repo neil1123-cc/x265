@@ -30,10 +30,10 @@ namespace X265_NS {
 
 int WINAPI cond_init(ConditionVariable *cond)
 { // InitializeConditionVariable
-    cond->semaphore = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
+    cond->semaphore = CreateSemaphore(nullptr, 0, 0x7fffffff, nullptr);
     if (!cond->semaphore)
         return -1;
-    cond->waitersDone = CreateEvent(NULL, FALSE, FALSE, NULL);
+    cond->waitersDone = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (!cond->waitersDone)
         return -1;
 
@@ -59,7 +59,7 @@ void WINAPI cond_broadcast(ConditionVariable *cond)
 
     if (haveWaiter)
     {
-        ReleaseSemaphore(cond->semaphore, cond->waiterCount, NULL);
+        ReleaseSemaphore(cond->semaphore, cond->waiterCount, nullptr);
         LeaveCriticalSection(&cond->waiterCountMutex);
         WaitForSingleObject(cond->waitersDone, INFINITE);
         cond->bIsBroadcast = 0;
@@ -79,7 +79,7 @@ void WINAPI cond_signal(ConditionVariable *cond)
 
     if (haveWaiter)
     {
-        ReleaseSemaphore(cond->semaphore, 1, NULL);
+        ReleaseSemaphore(cond->semaphore, 1, nullptr);
         WaitForSingleObject(cond->waitersDone, INFINITE);
     }
 

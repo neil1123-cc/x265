@@ -40,6 +40,7 @@ namespace X265_NS {
 class WaveFront : public JobProvider
 {
 private:
+    void releaseState();
 
     // bitmaps of rows queued for processing, uses atomic intrinsics
 
@@ -63,8 +64,13 @@ protected:
 public:
 
     WaveFront()
-        : m_internalDependencyBitmap(NULL)
-        , m_externalDependencyBitmap(NULL)
+        : m_internalDependencyBitmap(nullptr)
+        , m_externalDependencyBitmap(nullptr)
+        , m_numWords(0)
+        , m_numRows(0)
+        , m_sLayerId(0)
+        , m_row_to_idx(nullptr)
+        , m_idx_to_row(nullptr)
     {}
 
     virtual ~WaveFront();

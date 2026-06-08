@@ -174,77 +174,77 @@ class CUData
 {
 public:
 
-    cubcast_t s_partSet[NUM_FULL_DEPTH]; // pointer to broadcast set functions per absolute depth
-    uint32_t  s_numPartInCUSize;
+    cubcast_t s_partSet[NUM_FULL_DEPTH] {}; // pointer to broadcast set functions per absolute depth
+    uint32_t  s_numPartInCUSize { 0 };
 
-    bool          m_vbvAffected;
+    bool          m_vbvAffected { false };
 
-    FrameData*    m_encData;
-    const Slice*  m_slice;
+    FrameData*    m_encData { nullptr };
+    const Slice*  m_slice { nullptr };
 
-    cucopy_t      m_partCopy;         // pointer to function that copies m_numPartitions elements
-    cubcast_t     m_partSet;          // pointer to function that sets m_numPartitions elements
-    cucopy_t      m_subPartCopy;      // pointer to function that copies m_numPartitions/4 elements, may be NULL
-    cubcast_t     m_subPartSet;       // pointer to function that sets m_numPartitions/4 elements, may be NULL
+    cucopy_t      m_partCopy { nullptr };         // pointer to function that copies m_numPartitions elements
+    cubcast_t     m_partSet { nullptr };          // pointer to function that sets m_numPartitions elements
+    cucopy_t      m_subPartCopy { nullptr };      // pointer to function that copies m_numPartitions/4 elements, may be nullptr
+    cubcast_t     m_subPartSet { nullptr };       // pointer to function that sets m_numPartitions/4 elements, may be nullptr
 
-    uint32_t      m_cuAddr;           // address of CTU within the picture in raster order
-    uint32_t      m_absIdxInCTU;      // address of CU within its CTU in Z scan order
-    uint32_t      m_cuPelX;           // CU position within the picture, in pixels (X)
-    uint32_t      m_cuPelY;           // CU position within the picture, in pixels (Y)
-    uint32_t      m_numPartitions;    // maximum number of 4x4 partitions within this CU
+    uint32_t      m_cuAddr { 0 };           // address of CTU within the picture in raster order
+    uint32_t      m_absIdxInCTU { 0 };      // address of CU within its CTU in Z scan order
+    uint32_t      m_cuPelX { 0 };           // CU position within the picture, in pixels (X)
+    uint32_t      m_cuPelY { 0 };           // CU position within the picture, in pixels (Y)
+    uint32_t      m_numPartitions { 0 };    // maximum number of 4x4 partitions within this CU
 
-    uint32_t      m_chromaFormat;
-    uint32_t      m_hChromaShift;
-    uint32_t      m_vChromaShift;
+    uint32_t      m_chromaFormat { 0 };
+    uint32_t      m_hChromaShift { 0 };
+    uint32_t      m_vChromaShift { 0 };
 
     /* multiple slices informations */
-    uint8_t      m_bFirstRowInSlice;
-    uint8_t      m_bLastRowInSlice;
-    uint8_t      m_bLastCuInSlice;
+    uint8_t      m_bFirstRowInSlice { 0 };
+    uint8_t      m_bLastRowInSlice { 0 };
+    uint8_t      m_bLastCuInSlice { 0 };
 
     /* Per-part data, stored contiguously */
-    int8_t*       m_qp;               // array of QP values
-    int8_t*       m_qpAnalysis;       // array of QP values for analysis reuse
-    uint8_t*      m_log2CUSize;       // array of cu log2Size TODO: seems redundant to depth
-    uint8_t*      m_lumaIntraDir;     // array of intra directions (luma)
-    uint8_t*      m_tqBypass;         // array of CU lossless flags
-    int8_t*       m_refIdx[2];        // array of motion reference indices per list
-    uint8_t*      m_cuDepth;          // array of depths
-    uint8_t*      m_predMode;         // array of prediction modes
-    uint8_t*      m_partSize;         // array of partition sizes
-    uint8_t*      m_mergeFlag;        // array of merge flags
-    uint8_t*      m_skipFlag[2];
-    uint8_t*      m_interDir;         // array of inter directions
-    uint8_t*      m_mvpIdx[2];        // array of motion vector predictor candidates or merge candidate indices [0]
-    uint8_t*      m_tuDepth;          // array of transform indices
-    uint8_t*      m_transformSkip[3]; // array of transform skipping flags per plane
-    uint8_t*      m_cbf[3];           // array of coded block flags (CBF) per plane
-    uint8_t*      m_chromaIntraDir;   // array of intra directions (chroma)
+    int8_t*       m_qp { nullptr };               // array of QP values
+    int8_t*       m_qpAnalysis { nullptr };       // array of QP values for analysis reuse
+    uint8_t*      m_log2CUSize { nullptr };       // array of cu log2Size TODO: seems redundant to depth
+    uint8_t*      m_lumaIntraDir { nullptr };     // array of intra directions (luma)
+    uint8_t*      m_tqBypass { nullptr };         // array of CU lossless flags
+    int8_t*       m_refIdx[2] {};                 // array of motion reference indices per list
+    uint8_t*      m_cuDepth { nullptr };          // array of depths
+    uint8_t*      m_predMode { nullptr };         // array of prediction modes
+    uint8_t*      m_partSize { nullptr };         // array of partition sizes
+    uint8_t*      m_mergeFlag { nullptr };        // array of merge flags
+    uint8_t*      m_skipFlag[2] {};
+    uint8_t*      m_interDir { nullptr };         // array of inter directions
+    uint8_t*      m_mvpIdx[2] {};                 // array of motion vector predictor candidates or merge candidate indices [0]
+    uint8_t*      m_tuDepth { nullptr };          // array of transform indices
+    uint8_t*      m_transformSkip[3] {};          // array of transform skipping flags per plane
+    uint8_t*      m_cbf[3] {};                    // array of coded block flags (CBF) per plane
+    uint8_t*      m_chromaIntraDir { nullptr };   // array of intra directions (chroma)
     enum { BytesPerPartition = 24 };  // combined sizeof() of all per-part data
 
-    sse_t*        m_distortion;
-    coeff_t*      m_trCoeff[3];       // transformed coefficient buffer per plane
-    int8_t        m_refTuDepth[NUM_TU_DEPTH];   // TU depth of CU at depths 0, 1 and 2
+    sse_t*        m_distortion { nullptr };
+    coeff_t*      m_trCoeff[3] {};       // transformed coefficient buffer per plane
+    int8_t        m_refTuDepth[NUM_TU_DEPTH] {};   // TU depth of CU at depths 0, 1 and 2
 
-    MV*           m_mv[2];            // array of motion vectors per list
-    MV*           m_mvd[2];           // array of coded motion vector deltas per list
+    MV*           m_mv[2] {};            // array of motion vectors per list
+    MV*           m_mvd[2] {};           // array of coded motion vector deltas per list
     enum { TMVP_UNIT_MASK = 0xF0 };  // mask for mapping index to into a compressed (reference) MV field
 
-    const CUData* m_cuAboveLeft;      // pointer to above-left neighbor CTU
-    const CUData* m_cuAboveRight;     // pointer to above-right neighbor CTU
-    const CUData* m_cuAbove;          // pointer to above neighbor CTU
-    const CUData* m_cuLeft;           // pointer to left neighbor CTU
-    double m_meanQP;
-    uint64_t      m_fAc_den[3];
-    uint64_t      m_fDc_den[3];
+    const CUData* m_cuAboveLeft { nullptr };      // pointer to above-left neighbor CTU
+    const CUData* m_cuAboveRight { nullptr };     // pointer to above-right neighbor CTU
+    const CUData* m_cuAbove { nullptr };          // pointer to above neighbor CTU
+    const CUData* m_cuLeft { nullptr };           // pointer to left neighbor CTU
+    double        m_meanQP { 0.0 };
+    uint64_t      m_fAc_den[3] {};
+    uint64_t      m_fDc_den[3] {};
 
     /* Feature values per CTU for dynamic refinement */
-    uint64_t*       m_collectCURd;
-    uint32_t*       m_collectCUVariance;
-    uint32_t*       m_collectCUCount;
+    uint64_t*       m_collectCURd { nullptr };
+    uint32_t*       m_collectCUVariance { nullptr };
+    uint32_t*       m_collectCUCount { nullptr };
 
 #if ENABLE_SCC_EXT
-    MV              m_lastIntraBCMv[2];
+    MV              m_lastIntraBCMv[2] { MV(0), MV(0) };
 #endif
 
     CUData();
@@ -276,9 +276,9 @@ public:
     void     setLumaIntraDirSubParts(uint8_t dir, uint32_t absPartIdx, uint32_t depth)        { s_partSet[depth](m_lumaIntraDir + absPartIdx, dir); }
     void     setChromIntraDirSubParts(uint8_t dir, uint32_t absPartIdx, uint32_t depth)       { s_partSet[depth](m_chromaIntraDir + absPartIdx, dir); }
     void     setCbfSubParts(uint8_t cbf, TextType ttype, uint32_t absPartIdx, uint32_t depth) { s_partSet[depth](m_cbf[ttype] + absPartIdx, cbf); }
-    void     setCbfPartRange(uint8_t cbf, TextType ttype, uint32_t absPartIdx, uint32_t coveredPartIdxes) { memset(m_cbf[ttype] + absPartIdx, cbf, coveredPartIdxes); }
+    void     setCbfPartRange(uint8_t cbf, TextType ttype, uint32_t absPartIdx, uint32_t coveredPartIdxes) { std::fill_n(m_cbf[ttype] + absPartIdx, coveredPartIdxes, cbf); }
     void     setTransformSkipSubParts(uint8_t tskip, TextType ttype, uint32_t absPartIdx, uint32_t depth) { s_partSet[depth](m_transformSkip[ttype] + absPartIdx, tskip); }
-    void     setTransformSkipPartRange(uint8_t tskip, TextType ttype, uint32_t absPartIdx, uint32_t coveredPartIdxes) { memset(m_transformSkip[ttype] + absPartIdx, tskip, coveredPartIdxes); }
+    void     setTransformSkipPartRange(uint8_t tskip, TextType ttype, uint32_t absPartIdx, uint32_t coveredPartIdxes) { std::fill_n(m_transformSkip[ttype] + absPartIdx, coveredPartIdxes, tskip); }
 
     bool     setQPSubCUs(int8_t qp, uint32_t absPartIdx, uint32_t depth);
 
@@ -305,7 +305,7 @@ public:
 
     uint32_t getNumPartInter(uint32_t absPartIdx) const              { return nbPartsTable[(int)m_partSize[absPartIdx]]; }
     bool     isIntra(uint32_t absPartIdx) const   { return m_predMode[absPartIdx] == MODE_INTRA; }
-    bool     isInter(uint32_t absPartIdx) const   { return !!(m_predMode[absPartIdx] & MODE_INTER); }
+    bool     isInter(uint32_t absPartIdx) const   { return (m_predMode[absPartIdx] & MODE_INTER) != 0; }
     bool     isSkipped(uint32_t absPartIdx) const { return m_predMode[absPartIdx] == MODE_SKIP; }
     bool     isBipredRestriction() const          { return m_log2CUSize[0] == 3 && m_partSize[0] != SIZE_2Nx2N; }
 
@@ -394,8 +394,8 @@ struct CUDataMemPool
     uint32_t* dynRefCntBlock;
     uint32_t* dynRefVarBlock;
 
-    CUDataMemPool() { charMemBlock = NULL; trCoeffMemBlock = NULL; mvMemBlock = NULL; distortionMemBlock = NULL; 
-                      dynRefineRdBlock = NULL; dynRefCntBlock = NULL; dynRefVarBlock = NULL;}
+    CUDataMemPool() { charMemBlock = nullptr; trCoeffMemBlock = nullptr; mvMemBlock = nullptr; distortionMemBlock = nullptr; 
+                      dynRefineRdBlock = nullptr; dynRefCntBlock = nullptr; dynRefVarBlock = nullptr;}
 
     bool create(uint32_t depth, uint32_t csp, uint32_t numInstances, const x265_param& param)
     {

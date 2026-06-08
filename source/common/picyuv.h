@@ -77,7 +77,7 @@ public:
 
     PicYuv();
 
-    bool  create(x265_param* param, bool picAlloc = true, pixel *pixelbuf = NULL);
+    bool  create(x265_param* param, bool picAlloc = true, pixel *pixelbuf = nullptr);
     bool  createScaledPicYUV(x265_param* param, uint8_t scaleFactor);
     bool  createOffsets(const SPS& sps);
     void  destroy();

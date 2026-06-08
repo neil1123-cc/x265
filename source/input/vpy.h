@@ -27,6 +27,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <unordered_map>
 
 #include <vapoursynth/VSScript.h>
@@ -67,6 +68,7 @@
 
 struct VSFDCallbackData {
     const VSAPI* vsapi {nullptr};
+    std::mutex reorderMapMutex;
     std::unordered_map<int, const VSFrameRef*> reorderMap;
     int parallelRequests {1};
     std::atomic<int> outputFrames {0};
@@ -143,7 +145,7 @@ public:
 
     void release();
 
-    bool isEof() const { return nextFrame >= _info.frameCount; }
+    bool isEof() const { return nextFrame >= vpyCallbackData.totalFrames; }
 
     bool isFail() { return vpyFailed; }
 

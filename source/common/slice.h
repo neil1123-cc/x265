@@ -28,6 +28,8 @@
 #include "common.h"
 #include "mv.h"
 
+#include <algorithm>
+
 namespace X265_NS {
 // private namespace
 
@@ -60,9 +62,9 @@ struct RPS
         , numberOfNegativePictures(0)
         , numberOfPositivePictures(0)
     {
-        memset(deltaPOC, 0, sizeof(deltaPOC));
-        memset(poc, 0, sizeof(poc));
-        memset(bUsed, 0, sizeof(bUsed));
+        std::fill_n(deltaPOC, MAX_NUM_REF_PICS, 0);
+        std::fill_n(poc, MAX_NUM_REF_PICS, 0);
+        std::fill_n(bUsed, MAX_NUM_REF_PICS, false);
     }
 
     void sortDeltaPOC();
@@ -239,64 +241,61 @@ struct SPS
 {
     /* cached PicYuv offset arrays, shared by all instances of
      * PicYuv created by this encoder */
-    intptr_t* cuOffsetY;
-    intptr_t* cuOffsetC;
-    intptr_t* buOffsetY;
-    intptr_t* buOffsetC;
+    intptr_t* cuOffsetY = nullptr;
+    intptr_t* cuOffsetC = nullptr;
+    intptr_t* buOffsetY = nullptr;
+    intptr_t* buOffsetC = nullptr;
 
-    int      chromaFormatIdc;        // use param
-    uint32_t picWidthInLumaSamples;  // use param
-    uint32_t picHeightInLumaSamples; // use param
+    int      chromaFormatIdc = 0;        // use param
+    uint32_t picWidthInLumaSamples = 0;  // use param
+    uint32_t picHeightInLumaSamples = 0; // use param
 
-    uint32_t numCuInWidth;
-    uint32_t numCuInHeight;
-    uint32_t numCUsInFrame;
-    uint32_t numPartitions;
-    uint32_t numPartInCUSize;
+    uint32_t numCuInWidth = 0;
+    uint32_t numCuInHeight = 0;
+    uint32_t numCUsInFrame = 0;
+    uint32_t numPartitions = 0;
+    uint32_t numPartInCUSize = 0;
 
-    int      log2MinCodingBlockSize;
-    int      log2DiffMaxMinCodingBlockSize;
-    int      log2MaxPocLsb;
+    int      log2MinCodingBlockSize = 0;
+    int      log2DiffMaxMinCodingBlockSize = 0;
+    int      log2MaxPocLsb = 0;
 
-    uint32_t quadtreeTULog2MaxSize;
-    uint32_t quadtreeTULog2MinSize;
+    uint32_t quadtreeTULog2MaxSize = 0;
+    uint32_t quadtreeTULog2MinSize = 0;
 
-    uint32_t quadtreeTUMaxDepthInter; // use param
-    uint32_t quadtreeTUMaxDepthIntra; // use param
+    uint32_t quadtreeTUMaxDepthInter = 0; // use param
+    uint32_t quadtreeTUMaxDepthIntra = 0; // use param
 
-    uint32_t maxAMPDepth;
+    uint32_t maxAMPDepth = 0;
 
-    uint32_t maxTempSubLayers;   // max number of Temporal Sub layers
-    uint32_t maxDecPicBuffering[MAX_T_LAYERS]; // these are dups of VPS values
-    uint32_t maxLatencyIncrease[MAX_T_LAYERS];
-    int      numReorderPics[MAX_T_LAYERS];
+    uint32_t maxTempSubLayers = 0;              // max number of Temporal Sub layers
+    uint32_t maxDecPicBuffering[MAX_T_LAYERS] = {}; // these are dups of VPS values
+    uint32_t maxLatencyIncrease[MAX_T_LAYERS] = {};
+    int      numReorderPics[MAX_T_LAYERS] = {};
 
-    RPS      spsrps[MAX_NUM_SHORT_TERM_RPS];
-    int      spsrpsNum;
-    int      numGOPBegin;
+    RPS      spsrps[MAX_NUM_SHORT_TERM_RPS] = {};
+    int      spsrpsNum = 0;
+    int      numGOPBegin = 0;
 
-    bool     bUseSAO; // use param
-    bool     bUseAMP; // use param
-    bool     bUseStrongIntraSmoothing; // use param
-    bool     bTemporalMVPEnabled;
-    bool     bEmitVUITimingInfo;
-    bool     bEmitVUIHRDInfo;
+    bool     bUseSAO = false; // use param
+    bool     bUseAMP = false; // use param
+    bool     bUseStrongIntraSmoothing = false; // use param
+    bool     bTemporalMVPEnabled = false;
+    bool     bEmitVUITimingInfo = false;
+    bool     bEmitVUIHRDInfo = false;
 
-    Window   conformanceWindow;
-    VUI      vuiParameters;
-    bool     sps_extension_flag;
+    Window   conformanceWindow{};
+    VUI      vuiParameters{};
+    bool     sps_extension_flag = false;
 
 #if ENABLE_MULTIVIEW
-    int      setSpsExtOrMaxSubLayersMinus1;
-    int      spsInferScalingListFlag;
-    int      maxViews;
-    bool     vui_parameters_present_flag;
+    int      setSpsExtOrMaxSubLayersMinus1 = 0;
+    int      spsInferScalingListFlag = 0;
+    int      maxViews = 0;
+    bool     vui_parameters_present_flag = false;
 #endif
 
-    SPS()
-    {
-        memset((void*)this, 0, sizeof(*this));
-    }
+    SPS() = default;
 
     ~SPS()
     {
@@ -423,10 +422,10 @@ public:
         m_lastIDR = 0;
         m_sLFaseFlag = true;
         m_numRefIdx[0] = m_numRefIdx[1] = 0;
-        m_ctuMV = NULL;
-        memset(m_refFrameList, 0, sizeof(m_refFrameList));
-        memset(m_refReconPicList, 0, sizeof(m_refReconPicList));
-        memset(m_refPOCList, 0, sizeof(m_refPOCList));
+        m_ctuMV = nullptr;
+        std::fill_n(&m_refFrameList[0][0], 2 * (MAX_NUM_REF + 1), static_cast<Frame*>(nullptr));
+        std::fill_n(&m_refReconPicList[0][0], 2 * (MAX_NUM_REF + 1), static_cast<PicYuv*>(nullptr));
+        std::fill_n(&m_refPOCList[0][0], 2 * (MAX_NUM_REF + 1), 0);
         disableWeights();
         m_iPPSQpMinus26 = 0;
         numRefIdxDefault[0] = 1;
@@ -435,7 +434,7 @@ public:
         m_chromaQpOffset[0] = m_chromaQpOffset[1] = 0;
         m_fieldNum = 0;
 #if  ENABLE_SCC_EXT
-        m_lastEncPic = NULL;
+        m_lastEncPic = nullptr;
         m_useIntegerMv = false;
 #endif
         m_bTemporalMvp = false;

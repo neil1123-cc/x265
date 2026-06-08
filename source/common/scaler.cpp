@@ -23,6 +23,10 @@
 
 #include "scaler.h"
 
+#include <algorithm>
+#include <cstring>
+#include <new>
+
 #if _MSC_VER
 #pragma warning(disable: 4706) // assignment within conditional
 #pragma warning(disable: 4244) // '=' : possible loss of data
@@ -33,6 +37,24 @@
 #define SHORT_MAX_10 ((1 << 10) - 1)
 
 namespace X265_NS{
+
+namespace {
+template<typename T>
+T* allocArrayNoThrow(size_t count)
+{
+    if (count > SIZE_MAX / sizeof(T))
+        return nullptr;
+    return new (std::nothrow) T[count];
+}
+
+bool mulOverflowSizeT(size_t a, size_t b, size_t& out)
+{
+    if (a && b > SIZE_MAX / a)
+        return true;
+    out = a * b;
+    return false;
+}
+}
 
 ScalerFilterManager::ScalerFilterManager() :
     m_bitDepth(0),
@@ -51,9 +73,29 @@ ScalerFilterManager::ScalerFilterManager() :
     m_crDstVSubSample(0)
 {
     for (int i = 0; i < m_numSlice; i++)
-        m_slices[i] = NULL;
+        m_slices[i] = nullptr;
     for (int i = 0; i < m_numFilter; i++)
-        m_ScalerFilters[i] = NULL;
+        m_ScalerFilters[i] = nullptr;
+}
+
+void ScalerFilterManager::resetState()
+{
+    for (int i = 0; i < m_numSlice; i++)
+    {
+        if (m_slices[i])
+        {
+            delete m_slices[i];
+            m_slices[i] = nullptr;
+        }
+    }
+    for (int i = 0; i < m_numFilter; i++)
+    {
+        if (m_ScalerFilters[i])
+        {
+            delete m_ScalerFilters[i];
+            m_ScalerFilters[i] = nullptr;
+        }
+    }
 }
 
 inline static void filter_copy_c(int64_t* filter, int64_t* filter2, int size)
@@ -124,20 +166,20 @@ static void doScaling_c_h(int16_t *dst, int dstW, const uint8_t *src, const int1
 
 ScalerFilter::ScalerFilter() :
     m_filtLen(0),
-    m_filtPos(NULL),
-    m_filt(NULL),
-    m_sourceSlice(NULL),
-    m_destSlice(NULL)
+    m_filtPos(nullptr),
+    m_filt(nullptr),
+    m_sourceSlice(nullptr),
+    m_destSlice(nullptr)
 {
 }
 
 ScalerFilter::~ScalerFilter()
 {
     if (m_filtPos) {
-        delete[] m_filtPos; m_filtPos = NULL;
+        delete[] m_filtPos; m_filtPos = nullptr;
     }
     if (m_filt) {
-        delete[] m_filt; m_filt = NULL;
+        delete[] m_filt; m_filt = nullptr;
     }
 }
 
@@ -253,15 +295,22 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     int filterSize;
     int filter2Size;
     int minFilterSize;
-    int64_t *filter = NULL;
-    int64_t *filter2 = NULL;
+    int64_t *filter = nullptr;
+    int64_t *filter2 = nullptr;
     const int64_t fone = 1LL << (54 - x265_min((int)X265_LOG2(srcW / dstW), 8));
     int *outFilterSize = &m_filtLen;
     int64_t xDstInSrc;
     int sizeFactor = flag;
+    size_t filterCount = 0;
+    size_t outFilterCount = 0;
+    int index = RES_FACTOR_DEF;
+    int size = 0;
+    int16_t **outFilter = &m_filt;
 
     // Init filter pos, the +3 is for the MMX(+1) / SSE(+3) scaler which reads over the end
-    m_filtPos = new int32_t[dstW + 3];
+    m_filtPos = allocArrayNoThrow<int32_t>((size_t)dstW + 3);
+    if (!m_filtPos)
+        return -1;
     int32_t **filterPos = &m_filtPos;
 
     if (inc <= 1 << 16)
@@ -271,7 +320,11 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
 
     filterSize = x265_min(filterSize, srcW - 2);
     filterSize = x265_max(filterSize, 1);
-    filter = new int64_t[dstW * sizeof(*filter) * filterSize];
+    if (mulOverflowSizeT((size_t)dstW, (size_t)filterSize, filterCount))
+        goto fail;
+    filter = allocArrayNoThrow<int64_t>(filterCount);
+    if (!filter)
+        goto fail;
 
     xDstInSrc = ((destPos*(int64_t)inc) >> 7) - ((sourcePos * 0x10000LL) >> 7);
     for (int i = 0; i < dstW; i++)
@@ -324,11 +377,14 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     //apply src & dst Filter to filter -> filter2
     X265_CHECK(filterSize > 0, "invalid filterSize value.\n");
     filter2Size = filterSize;
-    filter2 = new int64_t[dstW * sizeof(*filter2) * filter2Size];
+    if (mulOverflowSizeT((size_t)dstW, (size_t)filter2Size, filterCount))
+        goto fail;
+    filter2 = allocArrayNoThrow<int64_t>(filterCount);
+    if (!filter2)
+        goto fail;
 
     /* This is hard to read code, but much faster. Speed is crucial here */
-    int index = RES_FACTOR_DEF;
-    int size = dstW * filterSize;
+    size = dstW * filterSize;
 
     (size % 4 == 0) && (index = RES_FACTOR_4);
     (size % 8 == 0) && (index = RES_FACTOR_8);
@@ -385,7 +441,11 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     X265_CHECK(minFilterSize > 0, "invalid minFilterSize value.\n");
     filterSize = (minFilterSize + (filtAlign - 1)) & (~(filtAlign - 1));
     X265_CHECK(filterSize > 0, "invalid filterSize value.\n");
-    filter = new int64_t[dstW*filterSize * sizeof(*filter)];
+    if (mulOverflowSizeT((size_t)dstW, (size_t)filterSize, filterCount))
+        goto fail;
+    filter = allocArrayNoThrow<int64_t>(filterCount);
+    if (!filter)
+        goto fail;
 
     *outFilterSize = filterSize;
 
@@ -457,8 +517,11 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     }
 
     // init filter
-    m_filt = new int16_t[(dstW + 3)*(*outFilterSize)];
-    int16_t **outFilter = &m_filt;
+    if (mulOverflowSizeT((size_t)dstW + 3, (size_t)(*outFilterSize), outFilterCount))
+        goto fail;
+    m_filt = allocArrayNoThrow<int16_t>(outFilterCount);
+    if (!m_filt)
+        goto fail;
 
     // normalize & store in outFilter
     for (int i = 0; i < dstW; i++)
@@ -471,7 +534,7 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
         sum = (sum + one / 2) / one;
         if (!sum)
         {
-            x265_log(NULL, X265_LOG_WARNING, "Scaler: zero vector in scaling\n");
+            x265_log(nullptr, X265_LOG_WARNING, "Scaler: zero vector in scaling\n");
             sum = 1;
         }
         for (int j = 0; j < *outFilterSize; j++)
@@ -497,6 +560,16 @@ int ScalerFilter::initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign
     delete[](filter);
     delete[](filter2);
     return 0;
+
+fail:
+    delete[] filter;
+    delete[] filter2;
+    delete[] m_filtPos;
+    delete[] m_filt;
+    m_filtPos = nullptr;
+    m_filt = nullptr;
+    x265_log(nullptr, X265_LOG_ERROR, "scaler: filter allocation exceeds supported range\n");
+    return -1;
 }
 
 int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, VideoDesc *dstVideoDesc)
@@ -514,6 +587,11 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
     m_bitDepth = dstVideoDesc->m_inputDepth;
 
     m_algorithmFlags = algorithmFlags;
+    if (m_bitDepth != 8 && m_bitDepth != 10)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "scaler: unsupported bit depth %d for ABR ladder scaling\n", m_bitDepth);
+        return -1;
+    }
     lumXInc = (((int64_t)srcW << 16) + (dstW >> 1)) / dstW;
     lumYInc = (((int64_t)srcH << 16) + (dstH >> 1)) / dstH;
 
@@ -559,8 +637,20 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
     // Only srcCsp == dstCsp is supported at present
     if (srcCsp != dstCsp)
     {
-        x265_log(NULL, X265_LOG_ERROR, "wrong, source csp != destination csp \n");
-        return false;
+        x265_log(nullptr, X265_LOG_ERROR, "wrong, source csp != destination csp \n");
+        return -1;
+    }
+
+    if (x265_cli_csps[srcCsp].planes <= 1)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "scaler: monochrome ABR ladder scaling is unsupported\n");
+        return -1;
+    }
+
+    if (m_crSrcW <= 0 || m_crSrcH <= 0 || m_crDstW <= 0 || m_crDstH <= 0)
+    {
+        x265_log(nullptr, X265_LOG_ERROR, "scaler: chroma plane dimensions must remain positive after subsampling\n");
+        return -1;
     }
 
     lumXInc = (((int64_t)srcW << 16) + (dstW >> 1)) / dstW;
@@ -571,25 +661,49 @@ int ScalerFilterManager::init(int algorithmFlags, VideoDesc *srcVideoDesc, Video
     const int filterAlign = 1;
 
     // init horizontal Luma Scaler filter
-    m_ScalerFilters[0] = new ScalerHLumFilter(m_bitDepth);
-    m_ScalerFilters[0]->initCoeff(m_algorithmFlags, lumXInc, srcW, dstW, filterAlign, 1 << 14, getLocalPos(0, 0), getLocalPos(0, 0));
+    m_ScalerFilters[0] = new (std::nothrow) ScalerHLumFilter(m_bitDepth);
+    if (!m_ScalerFilters[0] || !m_ScalerFilters[0]->hasScalingHelper() ||
+        m_ScalerFilters[0]->initCoeff(m_algorithmFlags, lumXInc, srcW, dstW, filterAlign, 1 << 14, getLocalPos(0, 0), getLocalPos(0, 0)) < 0)
+    {
+        resetState();
+        return -1;
+    }
 
     // init horizontal cr Scaler filter
-    m_ScalerFilters[1] = new ScalerHCrFilter(m_bitDepth);
-    m_ScalerFilters[1]->initCoeff(m_algorithmFlags, crXInc, m_crSrcW, m_crDstW, filterAlign, 1 << 14,
-        getLocalPos(m_crSrcHSubSample, srcHCrPos), getLocalPos(m_crDstHSubSample, dstHCrPos));
+    m_ScalerFilters[1] = new (std::nothrow) ScalerHCrFilter(m_bitDepth);
+    if (!m_ScalerFilters[1] || !m_ScalerFilters[1]->hasScalingHelper() ||
+        m_ScalerFilters[1]->initCoeff(m_algorithmFlags, crXInc, m_crSrcW, m_crDstW, filterAlign, 1 << 14,
+            getLocalPos(m_crSrcHSubSample, srcHCrPos), getLocalPos(m_crDstHSubSample, dstHCrPos)) < 0)
+    {
+        resetState();
+        return -1;
+    }
 
     // init vertical Luma scaler filter
-    m_ScalerFilters[2] = new ScalerVLumFilter(m_bitDepth);
-    m_ScalerFilters[2]->initCoeff(m_algorithmFlags, lumYInc, srcH, dstH, filterAlign, 1 << 12, getLocalPos(0, 0), getLocalPos(0, 0));
+    m_ScalerFilters[2] = new (std::nothrow) ScalerVLumFilter(m_bitDepth);
+    if (!m_ScalerFilters[2] || !m_ScalerFilters[2]->hasScalingHelper() ||
+        m_ScalerFilters[2]->initCoeff(m_algorithmFlags, lumYInc, srcH, dstH, filterAlign, 1 << 12, getLocalPos(0, 0), getLocalPos(0, 0)) < 0)
+    {
+        resetState();
+        return -1;
+    }
 
     // init vertical cr scaler filter
-    m_ScalerFilters[3] = new ScalerVCrFilter(m_bitDepth);
-    m_ScalerFilters[3]->initCoeff(m_algorithmFlags, crYInc, m_crSrcH, m_crDstH, filterAlign, 1 << 12,
-        getLocalPos(m_crSrcVSubSample, srcVCrPos), getLocalPos(m_crDstVSubSample, dstVCrPos));
+    m_ScalerFilters[3] = new (std::nothrow) ScalerVCrFilter(m_bitDepth);
+    if (!m_ScalerFilters[3] || !m_ScalerFilters[3]->hasScalingHelper() ||
+        m_ScalerFilters[3]->initCoeff(m_algorithmFlags, crYInc, m_crSrcH, m_crDstH, filterAlign, 1 << 12,
+            getLocalPos(m_crSrcVSubSample, srcVCrPos), getLocalPos(m_crDstVSubSample, dstVCrPos)) < 0)
+    {
+        resetState();
+        return -1;
+    }
 
     // init slice, must after filter initialization
-    initScalerSlice();
+    if (initScalerSlice() < 0)
+    {
+        resetState();
+        return -1;
+    }
 
     // set slice
     m_ScalerFilters[0]->setSlice(m_slices[0], m_slices[1]);
@@ -752,7 +866,7 @@ int ScalerFilterManager::scale_pic(void ** src, void ** dst, int * srcStride, in
         {
             lastLumSrcY = 0 + srcsliceHor - 1;
             lastCrSrcY = 0 + crSrcsliceHor - 1;
-            x265_log(NULL, X265_LOG_INFO, "buffering slice: lastLumSrcY %d lastCrSrcY %d\n", lastLumSrcY, lastCrSrcY);
+            x265_log(nullptr, X265_LOG_INFO, "buffering slice: lastLumSrcY %d lastCrSrcY %d\n", lastLumSrcY, lastCrSrcY);
         }
 
         X265_CHECK(((lastLumSrcY - firstLumSrcY + 1) <= hout_slice->m_plane[0].availLines), "invalid value %d", lastLumSrcY - firstLumSrcY + 1);
@@ -854,11 +968,20 @@ int ScalerFilterManager::initScalerSlice()
     crBufSize = X265_MAX(crBufSize, vCrFilterSize + MAX_NUM_LINES_AHEAD);
 
     for (int i = 0; i < m_numSlice; i++)
-        m_slices[i] = new ScalerSlice;
+    {
+        m_slices[i] = new (std::nothrow) ScalerSlice;
+        if (!m_slices[i])
+        {
+            x265_log(nullptr, X265_LOG_ERROR, "alloc_slice m_slice[%d] failed\n", i);
+            resetState();
+            return -1;
+        }
+    }
     ret = m_slices[0]->create(m_srcH, m_crSrcH, m_crSrcHSubSample, m_crSrcVSubSample, 0);
     if (ret < 0)
     {
-        x265_log(NULL, X265_LOG_ERROR, "alloc_slice m_slice[0] failed\n");
+        x265_log(nullptr, X265_LOG_ERROR, "alloc_slice m_slice[0] failed\n");
+        resetState();
         return -1;
     }
 
@@ -866,13 +989,15 @@ int ScalerFilterManager::initScalerSlice()
     ret = m_slices[1]->create(lumBufSize, crBufSize, m_crDstHSubSample, m_crDstVSubSample, 1);
     if (ret < 0)
     {
-        x265_log(NULL, X265_LOG_ERROR, "m_slice[1].create failed\n");
+        x265_log(nullptr, X265_LOG_ERROR, "m_slice[1].create failed\n");
+        resetState();
         return -1;
     }
     ret = m_slices[1]->createLines(dst_stride, m_dstW);
     if (ret < 0)
     {
-        x265_log(NULL, X265_LOG_ERROR, "m_slice[1].createLines failed\n");
+        x265_log(nullptr, X265_LOG_ERROR, "m_slice[1].createLines failed\n");
+        resetState();
         return -1;
     }
 
@@ -882,7 +1007,8 @@ int ScalerFilterManager::initScalerSlice()
     ret = m_slices[2]->create(m_dstH, m_crDstH, m_crDstHSubSample, m_crDstVSubSample, 0);
     if (ret < 0)
     {
-        x265_log(NULL, X265_LOG_ERROR, "m_slice[2].create failed\n");
+        x265_log(nullptr, X265_LOG_ERROR, "m_slice[2].create failed\n");
+        resetState();
         return -1;
     }
 
@@ -909,7 +1035,7 @@ ScalerSlice::ScalerSlice() :
         m_plane[i].availLines = 0;
         m_plane[i].sliceVer = 0;
         m_plane[i].sliceHor = 0;
-        m_plane[i].lineBuf = NULL;
+        m_plane[i].lineBuf = nullptr;
     }
 }
 
@@ -940,6 +1066,7 @@ int ScalerSlice::create(int lumLines, int crLines, int h_sub_sample, int v_sub_s
         m_plane[i].lineBuf = X265_MALLOC(uint8_t*, n);
         if (!m_plane[i].lineBuf)
             return -1;
+        std::fill_n(m_plane[i].lineBuf, n, nullptr);
 
         m_plane[i].availLines = size[i];
         m_plane[i].sliceVer = 0;
@@ -996,14 +1123,17 @@ void ScalerSlice::destroyLines()
         for (j = 0; j < n; ++j)
         {
             X265_FREE(m_plane[i].lineBuf[j]);
-            m_plane[i].lineBuf[j] = NULL;
+            m_plane[i].lineBuf[j] = nullptr;
             if (m_isRing)
-                m_plane[i].lineBuf[j + n] = NULL;
+                m_plane[i].lineBuf[j + n] = nullptr;
         }
     }
 
     for (i = 0; i < m_numSlicePlane; ++i)
-        memset(m_plane[i].lineBuf, 0, sizeof(uint8_t*) * m_plane[i].availLines * (m_isRing ? 3 : 1));
+    {
+        const int lineBufCount = m_plane[i].availLines * (m_isRing ? 3 : 1);
+        std::fill_n(m_plane[i].lineBuf, lineBufCount, nullptr);
+    }
     m_destroyLines = 0;
 }
 

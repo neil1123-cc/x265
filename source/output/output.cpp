@@ -27,18 +27,31 @@
 #include "y4m.h"
 #include "gop.h"
 
+#include <cstring>
+#include <new>
+
 #include "raw.h"
 
 using namespace X265_NS;
 
 ReconFile* ReconFile::open(const char *fname, int width, int height, uint32_t bitdepth, uint32_t fpsNum, uint32_t fpsDenom, int csp, int sourceBitDepth)
 {
-    const char * s = strrchr(fname, '.');
+    const char * s = std::strrchr(fname, '.');
 
-    if (s && !strcmp(s, ".y4m"))
-        return new Y4MOutput(fname, width, height, bitdepth, fpsNum, fpsDenom, csp, sourceBitDepth);
+    if (s && !std::strcmp(s, ".y4m"))
+    {
+        ReconFile* output = new (std::nothrow) Y4MOutput(fname, width, height, bitdepth, fpsNum, fpsDenom, csp, sourceBitDepth);
+        if (!output)
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate Y4M recon output\n");
+        return output;
+    }
     else
-        return new YUVOutput(fname, width, height, bitdepth, csp, sourceBitDepth);
+    {
+        ReconFile* output = new (std::nothrow) YUVOutput(fname, width, height, bitdepth, csp, sourceBitDepth);
+        if (!output)
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate YUV recon output\n");
+        return output;
+    }
 }
 #ifdef ENABLE_MKV
   #include "mkv.h"
@@ -49,18 +62,36 @@ ReconFile* ReconFile::open(const char *fname, int width, int height, uint32_t bi
 
 OutputFile* OutputFile::open(const char *fname, InputFileInfo& inputInfo)
 {
-    const char * s = strrchr(fname, '.');
+    const char * s = std::strrchr(fname, '.');
 
 #ifdef ENABLE_MKV
-    if (s && !strcmp(s, ".mkv"))
-        return new MKVOutput(fname, inputInfo);
+    if (s && !std::strcmp(s, ".mkv"))
+    {
+        OutputFile* output = new (std::nothrow) MKVOutput(fname, inputInfo);
+        if (!output)
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate MKV output\n");
+        return output;
+    }
 #endif
 #ifdef ENABLE_LSMASH
-    if (s && !strcmp(s, ".mp4"))
-        return new MP4Output(fname, inputInfo);
+    if (s && !std::strcmp(s, ".mp4"))
+    {
+        OutputFile* output = new (std::nothrow) MP4Output(fname, inputInfo);
+        if (!output)
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate MP4 output\n");
+        return output;
+    }
 #endif
-    if (s && !strcmp(s, ".gop"))
-        return new GOPOutput(fname, inputInfo);
+    if (s && !std::strcmp(s, ".gop"))
+    {
+        OutputFile* output = new (std::nothrow) GOPOutput(fname, inputInfo);
+        if (!output)
+            x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate GOP output\n");
+        return output;
+    }
 
-    return new RAWOutput(fname, inputInfo);
+    OutputFile* output = new (std::nothrow) RAWOutput(fname, inputInfo);
+    if (!output)
+        x265_log(nullptr, X265_LOG_ERROR, "Unable to allocate raw output\n");
+    return output;
 }

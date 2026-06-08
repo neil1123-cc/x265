@@ -27,7 +27,7 @@
 #include "output.h"
 #include "common.h"
 
-#include <fstream>
+#include <cstdio>
 
 namespace X265_NS {
 // private x265 namespace
@@ -44,13 +44,17 @@ protected:
 
     int colorSpace;
 
-    uint32_t frameSize;
+    uint64_t frameSize;
 
     int inputDepth;
 
     char *buf;
 
-    std::ofstream ofs;
+    FILE* ofs;
+
+    bool failed;
+
+    bool finalized;
 
 public:
 
@@ -60,7 +64,9 @@ public:
 
     const char *getName() const                   { return "yuv"; }
 
-    bool isFail() const                           { return ofs.fail(); }
+    bool isFail() const                           { return failed; }
+
+    bool finalize();
 
     void release()                                { delete this; }
 

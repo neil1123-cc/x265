@@ -123,7 +123,7 @@ public:
         return (colNum == (int)m_numCols - 1) ? m_lastWidth : m_param->maxCUSize;
     }
 
-    void init(Encoder *top, FrameEncoder *frame, int numRows, uint32_t numCols);
+    bool init(Encoder *top, FrameEncoder *frame, int numRows, uint32_t numCols);
     void destroy();
 
     void start(Frame *pic, Entropy& initState);

@@ -30,14 +30,12 @@
 #include "cstdio"
 #include <vector>
 
-using namespace std;
-
 namespace X265_NS {
 class Filter
 {
 public:
     virtual ~Filter() {};
-    static bool parseFilterString(char* paramString, vector<Filter *>* filters);
+    static bool parseFilterString(char* paramString, std::vector<Filter *>* filters);
     Filter() {}
     virtual void setParam(x265_param*) = 0;
     virtual bool isFail() const = 0;

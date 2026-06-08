@@ -41,16 +41,15 @@ protected:
     size_t frame_size {0};
     uint8_t* frame_buffer {nullptr};
     int height_uv_ss {0};
-    lavf_hnd_t handle;
-    lavf_hnd_t* h;
+    lavf_hnd_t handle {};
+    lavf_hnd_t* h {&handle};
     InputFileInfo _info;
+    void cleanupState();
     void openfile(InputFileInfo& info);
     void fill_buffer(x265_picture& p_pic, uint8_t** planes, int* stride);
 public:
     LavfInput(InputFileInfo& info)
     {
-        h = &handle;
-        memset(h, 0, sizeof(handle));
         openfile(info);
         _info = info;
     }

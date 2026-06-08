@@ -25,6 +25,7 @@
 #define X265_SCALER_H
 
 #include "common.h"
+#include <new>
 
 namespace X265_NS {
 //x265 private namespace
@@ -74,6 +75,7 @@ public:
     ScalerFilter();
     virtual ~ScalerFilter();
     virtual void process(int sliceVer, int sliceHor) = 0;
+    virtual bool hasScalingHelper() const { return true; }
     int initCoeff(int flag, int inc, int srcW, int dstW, int filtAlign, int one, int sourcePos, int destPos);
     void setSlice(ScalerSlice* source, ScalerSlice* dest) { m_sourceSlice = source; m_destSlice = dest; }
 };
@@ -155,8 +157,15 @@ class ScalerHLumFilter : public ScalerFilter {
 private:
     HFilterScaler* m_hFilterScaler;
 public:
-    ScalerHLumFilter(int bitDepth) { bitDepth == 8 ? m_hFilterScaler = new HFilterScaler8Bit : bitDepth == 10 ? m_hFilterScaler = new HFilterScaler10Bit : nullptr;}
-    ~ScalerHLumFilter() { if (m_hFilterScaler) X265_FREE(m_hFilterScaler); }
+    ScalerHLumFilter(int bitDepth) : m_hFilterScaler(nullptr)
+    {
+        if (bitDepth == 8)
+            m_hFilterScaler = new (std::nothrow) HFilterScaler8Bit;
+        else if (bitDepth == 10)
+            m_hFilterScaler = new (std::nothrow) HFilterScaler10Bit;
+    }
+    ~ScalerHLumFilter() { delete m_hFilterScaler; }
+    bool hasScalingHelper() const { return m_hFilterScaler != nullptr; }
     virtual void process(int sliceVer, int sliceHor);
 };
 
@@ -165,8 +174,15 @@ class ScalerHCrFilter : public ScalerFilter {
 private:
     HFilterScaler* m_hFilterScaler;
 public:
-    ScalerHCrFilter(int bitDepth) { bitDepth == 8 ? m_hFilterScaler = new HFilterScaler8Bit : bitDepth == 10 ? m_hFilterScaler = new HFilterScaler10Bit : nullptr;}
-    ~ScalerHCrFilter() { if (m_hFilterScaler) X265_FREE(m_hFilterScaler); }
+    ScalerHCrFilter(int bitDepth) : m_hFilterScaler(nullptr)
+    {
+        if (bitDepth == 8)
+            m_hFilterScaler = new (std::nothrow) HFilterScaler8Bit;
+        else if (bitDepth == 10)
+            m_hFilterScaler = new (std::nothrow) HFilterScaler10Bit;
+    }
+    ~ScalerHCrFilter() { delete m_hFilterScaler; }
+    bool hasScalingHelper() const { return m_hFilterScaler != nullptr; }
     virtual void process(int sliceVer, int sliceHor);
 };
 
@@ -175,8 +191,15 @@ class ScalerVLumFilter : public ScalerFilter {
 private:
     VFilterScaler* m_vFilterScaler;
 public:
-    ScalerVLumFilter(int bitDepth) { bitDepth == 8 ? m_vFilterScaler = new VFilterScaler8Bit : bitDepth == 10 ? m_vFilterScaler = new VFilterScaler10Bit : nullptr;}
-    ~ScalerVLumFilter() { if (m_vFilterScaler) X265_FREE(m_vFilterScaler); }
+    ScalerVLumFilter(int bitDepth) : m_vFilterScaler(nullptr)
+    {
+        if (bitDepth == 8)
+            m_vFilterScaler = new (std::nothrow) VFilterScaler8Bit;
+        else if (bitDepth == 10)
+            m_vFilterScaler = new (std::nothrow) VFilterScaler10Bit;
+    }
+    ~ScalerVLumFilter() { delete m_vFilterScaler; }
+    bool hasScalingHelper() const { return m_vFilterScaler != nullptr; }
     virtual void process(int sliceVer, int sliceHor);
 };
 
@@ -185,8 +208,15 @@ class ScalerVCrFilter : public ScalerFilter {
 private:
     VFilterScaler*    m_vFilterScaler;
 public:
-    ScalerVCrFilter(int bitDepth) { bitDepth == 8 ? m_vFilterScaler = new VFilterScaler8Bit : bitDepth == 10 ? m_vFilterScaler = new VFilterScaler10Bit : nullptr;}
-    ~ScalerVCrFilter() { if (m_vFilterScaler) X265_FREE(m_vFilterScaler); }
+    ScalerVCrFilter(int bitDepth) : m_vFilterScaler(nullptr)
+    {
+        if (bitDepth == 8)
+            m_vFilterScaler = new (std::nothrow) VFilterScaler8Bit;
+        else if (bitDepth == 10)
+            m_vFilterScaler = new (std::nothrow) VFilterScaler10Bit;
+    }
+    ~ScalerVCrFilter() { delete m_vFilterScaler; }
+    bool hasScalingHelper() const { return m_vFilterScaler != nullptr; }
     virtual void process(int sliceVer, int sliceHor);
 };
 
@@ -238,13 +268,11 @@ private:
     int getLocalPos(int crSubSample, int pos);
     void getMinBufferSize(int *out_lum_size, int *out_cr_size);
     int initScalerSlice();
+    void resetState();
 public:
     ScalerFilterManager();
     ~ScalerFilterManager() {
-        for (int i = 0; i < m_numSlice; i++)
-            if (m_slices[i]) { m_slices[i]->destroy(); delete m_slices[i]; m_slices[i] = nullptr; }
-        for (int i = 0; i < m_numFilter; i++)
-            if (m_ScalerFilters[i]) { delete m_ScalerFilters[i]; m_ScalerFilters[i] = nullptr; }
+        resetState();
     }
     int init(int algorithmFlags, VideoDesc* srcVideoDesc, VideoDesc* dstVideoDesc);
     int scale_pic(void** src, void** dst, int* srcStride, int* dstStride);

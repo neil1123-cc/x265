@@ -34,6 +34,7 @@
 #include "svt.h"
 #include "temporalfilter.h"
 #include "threadedme.h"
+#include <atomic>
 
 #ifdef ENABLE_HDR10_PLUS
     #include "dynamicHDR10/hdr10plus.h"
@@ -55,6 +56,7 @@ typedef struct SvtAppContext
 
     // Buffer Pools
     EB_BUFFERHEADERTYPE*       inputPictureBuffer;
+    size_t                     dolbyVisionRpuCapacity;
     uint64_t                   byteCount;
     uint64_t                   outFrameCount;
 
@@ -153,6 +155,7 @@ struct AdaptiveFrameDuplication
 {
     x265_picture* dupPic;
     char* dupPlane;
+    size_t dupPlaneSize;
 
     //Flag to denote the availability of the picture buffer.
     bool bOccupied;
@@ -236,7 +239,7 @@ public:
     Window             m_conformanceWindow;
 
     bool               m_bZeroLatency;     // x265_encoder_encode() returns NALs for the input picture, zero lag
-    bool               m_aborted;          // fatal error detected
+    std::atomic<bool> m_aborted;          // fatal error detected
     bool               m_reconfigure;      // Encoder reconfigure in progress
     bool               m_reconfigureRc;
     bool               m_reconfigureZone;
@@ -299,7 +302,7 @@ public:
     ~Encoder()
     {
 #ifdef ENABLE_HDR10_PLUS
-        if (m_prevTonemapPayload.payload != NULL)
+        if (m_prevTonemapPayload.payload != nullptr)
             X265_FREE(m_prevTonemapPayload.payload);
 #endif
     };
@@ -314,7 +317,7 @@ public:
 
     bool isReconfigureRc(x265_param* latestParam, x265_param* param_in);
 
-    void copyCtuInfo(x265_ctu_info_t** frameCtuInfo, int poc);
+    bool copyCtuInfo(x265_ctu_info_t *const* frameCtuInfo, int poc);
 
     int copySlicetypePocAndSceneCut(int *slicetype, int *poc, int *sceneCut, int sLayer);
 
@@ -372,7 +375,8 @@ public:
 
     double ComputePSNR(x265_picture *firstPic, x265_picture *secPic, x265_param *param);
 
-    void copyPicture(x265_picture *dest, const x265_picture *src);
+    bool copyPicture(x265_picture *dest, const x265_picture *src);
+    bool validateInputPicture(const x265_picture* pic, bool isBaseView) const;
 
     void initRefIdx();
     void analyseRefIdx(int *numRefIdx);

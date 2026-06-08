@@ -40,11 +40,8 @@ public:
         , m_cost_mvy(0)
         , m_cost(0)
         , m_mvp(0)
-        , s_bitsizes(NULL)
+        , s_bitsizes(nullptr)
     {
-        memset(m_fpelMvCosts, 0, sizeof(m_fpelMvCosts));
-        memset(s_costs, 0, sizeof(s_costs));
-        memset(s_fpelMvCosts, 0, sizeof(s_fpelMvCosts));
     }
     ~BitCost() { destroy(); }
 
@@ -78,7 +75,7 @@ protected:
 
     uint16_t *m_cost;
 
-    uint16_t *m_fpelMvCosts[4];
+    uint16_t *m_fpelMvCosts[4] {};
 
     MV        m_mvp;
 
@@ -95,9 +92,9 @@ private:
 
     float *s_bitsizes;
 
-    uint16_t *s_costs[BC_MAX_QP];
+    uint16_t *s_costs[BC_MAX_QP] {};
 
-    uint16_t *s_fpelMvCosts[BC_MAX_QP][4];
+    uint16_t *s_fpelMvCosts[BC_MAX_QP][4] {};
 
     Lock s_costCalcLock;
 

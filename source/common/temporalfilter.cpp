@@ -29,7 +29,48 @@
 #include "framedata.h"
 #include "analysis.h"
 
+#include <cmath>
+#include <cstdlib>
+#include <new>
+
 using namespace X265_NS;
+
+namespace {
+
+void resetRefPicInfoState(TemporalFilterRefPicInfo* refFrame)
+{
+    if (!refFrame)
+        return;
+
+    refFrame->picBuffer = nullptr;
+    refFrame->picBufferSubSampled2 = nullptr;
+    refFrame->picBufferSubSampled4 = nullptr;
+    refFrame->mvs = nullptr;
+    refFrame->mvs0 = nullptr;
+    refFrame->mvs1 = nullptr;
+    refFrame->mvs2 = nullptr;
+    refFrame->noise = nullptr;
+    refFrame->error = nullptr;
+    refFrame->poc = 0;
+    refFrame->lowres = nullptr;
+    refFrame->lowerRes = nullptr;
+    refFrame->origOffset = 0;
+    refFrame->isFilteredFrame = false;
+    refFrame->compensatedPic = nullptr;
+    refFrame->isSubsampled = nullptr;
+    refFrame->mvsStride = 0;
+    refFrame->mvsStride0 = 0;
+    refFrame->mvsStride1 = 0;
+    refFrame->mvsStride2 = 0;
+    refFrame->slicetype = X265_TYPE_AUTO;
+}
+
+inline bool hasMotionEstimatorTLDBuffers(const MotionEstimatorTLD* metld)
+{
+    return metld && metld->me.fencPUYuv.m_buf[0] && metld->predPUYuv.m_buf[0];
+}
+
+}
 
 void OrigPicBuffer::addPicture(Frame* inFrame)
 {
@@ -79,14 +120,14 @@ void OrigPicBuffer::setOrigPicList(Frame* inFrame, int frameCnt)
 
             Frame *iterFrame = m_mcstfPicList.getPOCMCSTF(iterPOC);
             X265_CHECK(iterFrame, "Reference frame not found in OPB");
-            if (iterFrame != NULL)
+            if (iterFrame != nullptr)
             {
                 slice->m_mcstfRefFrameList[1][j] = iterFrame;
                 iterFrame->m_refPicCnt[1]--;
             }
 
             iterFrame = m_mcstfOrigPicList.getPOCMCSTF(iterPOC);
-            if (iterFrame != NULL)
+            if (iterFrame != nullptr)
             {
 
                 slice->m_mcstfRefFrameList[1][j] = iterFrame;
@@ -157,7 +198,7 @@ TemporalFilter::~TemporalFilter()
         delete m_metld;
 }
 
-void TemporalFilter::init(const x265_param* param)
+bool TemporalFilter::init(const x265_param* param)
 {
     m_param = param;
     m_bitDepth = param->internalBitDepth;
@@ -166,30 +207,39 @@ void TemporalFilter::init(const x265_param* param)
     m_internalCsp = param->internalCsp;
     m_numComponents = (m_internalCsp != X265_CSP_I400) ? MAX_NUM_COMPONENT : 1;
 
-    m_metld = new MotionEstimatorTLD;
+    m_metld = new (std::nothrow) MotionEstimatorTLD;
+    if (!hasMotionEstimatorTLDBuffers(m_metld))
+    {
+        delete m_metld;
+        m_metld = nullptr;
+        return false;
+    }
+
+    return true;
 }
 
 int TemporalFilter::createRefPicInfo(TemporalFilterRefPicInfo* refFrame, x265_param* param)
 {
-    CHECKED_MALLOC_ZERO(refFrame->mvs, MV, sizeof(MV)* ((m_sourceWidth ) / 4) * ((m_sourceHeight ) / 4));
+    resetRefPicInfoState(refFrame);
+    CHECKED_MALLOC_ZERO(refFrame->mvs, MV, ((m_sourceWidth ) / 4) * ((m_sourceHeight ) / 4));
     refFrame->mvsStride = m_sourceWidth / 4;
-    CHECKED_MALLOC_ZERO(refFrame->mvs0, MV, sizeof(MV)* ((m_sourceWidth ) / 16) * ((m_sourceHeight ) / 16));
+    CHECKED_MALLOC_ZERO(refFrame->mvs0, MV, ((m_sourceWidth ) / 16) * ((m_sourceHeight ) / 16));
     refFrame->mvsStride0 = m_sourceWidth / 16;
-    CHECKED_MALLOC_ZERO(refFrame->mvs1, MV, sizeof(MV)* ((m_sourceWidth ) / 16) * ((m_sourceHeight ) / 16));
+    CHECKED_MALLOC_ZERO(refFrame->mvs1, MV, ((m_sourceWidth ) / 16) * ((m_sourceHeight ) / 16));
     refFrame->mvsStride1 = m_sourceWidth / 16;
-    CHECKED_MALLOC_ZERO(refFrame->mvs2, MV, sizeof(MV)* ((m_sourceWidth ) / 16)*((m_sourceHeight ) / 16));
+    CHECKED_MALLOC_ZERO(refFrame->mvs2, MV, ((m_sourceWidth ) / 16) * ((m_sourceHeight ) / 16));
     refFrame->mvsStride2 = m_sourceWidth / 16;
 
-    CHECKED_MALLOC_ZERO(refFrame->noise, int, sizeof(int) * ((m_sourceWidth) / 4) * ((m_sourceHeight) / 4));
-    CHECKED_MALLOC_ZERO(refFrame->error, int, sizeof(int) * ((m_sourceWidth) / 4) * ((m_sourceHeight) / 4));
+    CHECKED_MALLOC_ZERO(refFrame->noise, int, ((m_sourceWidth) / 4) * ((m_sourceHeight) / 4));
+    CHECKED_MALLOC_ZERO(refFrame->error, int, ((m_sourceWidth) / 4) * ((m_sourceHeight) / 4));
 
-    refFrame->slicetype = X265_TYPE_AUTO;
-
-    refFrame->compensatedPic = new PicYuv;
-    refFrame->compensatedPic->create(param, true);
+    refFrame->compensatedPic = new (std::nothrow) PicYuv;
+    if (!refFrame->compensatedPic || !refFrame->compensatedPic->create(param, true))
+        goto fail;
 
     return 1;
 fail:
+    destroyRefPicInfo(refFrame);
     return 0;
 }
 
@@ -224,7 +274,7 @@ int MotionEstimatorTLD::motionErrorLumaSAD(MotionEstimatorTLD& m_metld,
             for (int x1 = 0; x1 < bs; x1++)
             {
                 int diff = origRowStart[x1] - bufferRowStart[x1];
-                error += abs(diff);
+                error += std::abs(diff);
             }
 
             origRowStart += origStride;
@@ -287,7 +337,7 @@ int MotionEstimatorTLD::motionErrorLumaSAD(MotionEstimatorTLD& m_metld,
                 iSum = (iSum + (1 << 11)) >> 12;
                 iSum = iSum < 0 ? 0 : (iSum > maxSampleValue ? maxSampleValue : iSum);
 
-                error += abs(iSum - origRow[x + x1]);
+                error += std::abs(iSum - origRow[x + x1]);
             }
             if (error > besterror)
             {
@@ -529,7 +579,7 @@ void TemporalFilter::bilateralFilter(Frame* frame,
     for (int c = 0; c < m_numComponents; c++)
     {
         int height, width;
-        pixel *srcPelRow = NULL;
+        pixel *srcPelRow = nullptr;
         intptr_t srcStride, correctedPicsStride = 0;
 
         if (!c)
@@ -605,7 +655,7 @@ void TemporalFilter::bilateralFilter(Frame* frame,
                             }
                         }
 
-                        refPicInfo->noise[(y / blkSize) * refPicInfo->mvsStride + (x / blkSize)] = (int)round((300 * variance + 50) / (10 * diffsum + 50));
+                        refPicInfo->noise[(y / blkSize) * refPicInfo->mvsStride + (x / blkSize)] = (int)std::round((300 * variance + 50) / (10 * diffsum + 50));
                     }
                 }
 
@@ -636,13 +686,13 @@ void TemporalFilter::bilateralFilter(Frame* frame,
                     ww *= (error < 50) ? 1.2 : ((error > 100) ? 0.8 : 1);
                     sw *= (error < 50) ? 1.3 : 1;
                     ww *= ((minError + 1) / (error + 1));
-                    const double weight = weightScaling * s_refStrengths[refStrengthRow][index] * ww * exp(-diffSq / (2 * sw * sigmaSq));
+                    const double weight = weightScaling * s_refStrengths[refStrengthRow][index] * ww * std::exp(-diffSq / (2 * sw * sigmaSq));
 
                     newVal += weight * refVal;
                     temporalWeightSum += weight;
                 }
                 newVal /= temporalWeightSum;
-                double sampleVal = round(newVal);
+                double sampleVal = std::round(newVal);
                 sampleVal = (sampleVal < 0 ? 0 : (sampleVal > maxSampleValue ? maxSampleValue : sampleVal));
                 *srcPel = (pixel)sampleVal;
             }
@@ -675,7 +725,7 @@ void MotionEstimatorTLD::motionEstimationLuma(MotionEstimatorTLD& m_metld, MV *m
             MV best(0, 0);
             int leastError = INT_MAX;
 
-            if (previous == NULL)
+            if (previous == nullptr)
             {
                 range = sRange;
             }
@@ -829,7 +879,7 @@ void MotionEstimatorTLD::motionEstimationLumaDoubleRes(MotionEstimatorTLD& m_met
             MV best(0, 0);
             int leastError = INT_MAX;
 
-            if (previous == NULL)
+            if (previous == nullptr)
             {
                 range = 8;
             }
@@ -987,19 +1037,43 @@ void TemporalFilter::destroyRefPicInfo(TemporalFilterRefPicInfo* curFrame)
         {
             curFrame->compensatedPic->destroy();
             delete curFrame->compensatedPic;
+            curFrame->compensatedPic = nullptr;
         }
 
         if (curFrame->mvs)
+        {
             X265_FREE(curFrame->mvs);
+            curFrame->mvs = nullptr;
+        }
         if (curFrame->mvs0)
+        {
             X265_FREE(curFrame->mvs0);
+            curFrame->mvs0 = nullptr;
+        }
         if (curFrame->mvs1)
+        {
             X265_FREE(curFrame->mvs1);
+            curFrame->mvs1 = nullptr;
+        }
         if (curFrame->mvs2)
+        {
             X265_FREE(curFrame->mvs2);
+            curFrame->mvs2 = nullptr;
+        }
         if (curFrame->noise)
+        {
             X265_FREE(curFrame->noise);
+            curFrame->noise = nullptr;
+        }
         if (curFrame->error)
+        {
             X265_FREE(curFrame->error);
+            curFrame->error = nullptr;
+        }
+
+        curFrame->mvsStride = 0;
+        curFrame->mvsStride0 = 0;
+        curFrame->mvsStride1 = 0;
+        curFrame->mvsStride2 = 0;
     }
 }
