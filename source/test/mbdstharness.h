@@ -34,11 +34,11 @@ class MBDstHarness : public TestHarness
 {
 protected:
 
-    enum { ITERS = 128 };
-    enum { INCR = 16 };
-    enum { MAX_TU_SIZE = 32 * 32 };
-    enum { TEST_BUF_SIZE = MAX_TU_SIZE + ITERS * INCR };
-    enum { TEST_CASES = 3 };
+    static constexpr int ITERS = 128;
+    static constexpr int INCR = 16;
+    static constexpr int MAX_TU_SIZE = 32 * 32;
+    static constexpr int TEST_BUF_SIZE = MAX_TU_SIZE + ITERS * INCR;
+    static constexpr int TEST_CASES = 3;
 
     ALIGN_VAR_32(int16_t, mbuf1[TEST_BUF_SIZE]);
     int16_t mbufdct[TEST_BUF_SIZE];

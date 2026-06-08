@@ -31,16 +31,16 @@ class IntraPredHarness : public TestHarness
 {
 protected:
 
-    enum { INPUT_SIZE = 4 * 65 * 65 * 100 };
-    enum { OUTPUT_SIZE = 64 * FENC_STRIDE };
-    enum { OUTPUT_SIZE_33 = 33 * OUTPUT_SIZE };
-    enum { TEST_CASES = 3 };
-    enum { INCR = 32 };
-    enum { STRIDE = 64 };
-    enum { ITERS = 100 };
-    enum { MAX_HEIGHT = 64 };
-    enum { PAD_ROWS = 64 };
-    enum { BUFFSIZE = STRIDE * (MAX_HEIGHT + PAD_ROWS) + INCR * ITERS };
+    static constexpr int INPUT_SIZE = 4 * 65 * 65 * 100;
+    static constexpr int OUTPUT_SIZE = 64 * FENC_STRIDE;
+    static constexpr int OUTPUT_SIZE_33 = 33 * OUTPUT_SIZE;
+    static constexpr int TEST_CASES = 3;
+    static constexpr int INCR = 32;
+    static constexpr int STRIDE = 64;
+    static constexpr int ITERS = 100;
+    static constexpr int MAX_HEIGHT = 64;
+    static constexpr int PAD_ROWS = 64;
+    static constexpr int BUFFSIZE = STRIDE * (MAX_HEIGHT + PAD_ROWS) + INCR * ITERS;
 
     pixel    pixel_test_buff[TEST_CASES][BUFFSIZE];
     ALIGN_VAR_16(pixel, pixel_buff[INPUT_SIZE]);

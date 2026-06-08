@@ -32,17 +32,17 @@ class PixelHarness : public TestHarness
 {
 protected:
 
-    enum { INCR = 32 };
-    enum { STRIDE = 64 };
-    enum { ITERS = 100 };
-    enum { MAX_HEIGHT = 64 };
-    enum { PAD_ROWS = 64 };
-    enum { BUFFSIZE = STRIDE * (MAX_HEIGHT + PAD_ROWS) + INCR * ITERS };
-    enum { TEST_CASES = 3 };
-    enum { SMAX = 1 << 12 };
-    enum { SMIN = (unsigned)-1 << 12 };
-    enum { RMAX = PIXEL_MAX - PIXEL_MIN }; //The maximum value obtained by subtracting pixel values (residual max)
-    enum { RMIN = PIXEL_MIN - PIXEL_MAX }; //The minimum value obtained by subtracting pixel values (residual min)
+    static constexpr int INCR = 32;
+    static constexpr int STRIDE = 64;
+    static constexpr int ITERS = 100;
+    static constexpr int MAX_HEIGHT = 64;
+    static constexpr int PAD_ROWS = 64;
+    static constexpr int BUFFSIZE = STRIDE * (MAX_HEIGHT + PAD_ROWS) + INCR * ITERS;
+    static constexpr int TEST_CASES = 3;
+    static constexpr int SMAX = 1 << 12;
+    static constexpr unsigned SMIN = static_cast<unsigned>(-1) << 12;
+    static constexpr int RMAX = PIXEL_MAX - PIXEL_MIN;
+    static constexpr int RMIN = PIXEL_MIN - PIXEL_MAX;
 
     ALIGN_VAR_64(pixel, pbuf1[BUFFSIZE]);
     ALIGN_VAR_64(pixel,    pbuf2[BUFFSIZE]);

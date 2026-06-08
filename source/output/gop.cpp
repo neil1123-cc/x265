@@ -28,6 +28,12 @@
 
 #include "gop.h"
 
+#include <errno.h>
+#include <string.h>
+#ifndef _MSC_VER
+#include <unistd.h>
+#endif
+
 using namespace X265_NS;
 using namespace std;
 

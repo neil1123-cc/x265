@@ -51,7 +51,7 @@ namespace X265_NS {
         ///< finalize
         void release();
 
-        typedef void(*fnRWSharedData)(void *dst, void *src, int32_t size);
+        using fnRWSharedData = void (*)(void *dst, void *src, int32_t size);
 
         ///< data read
         bool readNext(void* dst, fnRWSharedData callback);

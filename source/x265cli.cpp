@@ -532,7 +532,7 @@ namespace X265_NS {
         double fps = elapsed > 0 ? frameNum * 1000000. / elapsed : 0;
         float bitrate = 0.008f * totalbytes * (param->fpsNum / param->fpsDenom) / ((float)frameNum);
 
-        int eta, eta_hh = 0, eta_mm = 0, eta_ss = 0, fps_prec, bitrate_prec, file_prec, estsz_prec = 0;
+        int eta = 0, eta_hh = 0, eta_mm = 0, eta_ss = 0, fps_prec, bitrate_prec, file_prec, estsz_prec = 0;
         double percentage = 0., estsz = 0., file_num, estsz_num = 0.;
         const char *file_unit, *estsz_unit = "";
         fps_prec = fps > 999.5 ? 0 : fps > 99.5 ? 1 : fps > 9.95 ? 2 : 3;
@@ -570,7 +570,12 @@ namespace X265_NS {
                     eta_hh, eta_mm, eta_ss);
             else
                 fprintf(stderr, "%s       \r", buf + 5);
+#if _WIN32
+            if (GetFileType(GetStdHandle(STD_ERROR_HANDLE)) == FILE_TYPE_CHAR)
+                SetConsoleTitle(buf);
+#else
             SetConsoleTitle(buf);
+#endif
             fflush(stderr);
             prevUpdateTime = time;
         }

@@ -234,13 +234,13 @@ static inline char *strcatFilename(const char *input, const char *suffix)
     if (!output)
     {
         fprintf(stderr, "x265: unable to allocate memory for filename\n");
-        return NULL;
+        return nullptr;
     }
     strcpy(output, input);
     strcat(output, suffix);
     return output;
 }
-#define X265_FREE_ZERO(ptr)         { x265_free(ptr); (ptr) = NULL; }
+#define X265_FREE_ZERO(ptr)         { x265_free(ptr); (ptr) = nullptr; }
 #define CHECKED_MALLOC(var, type, count) \
     { \
         var = (type*)x265_malloc(sizeof(type) * (count)); \
@@ -408,7 +408,7 @@ struct SAOParam
     SAOParam()
     {
         for (int i = 0; i < 3; i++)
-            ctuParam[i] = NULL;
+            ctuParam[i] = nullptr;
     }
 
     ~SAOParam()
@@ -463,7 +463,7 @@ int      x265_rename(const char* oldName, const char* newName);
 #define  x265_rename(oldName, newName) rename(oldName, newName)
 #endif
 /* Close a file */
-#define  x265_fclose(file) if (file != NULL) fclose(file); file=NULL;
+#define  x265_fclose(file) if (file != nullptr) fclose(file); file=nullptr;
 #define x265_fread(val, size, readSize, fileOffset,errorMessage)\
     if (fread(val, size, readSize, fileOffset) != readSize)\
     {\

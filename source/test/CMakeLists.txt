@@ -1,10 +1,6 @@
 # vim: syntax=cmake
 
 check_symbol_exists(__rdtsc "intrin.h" HAVE_RDTSC)
-if(HAVE_RDTSC)
-    add_definitions(-DHAVE_RDTSC=1)
-endif()
-
 # add X86 assembly files
 if(X86)
 enable_language(ASM_NASM)
@@ -45,6 +41,12 @@ add_executable(TestBench ${NASM_SRC}
     intrapredharness.cpp intrapredharness.h)
 
 target_link_libraries(TestBench x265-static ${PLATFORM_LIBS})
+if(X265_CXX20_WARNING_OPTIONS)
+    target_compile_options(TestBench PRIVATE ${X265_CXX20_WARNING_TARGET_OPTIONS})
+endif()
+if(HAVE_RDTSC)
+    target_compile_definitions(TestBench PRIVATE HAVE_RDTSC=1)
+endif()
 if(LINKER_OPTIONS)
     if(EXTRA_LIB)
         list(APPEND LINKER_OPTIONS "-L..")

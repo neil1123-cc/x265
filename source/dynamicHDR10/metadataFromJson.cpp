@@ -613,6 +613,6 @@ void metadataFromJson::clear(uint8_t **&metadata, const int numberOfFrames)
             }
         }
         delete[] metadata;
-        metadata = NULL;
+        metadata = nullptr;
     }
 }

@@ -2,18 +2,20 @@
 #define X265_AVS_H
 
 #include "input.h"
+#include <cstddef>
+#include <cstdint>
 #include <avisynth/avisynth_c.h>
 
 #if _WIN32
 #include <windows.h>
-    typedef HMODULE lib_t;
-    typedef FARPROC func_t;
-    typedef LPCWSTR string_t;
+    using lib_t = HMODULE;
+    using func_t = FARPROC;
+    using string_t = LPCWSTR;
 #else
 #include <dlfcn.h>
-    typedef void* lib_t;
-    typedef void* func_t;
-    typedef const char* string_t;
+    using lib_t = void*;
+    using func_t = void*;
+    using string_t = const char*;
     #define __stdcall
 #endif
 

@@ -55,14 +55,14 @@ bool Filter::parseFilterString(char* paramString, vector<Filter *>* filters)
 
         if (fName[0])
         {
-            Filter* filter = NULL;
+            Filter* filter = nullptr;
 #ifdef ENABLE_ZIMG
             if (!strcmp(fName, "zimg"))
                 filter = new ZimgFilter(fParams);
 #endif
-            if (filter == NULL)
+            if (filter == nullptr)
             {
-                x265_log(NULL, X265_LOG_ERROR, "Unknown filter: %s\n", fName);
+                x265_log(nullptr, X265_LOG_ERROR, "Unknown filter: %s\n", fName);
                 return true;
             }
             filters->push_back(filter);
