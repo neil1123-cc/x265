@@ -205,7 +205,9 @@ runs:
         repository: ${{ inputs.gop-muxer-repository }}
         ref: ${{ inputs.gop-muxer-ref }}
         fetch-depth: 1
-        sparse-checkout: gop_muxer.cpp
+        sparse-checkout: |
+          gop_muxer.cpp
+          gop_muxer.h
         sparse-checkout-cone-mode: false
 
     - name: Setup MSYS2

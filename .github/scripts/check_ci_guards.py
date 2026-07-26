@@ -3542,10 +3542,10 @@ def validate_windows_deps_checkout_scope(repo_root):
 
     gop_step = step_by_name('Checkout GOP muxer')
     gop_with = gop_step.get('with')
-    if gop_with.get('sparse-checkout') != 'gop_muxer.cpp':
-        fail('Checkout GOP muxer must sparse-checkout only gop_muxer.cpp', action_path)
+    if gop_with.get('sparse-checkout') != 'gop_muxer.cpp\ngop_muxer.h\n':
+        fail('Checkout GOP muxer must sparse-checkout only gop_muxer.cpp and gop_muxer.h', action_path)
     if gop_with.get('sparse-checkout-cone-mode') is not False:
-        fail('Checkout GOP muxer must disable sparse-checkout cone mode for single-file checkout', action_path)
+        fail('Checkout GOP muxer must disable sparse-checkout cone mode for file-list checkout', action_path)
 
     setup_step = step_by_name('Setup MSYS2')
     setup_with = setup_step.get('with')
