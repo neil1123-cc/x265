@@ -5,7 +5,7 @@ inputs:
   ffmpeg-ref:
     description: FFmpeg ref to checkout
     required: false
-    default: n8.1
+    default: n9.0
   use-ffmpeg:
     description: Whether to build and install FFmpeg
     required: false
@@ -20,7 +20,7 @@ inputs:
   mimalloc-ref:
     description: mimalloc ref to checkout
     required: false
-    default: v3.4.4
+    default: v3.4.5
   use-mimalloc:
     description: Whether to build and install mimalloc
     required: false
