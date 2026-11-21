@@ -38,9 +38,11 @@ jobs:
 
       - name: Get Latest FFmpeg Release
         id: ffmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG=$(curl -fsSL "https://api.github.com/repos/FFmpeg/FFmpeg/tags?per_page=100" | \
+          TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/FFmpeg/FFmpeg/tags?per_page=100" | \
             jq -r '.[].name' | \
             grep -E '^n[0-9]+\.[0-9]+$' | \
             sort -Vr | \
@@ -51,9 +53,11 @@ jobs:
 
       - name: Get Latest Mimalloc Release
         id: mimalloc
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG=$(curl -fsSL "https://api.github.com/repos/microsoft/mimalloc/tags?per_page=100" | \
+          TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/microsoft/mimalloc/tags?per_page=100" | \
             jq -r '.[].name' | \
             grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
             sort -Vr | \
@@ -64,9 +68,11 @@ jobs:
 
       - name: Get Latest Obuparse Release
         id: obuparse
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG=$(curl -fsSL "https://api.github.com/repos/dwbuiten/obuparse/tags?per_page=100" | \
+          TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/dwbuiten/obuparse/tags?per_page=100" | \
             jq -r '.[].name' | \
             grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
             sort -Vr | \
@@ -77,18 +83,22 @@ jobs:
 
       - name: Get Latest L-SMASH Commit
         id: lsmash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          SHA=$(curl -fsSL "https://api.github.com/repos/vimeo/l-smash/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          SHA=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/vimeo/l-smash/commits?sha=master&per_page=1" | jq -r '.[0].sha')
           test -n "$SHA"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "L-SMASH latest commit: $SHA"
 
       - name: Get Latest GOP muxer Commit
         id: gop_muxer
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          SHA=$(curl -fsSL "https://api.github.com/repos/msg7086/gop_muxer/commits?sha=master&per_page=1" | jq -r '.[0].sha')
+          SHA=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/msg7086/gop_muxer/commits?sha=master&per_page=1" | jq -r '.[0].sha')
           test -n "$SHA"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "GOP muxer latest commit: $SHA"
