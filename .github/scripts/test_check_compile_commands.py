@@ -152,6 +152,21 @@ def main():
         write_compile_commands(root / 'pass', 'c++ -std=gnu++20 -Wdeprecated -Werror=deprecated -DX265_DEPTH=8 -c source/common/common.cpp')
         expect_pass(run_checker(root / 'pass', '--required-flag=-Wdeprecated', '--required-flag=-Werror=deprecated', '--required-depth-define=-DX265_DEPTH=8', '--min-cpp-commands=1', '--required-file-substring=source/common/'))
 
+        gcc_modules_dir = root / 'gcc-standard-library-modules'
+        gcc_modules = [
+            (f'g++ -std=gnu++20 -c {path}', path)
+            for path in ('C:/msys64/mingw64/include/c++/16.2.0/bits/std.cc',
+                         'C:/msys64/mingw64/include/c++/16.2.0/bits/std.compat.cc')
+        ]
+        write_compile_commands_entries(gcc_modules_dir, gcc_modules + [
+            ('g++ -std=gnu++20 -DX265_DEPTH=8 -c source/common/common.cpp', 'source/common/common.cpp'),
+        ])
+        expect_pass(run_checker(gcc_modules_dir, '--required-depth-define=-DX265_DEPTH=8'))
+        write_compile_commands_entries(gcc_modules_dir, gcc_modules + [
+            ('g++ -std=gnu++20 -c source/common/bits/std.cc', 'source/common/bits/std.cc'),
+        ])
+        expect_fail(run_checker(gcc_modules_dir, '--required-depth-define=-DX265_DEPTH=8'), 'missing -DX265_DEPTH=8 (1 files')
+
         missing_commands_dir = root / 'missing-compile-commands'
         missing_commands_dir.mkdir()
         expect_fail(run_checker(missing_commands_dir), 'missing compile_commands.json')

@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import shlex
 from pathlib import Path
 
@@ -570,6 +571,9 @@ def main():
         for entry in cpp:
             path = normalized_entry_file_path(entry)
             if any(excluded in path for excluded in depth_exclude_paths):
+                continue
+            # GCC's standard library modules do not use x265's bit depth.
+            if re.search(r'/include/c\+\+/[0-9.]+/bits/std(?:\.compat)?\.cc$', path):
                 continue
             depth_checked += 1
             unexpected_depth_flags = []
